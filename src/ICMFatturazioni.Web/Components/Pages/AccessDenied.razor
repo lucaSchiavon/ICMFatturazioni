@@ -1,0 +1,18 @@
+@page "/access-denied"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+@using ICMFatturazioni.Web.Components.Layout
+
+<PageTitle>Accesso negato</PageTitle>
+
+<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;">
+    <div style="max-width: 480px; text-align: center;">
+        <h1 style="color: #1E2A3B; font-size: 24px; font-weight: 600;">Accesso negato</h1>
+        <p style="color: #475569;">
+            Non hai i permessi per accedere alla risorsa richiesta.
+        </p>
+        <a href="/" style="color: #245F8C; font-weight: 500;">Torna alla home</a>
+    </div>
+</div>

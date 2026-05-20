@@ -1,7 +1,16 @@
-﻿@page "/"
+@*
+    Landing autenticata. Per la Fase 1 reindirizza all'unica sezione
+    attiva (/tabelle-amministrative). In fasi successive evolverà in una
+    dashboard di sintesi.
+*@
+@page "/"
+@inject NavigationManager Nav
 
-<PageTitle>Home</PageTitle>
+<PageTitle>ICM Fatturazioni</PageTitle>
 
-<h1>Hello, world!</h1>
-
-Welcome to your new app.
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/tabelle-amministrative", replace: true);
+    }
+}

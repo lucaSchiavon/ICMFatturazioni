@@ -1,5 +1,15 @@
-﻿@page "/not-found"
-@layout MainLayout
+@page "/not-found"
+@attribute [AllowAnonymous]
 
-<h3>Not Found</h3>
-<p>Sorry, the content you are looking for does not exist.</p>
+<PageTitle>Pagina non trovata</PageTitle>
+
+<MudPaper Elevation="0" Class="pa-8 mt-8" Style="max-width: 480px; margin: 0 auto;">
+    <MudText Typo="Typo.h1" Class="mb-2">404</MudText>
+    <MudText Typo="Typo.h2" Class="mb-4">Pagina non trovata</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        La risorsa richiesta non esiste o è stata spostata.
+    </MudText>
+    <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Ripple="false">
+        Torna alla home
+    </MudButton>
+</MudPaper>

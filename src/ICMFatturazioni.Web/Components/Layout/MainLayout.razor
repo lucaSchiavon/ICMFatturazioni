@@ -1,23 +1,85 @@
-﻿@inherits LayoutComponentBase
+@*
+    Layout principale dell'app autenticata. Ospita i provider MudBlazor
+    (tema, popover, dialog, snackbar) e racchiude il @Body in un
+    IcmErrorBoundary per catturare e loggare eventuali eccezioni dei
+    componenti senza tirare giù il circuit.
 
-<div class="page">
-    <div class="sidebar">
+    La gestione del tema light/dark legge la preferenza utente dal claim
+    "tema_preferito" valorizzato dall'endpoint /auth/login. Il toggle
+    runtime sarà introdotto con la pagina del profilo utente (Fase 3+).
+*@
+@using System.Security.Claims
+@using ICMFatturazioni.Web.Components.Shared
+@using ICMFatturazioni.Web.Theme
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="@IcmTheme.Default" IsDarkMode="@_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Color="Color.Inherit" Style="background-color: #1E2A3B; color: #FFFFFF;">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                       Ripple="false" OnClick="@ToggleDrawer" />
+        <MudText Typo="Typo.h6" Class="ml-2">ICM Fatturazioni</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudText Typo="Typo.body2" Class="mr-4">@context.User.Identity?.Name</MudText>
+                <form method="post" action="/auth/logout" style="display:inline;">
+                    <AntiforgeryToken />
+                    <MudButton ButtonType="ButtonType.Submit"
+                               Variant="Variant.Text"
+                               Color="Color.Inherit"
+                               Ripple="false"
+                               StartIcon="@Icons.Material.Filled.Logout">
+                        Esci
+                    </MudButton>
+                </form>
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always"
+               Elevation="0" Variant="DrawerVariant.Responsive">
         <NavMenu />
-    </div>
+    </MudDrawer>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
-
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.False" Class="pa-4">
+            <IcmErrorBoundary>
+                @Body
+            </IcmErrorBoundary>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Si è verificato un errore non gestito.
+    <a href="." class="reload">Ricarica</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode;
+
+    // Auth state cascading: usato per leggere la preferenza tema iniziale
+    // dell'utente loggato. Per ora è write-once (al mount); il toggle
+    // runtime arriverà con la pagina profilo (Fase 3).
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is not null)
+        {
+            var state = await AuthenticationStateTask;
+            var tema = state.User.FindFirst("tema_preferito")?.Value;
+            _isDarkMode = tema == "dark";
+        }
+    }
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+}

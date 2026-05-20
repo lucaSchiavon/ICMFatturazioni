@@ -1,12 +1,20 @@
-﻿<!DOCTYPE html>
-<html lang="en">
+@*
+    Documento HTML radice dell'app. Carica i CSS di MudBlazor (componenti
+    + tema), il foglio applicativo e gli script Blazor. Il <HeadOutlet />
+    permette ai componenti figli di iniettare meta/title dinamici.
+*@
+<!DOCTYPE html>
+<html lang="it">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["ICMFatturazioni.Web.styles.css"]" />
     <ImportMap />
@@ -17,6 +25,7 @@
 <body>
     <Routes />
     <ReconnectModal />
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 

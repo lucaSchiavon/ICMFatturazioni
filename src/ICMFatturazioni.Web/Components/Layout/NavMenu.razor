@@ -1,30 +1,29 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">ICMFatturazioni.Web</a>
-    </div>
-</div>
+@*
+    Menu di navigazione laterale. Per la Fase 1 è abilitata solo la voce
+    "Tabelle amministrative"; le altre sono visibili ma disabilitate per
+    dare un'idea della struttura applicativa completa. Verranno abilitate
+    via via che le entità relative entrano in Fase 2/3.
+*@
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+<MudNavMenu>
+    <MudNavLink Href="/tabelle-amministrative"
+                Icon="@Icons.Material.Filled.TableChart"
+                Match="NavLinkMatch.Prefix">
+        Tabelle amministrative
+    </MudNavLink>
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
+    <MudDivider Class="my-2" />
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
+    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.PeopleAlt">
+        Anagrafiche
+    </MudNavLink>
+    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Description">
+        Fatture
+    </MudNavLink>
+    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.PriceCheck">
+        Pagamenti
+    </MudNavLink>
+    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Assessment">
+        Report
+    </MudNavLink>
+</MudNavMenu>

@@ -1,0 +1,42 @@
+@*
+    Component: IcmErrorBoundary
+    ---------------------------
+    Estende il comportamento dello standard <ErrorBoundary> di Blazor:
+    cattura le eccezioni dei componenti figli, le logga via IErrorLogger
+    e mostra un fallback discreto in chiave brand (alert MudBlazor).
+
+    Va innestato nel MainLayout intorno al @Body, in modo che ogni
+    pagina lo erediti. Per casi specifici (es. dialog isolato) è
+    possibile annidare un secondo IcmErrorBoundary più stretto.
+*@
+
+@using ICMFatturazioni.Web.Diagnostics
+@inherits ErrorBoundary
+@inject IErrorLogger ErrorLogger
+
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    <MudAlert Severity="MudBlazor.Severity.Error" Variant="Variant.Outlined" Class="my-4">
+        Si è verificato un errore durante la visualizzazione di questa sezione.
+        L'errore è stato registrato; riprovare ricaricando la pagina o
+        contattare l'amministratore di sistema.
+    </MudAlert>
+}
+
+@code {
+    // Hook ufficiale di ErrorBoundary: viene invocato per ogni eccezione
+    // catturata dai componenti discendenti. Logghiamo via IErrorLogger
+    // marcando l'errore come "handled" (la UI è già stata catturata).
+    protected override async Task OnErrorAsync(Exception exception)
+    {
+        await ErrorLogger.LogAsync(
+            exception,
+            contesto: "Blazor IcmErrorBoundary",
+            severity: ICMFatturazioni.Web.Entities.Severity.Error,
+            handled: true);
+    }
+}

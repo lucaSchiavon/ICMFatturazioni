@@ -1,0 +1,137 @@
+@*
+    Pagina /login — form di autenticazione.
+
+    Resa server-side **statica** (nessun RenderMode interactive): il form
+    è HTML puro e POSTa all'endpoint minimal API /auth/login, che ha
+    accesso pieno a HttpContext per chiamare SignInAsync. In Blazor
+    Server interattivo non è possibile firmare il cookie da un
+    componente perché la response è già committata al circuit.
+
+    AllowAnonymous: la fallback policy globale richiede autenticazione,
+    questa pagina è l'eccezione.
+*@
+
+@page "/login"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+@using ICMFatturazioni.Web.Components.Layout
+
+<PageTitle>Accedi · ICM Fatturazioni</PageTitle>
+
+<div class="login-shell">
+    <div class="login-card">
+        <h1 class="login-title">ICM Fatturazioni</h1>
+        <p class="login-subtitle">Accedi al gestionale</p>
+
+        @if (!string.IsNullOrEmpty(Error))
+        {
+            <div class="login-error" role="alert">
+                @Error
+            </div>
+        }
+
+        <form method="post" action="/auth/login" class="login-form">
+            <AntiforgeryToken />
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+            <label class="login-label" for="username">Username</label>
+            <input id="username" name="Username" type="text" autocomplete="username"
+                   class="login-input" required autofocus />
+
+            <label class="login-label" for="password">Password</label>
+            <input id="password" name="Password" type="password" autocomplete="current-password"
+                   class="login-input" required />
+
+            <button type="submit" class="login-button">Accedi</button>
+        </form>
+    </div>
+</div>
+
+<style>
+    .login-shell {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #F7F9FB; /* gray-50 */
+        padding: 16px;
+    }
+    .login-card {
+        width: 100%;
+        max-width: 380px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0; /* gray-200 */
+        border-radius: 8px;        /* rounded-lg */
+        box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+        padding: 32px;
+    }
+    .login-title {
+        margin: 0 0 4px;
+        color: #1E2A3B; /* icm-navy-900 */
+        font-size: 20px;
+        font-weight: 600;
+    }
+    .login-subtitle {
+        margin: 0 0 24px;
+        color: #475569; /* gray-600 */
+        font-size: 13px;
+    }
+    .login-label {
+        display: block;
+        margin: 12px 0 4px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #475569;
+    }
+    .login-input {
+        width: 100%;
+        height: 36px;
+        padding: 0 12px;
+        background: #FFFFFF;
+        border: 1px solid #CBD5E1; /* gray-300 */
+        border-radius: 6px;
+        font-size: 13px;
+        color: #0F172A;
+    }
+    .login-input:focus {
+        outline: none;
+        border-color: #245F8C; /* icm-blue-500 */
+        box-shadow: 0 0 0 2px #AEC8E2; /* icm-blue-200 */
+    }
+    .login-button {
+        margin-top: 24px;
+        width: 100%;
+        height: 36px;
+        background: #245F8C; /* icm-blue-500 */
+        color: #FFFFFF;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 150ms ease-out;
+    }
+    .login-button:hover { background: #1D4E73; }
+    .login-button:active { background: #163D59; }
+    .login-error {
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #FEF2F2;
+        border: 1px solid rgba(220, 38, 38, 0.2);
+        color: #B91C1C;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+</style>
+
+@code {
+    /// <summary>URL a cui tornare dopo il login (query string).</summary>
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    /// <summary>Codice errore proveniente dall'endpoint /auth/login.</summary>
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+}
