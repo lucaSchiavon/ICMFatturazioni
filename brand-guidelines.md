@@ -2,6 +2,8 @@
 
 Questo documento definisce l'identità visiva e le specifiche tecniche per l'interfaccia dell'applicativo intranet di **ICM Solutions** (anagrafiche, fatturazione, progetti, attività). È la fonte autoritativa per qualsiasi scelta estetica: colori, tipografia, componenti, layout. Tutte le specifiche sono espresse in token compatibili con **Tailwind CSS**.
 
+> **Nota tecnologica (ADR D10–D13, 2026-05-20)**: il progetto ICM Fatturazioni implementa queste guidelines tramite **MudBlazor** (non Tailwind). I token cromatici e tipografici restano autoritativi e identici; cambia solo il veicolo di applicazione. La sezione **"Configurazione Tailwind"** resta a fondo documento come riferimento per chi volesse riprodurre i token su un altro stack; la **mappatura operativa** ai componenti MudBlazor è nella sezione **"Implementazione con MudBlazor"**. La palette **Dark Mode** (sezione dedicata) è una bozza in attesa di approvazione utente.
+
 ## Filosofia del Design
 
 L'interfaccia deve trasmettere **affidabilità, ordine e competenza tecnica** — coerentemente con il posizionamento ICM nel settore industrial construction management.
@@ -71,6 +73,59 @@ Usati esclusivamente per comunicare **stato** (badge, alert, validazione). Mai p
 | `info-500` | `#245F8C` | Coincide con `icm-blue-500`. Le info istituzionali usano il brand. |
 
 > **Regola d'oro**: non introdurre tonalità fuori da questa palette. Se manca un caso (es. categoria con colore distintivo, grafico multi-serie), segnalarlo e chiedere prima di scegliere arbitrariamente.
+
+## Palette Colori (Dark Mode) — DRAFT in attesa di approvazione
+
+Bozza proposta a seguito di ADR D17 (2026-05-20). Deriva il blu/navy istituzionali schiarendoli per garantire contrasto WCAG su sfondo scuro; preserva la palette semantica con leggero schiarimento; introduce un sistema di superfici a 3 livelli per stacking visivo (background → surface → surface-elevated). **Da approvare prima dell'implementazione finale.**
+
+### Brand — Blu istituzionale dark (`icm-blue` dark)
+
+| Token | Hex | Utilizzo dark |
+|---|---|---|
+| `icm-blue-300` dark | `#7FA7CC` | **Primary** in dark mode. Sostituisce `icm-blue-500` del light: lo stesso blu su sfondo scuro risulterebbe poco visibile. |
+| `icm-blue-200` dark | `#AEC8E2` | Hover di Primary. |
+| `icm-blue-400` dark | `#5A92BC` | Active / pressed. |
+| `icm-blue-900` dark | `#0F2238` | Sfondi sottili di evidenziazione (riga selezionata, chip filtro attivo). Analogo a `icm-blue-50` nel light. |
+| `icm-blue-800` dark | `#163D59` | Bordi di campo focus, separatori accentuati. |
+
+### Brand — Navy strutturale dark
+
+| Token | Hex | Utilizzo dark |
+|---|---|---|
+| `icm-navy-900` dark | `#1E2A3B` | **Background principale** (era `gray-50` nel light). |
+| `icm-navy-800` dark | `#252F42` | **Surface** di card, righe di tabella (era `white` nel light). |
+| `icm-navy-700` dark | `#2E3A50` | Surface elevated (modali, popover, header table). |
+| `icm-navy-600` dark | `#3A4660` | Bordi standard (era `gray-200` nel light). |
+
+### Neutri dark
+
+| Token | Hex | Utilizzo dark |
+|---|---|---|
+| `gray-300` dark | `#CBD5E1` | Testo di corpo principale (era `gray-700` nel light). |
+| `gray-400` dark | `#94A3B8` | Testo secondario, metadati, label (era `gray-500` nel light). |
+| `gray-500` dark | `#64748B` | Icone non attive, placeholder. |
+| `gray-100` dark | `#F1F5F9` | Testo massima gerarchia (era `gray-900`/`icm-navy-900` nel light). |
+
+### Semantici dark
+
+Lievemente schiariti per restare leggibili su sfondo scuro. Le coppie testo/sfondo restano coerenti col light (success-50 → success-900 dark, ecc.).
+
+| Token | Hex | Utilizzo |
+|---|---|---|
+| `success-300` dark | `#34D399` | Testo/icona di successo. |
+| `success-900` dark | `#052E1A` | Sfondo badge/alert di successo. |
+| `warning-300` dark | `#FBBF24` | Testo/icona di attenzione. |
+| `warning-900` dark | `#3B2008` | Sfondo badge/alert di attenzione. |
+| `danger-300` dark | `#F87171` | Testo/icona di errore. |
+| `danger-900` dark | `#3F0E0E` | Sfondo badge/alert di errore. |
+
+### Regole generali Dark Mode
+
+- **Contrasto**: tutte le coppie testo/sfondo devono raggiungere **WCAG AA** (4.5:1 per testo normale, 3:1 per testo grande). Verificare prima di accettare nuovi accostamenti.
+- **Niente puro bianco**: il testo massimo è `#F1F5F9` (slate-100), non `#FFFFFF`, per ridurre affaticamento.
+- **Niente puro nero**: lo sfondo base è `icm-navy-900` (`#1E2A3B`), non `#000000`.
+- **Ombre**: in dark mode l'effetto di stacking si ottiene con superfici più chiare (surface > background), non con ombre marcate. Ridurre le ombre del 50% rispetto al light.
+- **Persistenza preferenza**: il tema scelto dall'utente è salvato in `dbo.Utenti.TemaPreferito NVARCHAR(8) NOT NULL DEFAULT 'light'` (valori: `light`, `dark`, `auto` per seguire la preferenza di sistema).
 
 ## Tipografia
 
@@ -298,6 +353,170 @@ module.exports = {
 ```
 
 > Si raccomanda l'uso del plugin `@tailwindcss/forms` per resettare gli stili di base di input nativi prima di applicare le classi del design system.
+
+## Implementazione con MudBlazor
+
+Sezione operativa per il progetto **ICM Fatturazioni** (vedi ADR D10–D13). Traduce i token sopra in proprietà del `MudTheme` e indica le scelte di smorzamento Material per allinearsi alla filosofia sobria del brand.
+
+### File di tematizzazione
+
+Tutta la configurazione vive in `src/MyApp.Web/Theme/IcmTheme.cs` come singola classe statica. Il `MudThemingProvider` in `MainLayout.razor` riceve l'istanza e il flag `IsDarkMode` (derivato da `dbo.Utenti.TemaPreferito`).
+
+```csharp
+// src/MyApp.Web/Theme/IcmTheme.cs (snippet rappresentativo)
+public static class IcmTheme
+{
+    public static readonly MudTheme Default = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary           = "#245F8C", // icm-blue-500
+            PrimaryDarken     = "#1D4E73", // icm-blue-600
+            PrimaryLighten    = "#7FA7CC", // icm-blue-300
+            Secondary         = "#2A3A52", // icm-navy-700
+            AppbarBackground  = "#1E2A3B", // icm-navy-900
+            AppbarText        = "#FFFFFF",
+            Background        = "#F7F9FB", // gray-50
+            BackgroundGrey    = "#EEF2F6", // gray-100
+            Surface           = "#FFFFFF",
+            DrawerBackground  = "#FFFFFF",
+            DrawerText        = "#334155", // gray-700
+            Success           = "#16A34A",
+            Warning           = "#D97706",
+            Error             = "#DC2626",
+            Info              = "#245F8C", // coincide con primary
+            TextPrimary       = "#0F172A", // gray-900
+            TextSecondary     = "#475569", // gray-600
+            ActionDefault     = "#64748B", // gray-500
+            ActionDisabled    = "#94A3B8", // gray-400
+            LinesDefault      = "#E2E8F0", // gray-200
+            TableLines        = "#E2E8F0",
+            Divider           = "#E2E8F0",
+        },
+        PaletteDark = new PaletteDark
+        {
+            // Bozza in attesa di approvazione (sezione "Palette Colori (Dark Mode) — DRAFT")
+            Primary          = "#7FA7CC", // icm-blue-300 dark
+            PrimaryDarken    = "#5A92BC",
+            PrimaryLighten   = "#AEC8E2",
+            Background       = "#1E2A3B", // icm-navy-900
+            BackgroundGrey   = "#252F42",
+            Surface          = "#252F42",
+            AppbarBackground = "#0F2238",
+            TextPrimary      = "#F1F5F9",
+            TextSecondary    = "#94A3B8",
+            LinesDefault     = "#3A4660",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography
+            {
+                FontFamily = new[] { "Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif" },
+                FontSize   = "13px", // text-sm = corpo standard gestionale
+                LineHeight = "20px",
+                FontWeight = "400",
+            },
+            H1 = new H1Typography { FontSize = "24px", LineHeight = "32px", FontWeight = "600" },
+            H2 = new H2Typography { FontSize = "20px", LineHeight = "28px", FontWeight = "600" },
+            H3 = new H3Typography { FontSize = "17px", LineHeight = "24px", FontWeight = "500" },
+            Body1 = new Body1Typography { FontSize = "13px", LineHeight = "20px", FontWeight = "400" },
+            Body2 = new Body2Typography { FontSize = "12px", LineHeight = "16px", FontWeight = "400" },
+            Button = new ButtonTypography { FontSize = "13px", LineHeight = "20px", FontWeight = "500", TextTransform = "none" },
+            Caption = new CaptionTypography { FontSize = "12px", LineHeight = "16px", FontWeight = "500" },
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "6px", // rounded-md
+            AppbarHeight        = "56px",
+            DrawerWidthLeft     = "256px",
+            DrawerMiniWidthLeft = "64px",
+        },
+        Shadows = new Shadow
+        {
+            // Override discreto: livelli 1, 4, 8 calibrati su shadow-sm, -md, -lg
+            // (gli altri restano default MudBlazor)
+        },
+    };
+}
+```
+
+### Mappatura token brand → proprietà MudBlazor
+
+| Token brand (light) | Proprietà `PaletteLight` |
+|---|---|
+| `icm-blue-500` (`#245F8C`) | `Primary`, `Info` |
+| `icm-blue-600` (`#1D4E73`) | `PrimaryDarken` (hover) |
+| `icm-blue-700` (`#163D59`) | `PrimaryDarken` (active — gestito via override CSS) |
+| `icm-navy-700` (`#2A3A52`) | `Secondary` |
+| `icm-navy-900` (`#1E2A3B`) | `AppbarBackground` (topbar app) |
+| `gray-50` (`#F7F9FB`) | `Background` (sfondo principale) |
+| `gray-100` (`#EEF2F6`) | `BackgroundGrey` (toolbar, footer tabella) |
+| `gray-200` (`#E2E8F0`) | `LinesDefault`, `TableLines`, `Divider` |
+| `gray-500` (`#64748B`) | `ActionDefault` |
+| `gray-400` (`#94A3B8`) | `ActionDisabled` |
+| `gray-600` (`#475569`) | `TextSecondary` |
+| `gray-700` (`#334155`) | `DrawerText` |
+| `gray-900` (`#0F172A`) | `TextPrimary` |
+| `success-500` (`#16A34A`) | `Success` |
+| `warning-500` (`#D97706`) | `Warning` |
+| `danger-500` (`#DC2626`) | `Error` |
+
+### Smorzamento Material (ADR D12)
+
+- **Ripple effect**: disabilitato globalmente sui componenti interattivi. Ogni `MudButton`, `MudIconButton`, `MudFab`, `MudMenuItem` riceve `DisableRipple="true"`. Per evitare di ripeterlo: definire un componente wrapper o usare un CSS override (`.mud-ripple { display: none !important; }` in un file globale).
+- **Transition**: durata standard `150ms` (era `200–300ms` di default Material). Override CSS in `wwwroot/css/icm-overrides.css`:
+  ```css
+  .mud-button-root, .mud-input-control, .mud-paper {
+    transition-duration: 150ms !important;
+  }
+  ```
+- **`TextTransform = "none"`** sul `ButtonTypography`: i bottoni non sono uppercase (Material default), ma case-sensitive come da `text-sm` delle guidelines.
+- **`Elevation` mapping**: per le card usare `Elevation="1"` (mappato a `shadow-sm`); per dropdown/popover `Elevation="4"` (shadow-md); per modali `Elevation="8"` (shadow-lg).
+
+### Componenti chiave: come si traducono le specifiche
+
+| Specifica brand | Componente MudBlazor | Note |
+|---|---|---|
+| Bottone Primary (`bg-icm-blue-500 ...`) | `<MudButton Variant="Variant.Filled" Color="Color.Primary" DisableRipple>` | Il colore segue il tema, niente classi hardcoded. |
+| Bottone Secondary | `<MudButton Variant="Variant.Outlined" Color="Color.Default" DisableRipple>` | `Outlined` ≈ bordo + bg trasparente. |
+| Bottone Ghost | `<MudIconButton Color="Color.Default" DisableRipple>` o `<MudButton Variant="Variant.Text">` | Per azioni in toolbar/tabelle. |
+| Bottone Danger | `<MudButton Variant="Variant.Filled" Color="Color.Error" DisableRipple>` | |
+| Input/Select/Textarea | `<MudTextField>`, `<MudSelect>`, `<MudAutocomplete>` | Tema applica focus/error states. |
+| Tabella data-dense | `<MudDataGrid T="...">` (ADR D11) | Virtualization built-in, header sticky configurabile. |
+| Card / Pannello | `<MudPaper Elevation="1" Class="pa-6">` | `pa-6` = padding 24px (token MudBlazor coincide con guideline). |
+| Modale | `<MudDialog>` + `IDialogService` | Overlay e shadow-lg gestiti dal componente. |
+| Badge di stato | `<MudChip Color="...">` o `<MudBadge>` | Usare colori semantici del tema. |
+| Sidebar | `<MudDrawer Variant="DrawerVariant.Mini">` | Width 256/64px coerente con guideline. |
+| Topbar | `<MudAppBar Color="Color.Inherit" Elevation="0">` | Sfondo `AppbarBackground` (icm-navy-900). |
+| Tabs | `<MudTabs>` | Override bordo attivo via tema. |
+| Alert | `<MudAlert Severity="...">` | Severità → colore semantico. |
+| Toast | `<MudSnackbar>` + `ISnackbar` | Auto-dismiss 5s (8s per Error). |
+| Tooltip | `<MudTooltip>` | Sfondo `icm-navy-900` via Class override. |
+
+### Icone (ADR D10)
+
+Material Icons / Symbols, integrate in MudBlazor:
+
+```razor
+<MudIcon Icon="@Icons.Material.Filled.Save" Size="Size.Medium" />
+<MudIconButton Icon="@Icons.Material.Outlined.Edit" />
+```
+
+Dimensioni: `Size.Small` (16px) inline al testo, `Size.Medium` (20px) per icone in bottoni/liste, `Size.Large` (24px) per stati vuoti.
+
+### Responsive (ADR D15)
+
+I breakpoint di MudBlazor coincidono con quelli usati nelle guidelines:
+
+| Token | Larghezza |
+|---|---|
+| `Xs` | < 600px |
+| `Sm` | ≥ 600px |
+| `Md` | ≥ 960px |
+| `Lg` | ≥ 1280px |
+| `Xl` | ≥ 1920px |
+
+Le tabelle data-dense (`MudDataGrid`) su mobile non vengono trasformate in card-stack: si abilita lo scroll orizzontale e la prima colonna sticky.
 
 ## Accessibilità
 
