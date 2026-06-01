@@ -13,4 +13,11 @@
     <PackageReference Include="MudBlazor" Version="9.4.0" />
   </ItemGroup>
 
+  <!-- Permette al progetto di test di accedere ai tipi internal sealed
+       (es. AnagraficaManager) senza dover esporli come public solo per
+       i test. Più sicuro che relaxare la visibilità del prodotto. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="ICMFatturazioni.Tests" />
+  </ItemGroup>
+
 </Project>

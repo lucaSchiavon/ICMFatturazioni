@@ -1,0 +1,341 @@
+@*
+    Dialog Anagrafica — usato sia per "Aggiungi" che per "Modifica".
+
+    Decisioni di design:
+    - Un solo componente per i due flussi: il parametro Iniziale
+      discrimina (null → create, valorizzato → edit). Riduce codice
+      duplicato e garantisce comportamento omogeneo per le validazioni.
+    - Layout a 2 colonne su desktop (≥ Sm), 1 colonna su mobile.
+    - Tutti i campi obbligatori sono evidenziati come Required="true"
+      sul MudTextField/MudSelect, in modo che il MudForm imposti
+      l'IsValid quando vengono compilati.
+    - Salva è abilitato solo se il form è valido (CLAUDE.md "Pulsante
+      Salva contestuale"). Non viene nascosto perché MudBlazor non
+      supporta nativamente la "comparsa" alla validità — disabilitarlo
+      con tooltip è preferibile per evitare layout-shift.
+    - Paese e Provincia sono dropdown da sta.Paesi/sta.Province via
+      ILookupRepository: l'utente non può inserire valori inesistenti.
+    - Tema default Paese = IT (decisione applicativa D14).
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Repositories.Interfaces
+@inject IAnagraficaManager AnagraficaManager
+@inject ILookupRepository LookupRepository
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="TipoAnagrafica"
+                               Label="Tipologia *"
+                               @bind-Value="_model.TipoAnagrafica"
+                               Required="true"
+                               RequiredError="Tipologia obbligatoria"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense">
+                        <MudSelectItem Value="TipoAnagrafica.Societa">Società</MudSelectItem>
+                        <MudSelectItem Value="TipoAnagrafica.Privato">Privato</MudSelectItem>
+                        <MudSelectItem Value="TipoAnagrafica.EntePubblico">Ente pubblico</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.RagioneSociale"
+                                  Label="Ragione sociale *"
+                                  Required="true"
+                                  RequiredError="La ragione sociale è obbligatoria"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_model.Indirizzo"
+                                  Label="Indirizzo"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudTextField @bind-Value="_model.CAP"
+                                  Label="CAP"
+                                  MaxLength="10"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.City"
+                                  Label="Città"
+                                  MaxLength="100"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="string"
+                               Label="Provincia"
+                               @bind-Value="_model.Provincia"
+                               Clearable="true"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense">
+                        @foreach (var p in _province)
+                        {
+                            <MudSelectItem Value="@p.Codice">@p.Codice — @p.Descrizione</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="string"
+                               Label="Paese *"
+                               @bind-Value="_model.SiglaPaese"
+                               Required="true"
+                               RequiredError="Paese obbligatorio"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense">
+                        @foreach (var p in _paesi)
+                        {
+                            <MudSelectItem Value="@p.Codice">@p.Codice — @p.Descrizione</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.PIVA"
+                                  Label="P.IVA / Codice fiscale"
+                                  MaxLength="20"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Contatto"
+                                  Label="Contatto"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Email"
+                                  Label="Email"
+                                  InputType="InputType.Email"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Telefono"
+                                  Label="Telefono"
+                                  MaxLength="40"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Cellulare"
+                                  Label="Cellulare"
+                                  MaxLength="40"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Fax"
+                                  Label="Fax"
+                                  MaxLength="40"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Fatturazione elettronica</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.CodiceDestinatario"
+                                  Label="Codice destinatario SDI"
+                                  MaxLength="10"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  HelperText="7 caratteri assegnati dal cliente, in alternativa alla PEC" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.PECFatturaElettronica"
+                                  Label="PEC fattura elettronica"
+                                  InputType="InputType.Email"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" />
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_erroreServer))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">
+                    @_erroreServer
+                </MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text"
+                   OnClick="Annulla"
+                   Ripple="false">
+            Annulla
+        </MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="Salva"
+                   Disabled="@(!_isValid || _salvataggio)"
+                   Ripple="false">
+            @if (_salvataggio)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
+            }
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>
+    /// Anagrafica iniziale: null = modalità Aggiungi, valorizzato = Modifica.
+    /// La dialog non muta direttamente il parametro: lavora su una copia
+    /// locale (<see cref="_model"/>) per non sporcare il record originale
+    /// in caso di Annulla.
+    /// </summary>
+    [Parameter] public Anagrafica? Iniziale { get; set; }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _erroreServer;
+
+    private IReadOnlyList<LookupItem> _paesi = Array.Empty<LookupItem>();
+    private IReadOnlyList<LookupItem> _province = Array.Empty<LookupItem>();
+
+    private bool IsModifica => Iniziale is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Carica i lookup in parallelo: ridurre il time-to-paint del form.
+        var paesiTask = LookupRepository.GetPaesiAsync();
+        var provinceTask = LookupRepository.GetProvinceAsync();
+        await Task.WhenAll(paesiTask, provinceTask);
+        _paesi = paesiTask.Result;
+        _province = provinceTask.Result;
+
+        if (Iniziale is not null)
+        {
+            _model = FormModel.FromEntity(Iniziale);
+        }
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        _erroreServer = null;
+        await _form.ValidateAsync();
+        if (!_isValid)
+        {
+            return;
+        }
+
+        _salvataggio = true;
+        try
+        {
+            var entity = _model.ToEntity(Iniziale?.IdAnagrafica ?? 0);
+            if (IsModifica)
+            {
+                await AnagraficaManager.AggiornaAsync(entity);
+            }
+            else
+            {
+                await AnagraficaManager.CreaAsync(entity);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (AnagraficaInvalidaException ex)
+        {
+            // Eccezione tipizzata → messaggio user-friendly già pronto.
+            _erroreServer = ex.Message;
+            await ErrorLogger.LogAsync(ex, contesto: "AnagraficaFormDialog.Salva", handled: true);
+        }
+        catch (Exception ex)
+        {
+            _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
+            await ErrorLogger.LogAsync(ex, contesto: "AnagraficaFormDialog.Salva");
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    /// <summary>
+    /// View-model del form: campi tutti mutabili (richiesti da @bind-Value),
+    /// mentre l'Entity è immutable. Conversioni esplicite alle estremità.
+    /// </summary>
+    private sealed class FormModel
+    {
+        public TipoAnagrafica TipoAnagrafica { get; set; } = TipoAnagrafica.Societa;
+        public string RagioneSociale { get; set; } = string.Empty;
+        public string? Indirizzo { get; set; }
+        public string? CAP { get; set; }
+        public string? City { get; set; }
+        public string? Provincia { get; set; }
+        public string SiglaPaese { get; set; } = "IT";
+        public string? Telefono { get; set; }
+        public string? Cellulare { get; set; }
+        public string? Fax { get; set; }
+        public string? Email { get; set; }
+        public string? PIVA { get; set; }
+        public string? Contatto { get; set; }
+        public string? CodiceDestinatario { get; set; }
+        public string? PECFatturaElettronica { get; set; }
+
+        public static FormModel FromEntity(Anagrafica a) => new()
+        {
+            TipoAnagrafica        = a.TipoAnagrafica,
+            RagioneSociale        = a.RagioneSociale,
+            Indirizzo             = a.Indirizzo,
+            CAP                   = a.CAP,
+            City                  = a.City,
+            Provincia             = a.Provincia,
+            SiglaPaese            = a.SiglaPaese,
+            Telefono              = a.Telefono,
+            Cellulare             = a.Cellulare,
+            Fax                   = a.Fax,
+            Email                 = a.Email,
+            PIVA                  = a.PIVA,
+            Contatto              = a.Contatto,
+            CodiceDestinatario    = a.CodiceDestinatario,
+            PECFatturaElettronica = a.PECFatturaElettronica,
+        };
+
+        public Anagrafica ToEntity(int idAnagrafica) => new()
+        {
+            IdAnagrafica          = idAnagrafica,
+            TipoAnagrafica        = TipoAnagrafica,
+            RagioneSociale        = RagioneSociale,
+            Indirizzo             = Indirizzo,
+            CAP                   = CAP,
+            City                  = City,
+            Provincia             = Provincia,
+            SiglaPaese            = SiglaPaese,
+            Telefono              = Telefono,
+            Cellulare             = Cellulare,
+            Fax                   = Fax,
+            Email                 = Email,
+            PIVA                  = PIVA,
+            Contatto              = Contatto,
+            CodiceDestinatario    = CodiceDestinatario,
+            PECFatturaElettronica = PECFatturaElettronica,
+        };
+    }
+}

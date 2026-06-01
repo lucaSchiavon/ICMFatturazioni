@@ -6,7 +6,6 @@
 *@
 
 @page "/tabelle-amministrative"
-@rendermode InteractiveServer
 
 <PageTitle>Tabelle amministrative · ICM Fatturazioni</PageTitle>
 
@@ -14,9 +13,20 @@
 
 <MudTabs Elevation="0" Rounded="true" KeepPanelsAlive="false">
     <MudTabPanel Text="Anagrafiche" Icon="@Icons.Material.Outlined.PeopleAlt">
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-            La sezione Anagrafiche verrà attivata in Fase 2 della roadmap di porting.
-        </MudAlert>
+        <MudStack Spacing="3">
+            <MudText>
+                La gestione delle anagrafiche clienti è disponibile come pagina dedicata.
+            </MudText>
+            <div>
+                <MudButton Href="/anagrafiche"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.OpenInNew"
+                           Ripple="false">
+                    Apri elenco anagrafiche
+                </MudButton>
+            </div>
+        </MudStack>
     </MudTabPanel>
     <MudTabPanel Text="Codici IVA" Icon="@Icons.Material.Outlined.Percent">
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">

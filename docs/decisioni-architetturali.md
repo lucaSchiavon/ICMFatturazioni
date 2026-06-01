@@ -133,17 +133,18 @@ Questo documento raccoglie le decisioni architetturali del progetto **ICM Fattur
 
 ## D8 — Campi `IdCodiceMerce` e `ResaMerce` in `Anagrafica`
 
-**Stato**: ⏳ **In attesa** — risposta dal collega Roberto dell'utente.
+**Stato**: ✅ Accettata (2026-05-20, chiusura prima di Fase 2)
 
 **Contesto**: i due campi compaiono nello schema PNG come parte di `Anagrafica` ma non sono né documentati nel funzionale né riferiti dal VBA delle pagine di amministrazione. Sembrano FK verso un modulo "Merci" appartenente a un altro perimetro applicativo non in scope.
 
 **Opzioni valutate**:
 - (a) Replicare fedelmente come colonne nullable (anche se inutilizzate)
-- (b) Omettere finché non emerge il modulo merci
+- (b) Includere nello schema ma nascondere dalla UI
+- (c) Omettere finché non emerge il modulo merci
 
-**Scelta**: ⏳ rimandata. L'utente deve verificare con il collega Roberto se i campi sono usati in produzione o vestigiali.
+**Scelta**: (c) — omettere.
 
-**Da fare**: prima di iniziare la Fase 2 (verticale Anagrafica), riproporre esplicitamente la domanda all'utente. Vedi memoria `porting_open_items.md`.
+**Motivazione**: ICM Solutions opera nel settore *Industrial Construction Management* (progetti/prestazioni), non in compravendita di merci. La descrizione funzionale (testimonianza diretta dell'utente del legacy) non menziona mai questi campi né li mostra nelle maschere demo. Tenerli nello schema produrrebbe colonne sempre `NULL` e indurrebbe un consumatore futuro a chiedersi "a cosa servono". Se in futuro emerge un modulo Merci, l'aggiunta è una migration **additiva** (nullable + FK), non distruttiva — quindi il costo di rinviare è zero. Questa scelta deroga in modo cosciente all'autorità dello schema PNG (D7 #2), perché la descrizione funzionale (D7 #3) supportata dalla testimonianza dell'utente segnala una probabile vestigialità.
 
 ---
 

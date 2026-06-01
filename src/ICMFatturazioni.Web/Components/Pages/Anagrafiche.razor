@@ -1,0 +1,284 @@
+@*
+    Pagina /anagrafiche — elenco master delle anagrafiche cliente.
+
+    Pattern:
+    - MudDataGrid con virtualization e filtro testo libero (RagioneSociale,
+      PIVA, Email, City).
+    - Toolbar con "Aggiungi" sempre attivo; "Modifica"/"Elimina" visibili
+      solo quando c'è una riga selezionata (pattern visibility-driven da
+      CLAUDE.md).
+    - Responsive: scroll orizzontale + sticky della prima colonna
+      (RagioneSociale, "chiave umana" — vedi ADR D15).
+    - Aggiungi/Modifica aprono lo stesso dialog (AnagraficaFormDialog),
+      che gestisce entrambi i flussi via parametro IsModifica.
+    - Elimina chiede conferma con MudMessageBox.
+*@
+
+@page "/anagrafiche"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@inject IAnagraficaManager AnagraficaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<PageTitle>Anagrafiche · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Anagrafiche clienti</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per ragione sociale, P.IVA, email…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="200"
+                      Style="min-width: 280px; flex: 1;" />
+
+        <MudSelect T="TipoAnagrafica?"
+                   @bind-Value="_filtroTipo"
+                   Label="Tipologia"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Clearable="true"
+                   Style="min-width: 180px;">
+            <MudSelectItem T="TipoAnagrafica?" Value="@((TipoAnagrafica?)TipoAnagrafica.Societa)">Società</MudSelectItem>
+            <MudSelectItem T="TipoAnagrafica?" Value="@((TipoAnagrafica?)TipoAnagrafica.Privato)">Privato</MudSelectItem>
+            <MudSelectItem T="TipoAnagrafica?" Value="@((TipoAnagrafica?)TipoAnagrafica.EntePubblico)">Ente pubblico</MudSelectItem>
+        </MudSelect>
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionata is not null)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Ripple="false"
+                       OnClick="ApriDialogModifica">
+                Modifica
+            </MudButton>
+
+            @if (_selezionataEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           Ripple="false"
+                           OnClick="ConfermaEdElimina">
+                    Elimina
+                </MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="Anagrafica"
+             Items="@AnagraficheFiltrate"
+             Dense="true"
+             Hover="true"
+             Striped="false"
+             Bordered="false"
+             FixedHeader="true"
+             Height="calc(100vh - 280px)"
+             Virtualize="true"
+             ItemSize="40"
+             SelectedItem="_selezionata"
+             SelectedItemChanged="OnSelezionataChanged"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        @* Prima colonna "sticky" su mobile: la ragione sociale è la
+           chiave umana che permette di non perdere il contesto durante
+           lo scroll orizzontale (ADR D15). *@
+        <PropertyColumn Property="x => x.RagioneSociale"
+                        Title="Ragione sociale"
+                        StickyLeft="true" />
+        <TemplateColumn Title="Tipo">
+            <CellTemplate>
+                <MudChip T="string"
+                         Color="@TipoColor(context.Item.TipoAnagrafica)"
+                         Size="Size.Small"
+                         Variant="Variant.Text">
+                    @context.Item.TipoAnagrafica.Descrizione()
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.PIVA"        Title="P.IVA / CF" />
+        <PropertyColumn Property="x => x.City"        Title="Città" />
+        <PropertyColumn Property="x => x.Provincia"   Title="Prov." />
+        <PropertyColumn Property="x => x.SiglaPaese"  Title="Paese" />
+        <PropertyColumn Property="x => x.Email"       Title="Email" />
+        <PropertyColumn Property="x => x.Telefono"    Title="Telefono" />
+    </Columns>
+    <NoRecordsContent>
+        <MudText>Nessuna anagrafica trovata.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Caricamento in corso…</MudText>
+    </LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<Anagrafica> _anagrafiche = Array.Empty<Anagrafica>();
+    private Anagrafica? _selezionata;
+    private bool _selezionataEliminabile;
+    private string _filtro = string.Empty;
+    private TipoAnagrafica? _filtroTipo;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RicaricaAsync();
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _anagrafiche = await AnagraficaManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "Anagrafiche.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private IEnumerable<Anagrafica> AnagraficheFiltrate
+    {
+        get
+        {
+            IEnumerable<Anagrafica> q = _anagrafiche;
+            if (_filtroTipo is not null)
+            {
+                q = q.Where(a => a.TipoAnagrafica == _filtroTipo);
+            }
+            if (!string.IsNullOrWhiteSpace(_filtro))
+            {
+                var f = _filtro.Trim();
+                q = q.Where(a =>
+                    (a.RagioneSociale?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (a.PIVA?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (a.Email?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (a.City?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            return q;
+        }
+    }
+
+    private async Task OnSelezionataChanged(Anagrafica? a)
+    {
+        _selezionata = a;
+        if (a is null)
+        {
+            _selezionataEliminabile = false;
+        }
+        else
+        {
+            _selezionataEliminabile = await AnagraficaManager.EEliminabileAsync(a.IdAnagrafica);
+        }
+    }
+
+    private string RigaClass(Anagrafica a, int _) =>
+        _selezionata is not null && _selezionata.IdAnagrafica == a.IdAnagrafica
+            ? "mud-selected-item"
+            : string.Empty;
+
+    private static Color TipoColor(TipoAnagrafica tipo) => tipo switch
+    {
+        TipoAnagrafica.Societa      => Color.Primary,
+        TipoAnagrafica.Privato      => Color.Default,
+        TipoAnagrafica.EntePubblico => Color.Secondary,
+        _ => Color.Default,
+    };
+
+    private async Task ApriDialogAggiungi()
+    {
+        var parameters = new DialogParameters<AnagraficaFormDialog>
+        {
+            { x => x.Iniziale, null },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await DialogService.ShowAsync<AnagraficaFormDialog>("Aggiungi anagrafica", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Anagrafica creata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica()
+    {
+        if (_selezionata is null) return;
+        var parameters = new DialogParameters<AnagraficaFormDialog>
+        {
+            { x => x.Iniziale, _selezionata },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await DialogService.ShowAsync<AnagraficaFormDialog>("Modifica anagrafica", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Anagrafica aggiornata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina()
+    {
+        if (_selezionata is null) return;
+        var conferma = await DialogService.ShowMessageBoxAsync(
+            title: "Eliminare anagrafica?",
+            markupMessage: new MarkupString(
+                $"Stai per eliminare <b>{_selezionata.RagioneSociale}</b>. L'operazione non è reversibile."),
+            yesText: "Elimina",
+            cancelText: "Annulla");
+        if (conferma != true) return;
+
+        try
+        {
+            await AnagraficaManager.EliminaAsync(_selezionata.IdAnagrafica);
+            Snackbar.Add("Anagrafica eliminata.", MudBlazor.Severity.Success);
+            _selezionata = null;
+            await RicaricaAsync();
+        }
+        catch (AnagraficaConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: esistono entità collegate.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "Anagrafiche.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

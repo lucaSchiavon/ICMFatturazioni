@@ -23,7 +23,11 @@
 </head>
 
 <body>
-    <Routes />
+    @* InteractiveServer applicato globalmente: i MudBlazor provider in
+       MainLayout (Dialog, Snackbar, Popover, Theme) richiedono modalità
+       interattiva per funzionare. Il form /login resta funzionante perché
+       fa POST HTML standard a /auth/login, indipendente dal rendermode. *@
+    <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>

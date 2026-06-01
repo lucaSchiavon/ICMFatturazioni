@@ -68,6 +68,11 @@ builder.Services.AddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
 // Scoped per i repository di dominio: una istanza per request HTTP /
 // circuit Blazor, coerente con la durata della connessione SQL.
 builder.Services.AddScoped<IUtenteRepository, UtenteRepository>();
+builder.Services.AddScoped<IAnagraficaRepository, AnagraficaRepository>();
+
+// LookupRepository singleton: read-only, stateless, dipende solo dalla
+// SqlConnectionFactory; alimenta dropdown su più maschere.
+builder.Services.AddSingleton<ILookupRepository, LookupRepository>();
 
 // ErrorLogRepository singleton: non ha stato, dipende solo dalla
 // ISqlConnectionFactory (anch'essa singleton) e crea una connessione
@@ -78,6 +83,7 @@ builder.Services.AddSingleton<IErrorLogRepository, ErrorLogRepository>();
 
 // === Manager ===
 builder.Services.AddScoped<IUtenteManager, UtenteManager>();
+builder.Services.AddScoped<IAnagraficaManager, AnagraficaManager>();
 
 // === Diagnostica / logging errori (Regola 6) ===
 // IErrorLogger singleton: è il canale "infallibile" usato da middleware,

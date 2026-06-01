@@ -431,7 +431,7 @@ Se incontri un caso non coperto da nessuno dei tre, **segnalalo** prima di inven
 
 ### Decisioni ancora aperte
 
-- **D8 — Campi `IdCodiceMerce` / `ResaMerce` in `Anagrafica`**: in attesa di chiarimento da Roberto (collega utente). Prima di scrivere l'entità `Anagrafica` (Fase 2), **richiedere esplicitamente** la decisione all'utente. Vedi memoria `porting_open_items.md`.
+(nessuna al momento — D8 chiusa il 2026-05-20 con scelta "ometti", vedi ADR)
 
 ## Roadmap di porting
 

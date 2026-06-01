@@ -1,0 +1,82 @@
+namespace ICMFatturazioni.Web.Entities;
+
+/// <summary>
+/// Anagrafica cliente — entità principale del modulo. POCO senza
+/// dipendenze da Dapper, EF, ASP.NET.
+/// </summary>
+/// <remarks>
+/// I campi <c>IdPag</c>, <c>IdBancaAppoggio</c>, <c>IdCodiciIVA</c>,
+/// <c>IdTipologieClientela</c> non hanno FK in migration 005: le tabelle
+/// parent verranno create in Fase 3. Le FK sono additive — verranno
+/// aggiunte con migration ALTER TABLE. Fino ad allora i valori sono
+/// "puntatori liberi" e la responsabilità di mantenerli coerenti è del
+/// codice applicativo.
+/// </remarks>
+public sealed class Anagrafica
+{
+    /// <summary>Chiave primaria identity.</summary>
+    public int IdAnagrafica { get; init; }
+
+    /// <summary>
+    /// Tipologia: Società / Privato / Ente pubblico.
+    /// Persistita come <c>CHAR(1)</c> sul DB tramite
+    /// <see cref="TipoAnagraficaExtensions.ToDbCode"/>.
+    /// </summary>
+    public required TipoAnagrafica TipoAnagrafica { get; init; }
+
+    /// <summary>
+    /// Ragione sociale (società/enti) o nome+cognome (privati).
+    /// Campo obbligatorio, sfondo verde nella UI legacy.
+    /// </summary>
+    public required string RagioneSociale { get; init; }
+
+    public string? Indirizzo { get; init; }
+    public string? CAP { get; init; }
+    public string? City { get; init; }
+
+    /// <summary>Sigla provincia (FK → <c>sta.Province.Prov</c>).</summary>
+    public string? Provincia { get; init; }
+
+    /// <summary>
+    /// Codice paese ISO-2 (FK → <c>sta.Paesi.CodicePaese</c>).
+    /// Default applicativo: <c>"IT"</c> (decisione D14: l'azienda lavora
+    /// prevalentemente con clienti italiani).
+    /// </summary>
+    public string SiglaPaese { get; init; } = "IT";
+
+    public string? Telefono { get; init; }
+    public string? Cellulare { get; init; }
+    public string? Fax { get; init; }
+    public string? Email { get; init; }
+
+    /// <summary>
+    /// Campo unificato Partita IVA / Codice Fiscale. NVARCHAR(20) sul DB:
+    /// copre sia PIVA (11 cifre) che CF (16 caratteri).
+    /// </summary>
+    public string? PIVA { get; init; }
+
+    /// <summary>Riferimento operativo (es. "Ufficio acquisti — sig. Rossi").</summary>
+    public string? Contatto { get; init; }
+
+    /// <summary>Codice del pagamento associato (FK futura).</summary>
+    public int? IdPag { get; init; }
+    /// <summary>Banca di appoggio del cliente (FK futura).</summary>
+    public int? IdBancaAppoggio { get; init; }
+    /// <summary>Codice IVA di default (FK futura).</summary>
+    public int? IdCodiciIVA { get; init; }
+    /// <summary>Tipologia clientela Agenzia Entrate (FK futura).</summary>
+    public int? IdTipologieClientela { get; init; }
+
+    /// <summary>Codice destinatario SDI per fatturazione elettronica (7 char).</summary>
+    public string? CodiceDestinatario { get; init; }
+
+    /// <summary>
+    /// PEC alternativa al codice destinatario per fatturazione elettronica.
+    /// Refuso "PerFatturaEletronica" del DB legacy corretto come da
+    /// CLAUDE.md.
+    /// </summary>
+    public string? PECFatturaElettronica { get; init; }
+
+    /// <summary>Audit timestamp UTC.</summary>
+    public DateTime DataRecord { get; init; }
+}
