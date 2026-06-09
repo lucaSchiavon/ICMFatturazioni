@@ -5,7 +5,7 @@ using ICMFatturazioni.Web.Repositories.Interfaces;
 namespace ICMFatturazioni.Web.Repositories;
 
 /// <summary>
-/// Lettura dei lookup <c>sta.*</c> per i dropdown delle maschere.
+/// Lettura dei lookup <c>fatt.*</c> per i dropdown delle maschere.
 /// Stateless, registrato singleton: i lookup non cambiano spesso e
 /// vengono ri-letti ad ogni apertura del form (potenzialmente con
 /// caching in futuro).
@@ -24,7 +24,7 @@ internal sealed class LookupRepository : ILookupRepository
     // riduce gli scroll inutili nei dropdown.
     private const string SqlPaesi = """
         SELECT CodicePaese AS Codice, Paese AS Descrizione
-        FROM sta.Paesi
+        FROM fatt.Paesi
         ORDER BY CASE WHEN CodicePaese = N'IT' THEN 0 ELSE 1 END, Paese;
         """;
 
@@ -38,7 +38,7 @@ internal sealed class LookupRepository : ILookupRepository
 
     private const string SqlProvince = """
         SELECT Prov AS Codice, Provincia AS Descrizione
-        FROM sta.Province
+        FROM fatt.Province
         WHERE Provincia IS NOT NULL
         ORDER BY Provincia;
         """;

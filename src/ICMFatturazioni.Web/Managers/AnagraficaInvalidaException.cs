@@ -12,14 +12,14 @@ public enum AnagraficaInvalidaMotivo
     RagioneSocialeObbligatoria,
 
     /// <summary>
-    /// La sigla paese non corrisponde a nessun record di <c>sta.Paesi</c>
+    /// La sigla paese non corrisponde a nessun record di <c>fatt.Paesi</c>
     /// (intercettata via FK constraint).
     /// </summary>
     PaeseInesistente,
 
     /// <summary>
     /// La sigla provincia non corrisponde a nessun record di
-    /// <c>sta.Province</c> (intercettata via FK constraint).
+    /// <c>fatt.Province</c> (intercettata via FK constraint).
     /// </summary>
     ProvinciaInesistente,
 }
@@ -53,9 +53,9 @@ public sealed class AnagraficaInvalidaException : Exception
 /// </summary>
 public sealed class AnagraficaConDipendenzeException : Exception
 {
-    public int IdAnagrafica { get; }
+    public Guid IdAnagrafica { get; }
 
-    public AnagraficaConDipendenzeException(int idAnagrafica)
+    public AnagraficaConDipendenzeException(Guid idAnagrafica)
         : base($"L'anagrafica {idAnagrafica} non può essere eliminata perché è referenziata da altre entità.")
     {
         IdAnagrafica = idAnagrafica;

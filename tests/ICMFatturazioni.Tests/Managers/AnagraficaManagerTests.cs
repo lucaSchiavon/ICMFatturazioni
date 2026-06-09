@@ -78,7 +78,7 @@ public class AnagraficaManagerTests
 
         var id = await sut.CreaAsync(AnagraficaValida());
 
-        Assert.True(id > 0);
+        Assert.NotEqual(Guid.Empty, id);
         var persistita = await fake.GetByIdAsync(id);
         Assert.NotNull(persistita);
         Assert.Equal("Acme S.r.l.", persistita!.RagioneSociale);
@@ -123,7 +123,7 @@ public class AnagraficaManagerTests
     }
 
     [Fact]
-    public async Task EliminaAsync_SenzaDipendenze_RimuoveLaRigaDalRepository()
+    public async Task EliminaAsync_SenzaDipendenze_DisattivaLaRiga()
     {
         var fake = new FakeAnagraficaRepository();
         var sut = new AnagraficaManager(fake);
@@ -131,7 +131,12 @@ public class AnagraficaManagerTests
 
         await sut.EliminaAsync(id);
 
-        Assert.Null(await fake.GetByIdAsync(id));
+        // Soft-delete (ADR D22): la riga resta nel repository ma disattivata,
+        // e non compare più nell'elenco (che restituisce solo le attive).
+        var persistita = await fake.GetByIdAsync(id);
+        Assert.NotNull(persistita);
+        Assert.False(persistita!.IsAttivo);
+        Assert.DoesNotContain(await sut.ElencoAsync(), a => a.IdAnagrafica == id);
     }
 
     [Fact]

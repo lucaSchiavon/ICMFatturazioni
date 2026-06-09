@@ -1,12 +1,13 @@
 -- =============================================================================
--- Migration 005 — Tabella ana.Anagrafica
+-- Migration 005 — Tabella fatt.Anagrafica
 -- =============================================================================
 -- Scopo
 --   Tabella principale del modulo Anagrafica clienti. Replica lo schema
 --   del DB Access originale (vedi `Schema database.png`) con le seguenti
 --   normalizzazioni:
 --
---   1) Schema `ana` (ADR D2) anziché prefisso nel nome.
+--   1) Schema applicativo unico `fatt` (namespace dell'app, vista la futura
+--      convergenza col DB di ICMVerbali) anziché prefisso nel nome.
 --   2) Refuso `PerFatturaEletronica` corretto in `PECFatturaElettronica`
 --      (decisione in CLAUDE.md "Schema database").
 --   3) Campi `IdCodiceMerce` e `ResaMerce` OMESSI (ADR D8 chiusa il
@@ -17,21 +18,23 @@
 --      enum a livello DB, non FK verso tabella lookup.
 --   5) `SiglaPaese` default `IT` (D14 + descrizione funzionale: l'azienda
 --      lavora prevalentemente con clienti italiani).
---   6) Audit timestamp `DataRecord` con DATETIME2(3) DEFAULT SYSUTCDATETIME()
---      (D9): qui ha senso perché Anagrafica è tabella volatile e auditabile.
+--   6) PK `UNIQUEIDENTIFIER` (GUID UUIDv7 generato app-side con
+--      Guid.CreateVersion7()) e soft-delete `IsAttivo BIT DEFAULT 1`,
+--      uniformità con ICMVerbali (ADR D22). Niente `DataRecord` per-riga:
+--      l'audit "chi-ha-fatto-cosa" sarà centralizzato in fatt.Audit.
 --
 -- Foreign Key
---   FK_Anagrafica_Paesi:    SiglaPaese → sta.Paesi(CodicePaese)
---   FK_Anagrafica_Province: Provincia  → sta.Province(Prov)
+--   FK_Anagrafica_Paesi:    SiglaPaese → fatt.Paesi(CodicePaese)
+--   FK_Anagrafica_Province: Provincia  → fatt.Province(Prov)
 --
 --   I campi IdPag / IdCodiciIVA / IdBancaAppoggio / IdTipologieClientela
---   restano come INT nullable **senza FK** in questa migration: le tabelle
+--   restano come UNIQUEIDENTIFIER nullable **senza FK** in questa migration: le tabelle
 --   parent verranno create in Fase 3 (Codici pagamento, Banche, Codici IVA,
 --   Tipologie clientela). La FK sarà aggiunta da una migration successiva
 --   con ALTER TABLE ADD CONSTRAINT — additiva, non distruttiva.
 --
 -- Rollback
---   DROP TABLE ana.Anagrafica;
+--   DROP TABLE fatt.Anagrafica;
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -41,11 +44,11 @@ SET XACT_ABORT ON;
 SET QUOTED_IDENTIFIER ON;
 GO
 
-IF OBJECT_ID(N'ana.Anagrafica', N'U') IS NULL
+IF OBJECT_ID(N'fatt.Anagrafica', N'U') IS NULL
 BEGIN
-    CREATE TABLE ana.Anagrafica
+    CREATE TABLE fatt.Anagrafica
     (
-        IdAnagrafica            INT             IDENTITY(1,1) NOT NULL,
+        IdAnagrafica            UNIQUEIDENTIFIER NOT NULL,
         TipoAnagrafica          CHAR(1)         NOT NULL,
         RagioneSociale          NVARCHAR(200)   NOT NULL,
         Indirizzo               NVARCHAR(200)   NULL,
@@ -59,25 +62,27 @@ BEGIN
         Email                   NVARCHAR(200)   NULL,
         PIVA                    NVARCHAR(20)    NULL,
         Contatto                NVARCHAR(200)   NULL,
-        IdPag                   INT             NULL,
-        IdBancaAppoggio         INT             NULL,
-        IdCodiciIVA             INT             NULL,
-        IdTipologieClientela    INT             NULL,
+        IdPag                   UNIQUEIDENTIFIER NULL,
+        IdBancaAppoggio         UNIQUEIDENTIFIER NULL,
+        IdCodiciIVA             UNIQUEIDENTIFIER NULL,
+        IdTipologieClientela    UNIQUEIDENTIFIER NULL,
         CodiceDestinatario      NVARCHAR(10)    NULL,
         PECFatturaElettronica   NVARCHAR(200)   NULL,
-        DataRecord              DATETIME2(3)    NOT NULL CONSTRAINT DF_Anagrafica_DataRecord DEFAULT (SYSUTCDATETIME()),
+        -- Soft-delete (ADR D22, uniformità con ICMVerbali): le anagrafiche non
+        -- si cancellano fisicamente, si disattivano (IsAttivo = 0).
+        IsAttivo                BIT             NOT NULL CONSTRAINT DF_Anagrafica_IsAttivo DEFAULT (1),
 
         CONSTRAINT PK_Anagrafica                PRIMARY KEY CLUSTERED (IdAnagrafica),
         CONSTRAINT CK_Anagrafica_TipoAnagrafica CHECK (TipoAnagrafica IN ('S', 'P', 'E')),
-        CONSTRAINT FK_Anagrafica_Paesi          FOREIGN KEY (SiglaPaese) REFERENCES sta.Paesi    (CodicePaese),
-        CONSTRAINT FK_Anagrafica_Province       FOREIGN KEY (Provincia)  REFERENCES sta.Province (Prov)
+        CONSTRAINT FK_Anagrafica_Paesi          FOREIGN KEY (SiglaPaese) REFERENCES fatt.Paesi    (CodicePaese),
+        CONSTRAINT FK_Anagrafica_Province       FOREIGN KEY (Provincia)  REFERENCES fatt.Province (Prov)
     );
 
     -- Indici per le query frequenti:
     -- * Filtro tipologia + ricerca alfabetica per ragione sociale (caso
     --   tipico della maschera elenco: "tutti i privati ordinati per nome").
     CREATE INDEX IX_Anagrafica_TipoAnagrafica_RagioneSociale
-        ON ana.Anagrafica (TipoAnagrafica, RagioneSociale);
+        ON fatt.Anagrafica (TipoAnagrafica, RagioneSociale);
 END
 GO
 
@@ -89,11 +94,11 @@ GO
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes
     WHERE name = N'IX_Anagrafica_PIVA'
-      AND object_id = OBJECT_ID(N'ana.Anagrafica')
+      AND object_id = OBJECT_ID(N'fatt.Anagrafica')
 )
 BEGIN
     CREATE INDEX IX_Anagrafica_PIVA
-        ON ana.Anagrafica (PIVA)
+        ON fatt.Anagrafica (PIVA)
         WHERE PIVA IS NOT NULL;
 END
 GO

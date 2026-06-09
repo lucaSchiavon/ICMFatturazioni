@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 003 — Tabella dbo.LogErrors (Regola 6 di CLAUDE.md)
+-- Migration 003 — Tabella fatt.LogErrors (Regola 6 di CLAUDE.md)
 -- =============================================================================
 -- Scopo
 --   Persistere ogni eccezione di runtime sollevata dall'app (UI Blazor,
@@ -31,16 +31,16 @@
 --   schema.
 --
 -- Rollback
---   DROP TABLE dbo.LogErrors;
+--   DROP TABLE fatt.LogErrors;
 -- =============================================================================
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 GO
 
-IF OBJECT_ID(N'dbo.LogErrors', N'U') IS NULL
+IF OBJECT_ID(N'fatt.LogErrors', N'U') IS NULL
 BEGIN
-    CREATE TABLE dbo.LogErrors
+    CREATE TABLE fatt.LogErrors
     (
         Id                          BIGINT          IDENTITY(1,1) NOT NULL,
         TimestampUtc                DATETIME2(3)    NOT NULL CONSTRAINT DF_LogErrors_TimestampUtc DEFAULT (SYSUTCDATETIME()),
@@ -65,7 +65,7 @@ BEGIN
         CONSTRAINT PK_LogErrors PRIMARY KEY CLUSTERED (Id)
     );
 
-    CREATE INDEX IX_LogErrors_TimestampUtc  ON dbo.LogErrors (TimestampUtc DESC);
-    CREATE INDEX IX_LogErrors_ExceptionType ON dbo.LogErrors (ExceptionType);
+    CREATE INDEX IX_LogErrors_TimestampUtc  ON fatt.LogErrors (TimestampUtc DESC);
+    CREATE INDEX IX_LogErrors_ExceptionType ON fatt.LogErrors (ExceptionType);
 END
 GO

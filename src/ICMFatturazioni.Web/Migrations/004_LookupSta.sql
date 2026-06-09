@@ -3,11 +3,11 @@
 -- =============================================================================
 -- Scopo
 --   Importa le 5 tabelle di lookup dal sorgente legacy
---   `TabelleLookupMancanti.sql` (UTF-16, schema dbo originale) nel nuovo
---   schema `sta` con le seguenti normalizzazioni rispetto al sorgente:
+--   `TabelleLookupMancanti.sql` (UTF-16, schema dbo originale) nello schema
+--   applicativo `fatt` con le seguenti normalizzazioni rispetto al sorgente:
 --
---     1) Nomi tabella senza prefisso `STA-` né `STA-FE_` (lo schema sta
---        sostituisce il prefisso, ADR D2).
+--     1) Nomi tabella senza prefisso `STA-` né `STA-FE_` (lo schema fatt
+--        sostituisce il prefisso; namespace applicativo unico).
 --     2) Colonna `DataRecord` ridichiarata come
 --        `DATETIME2(3) NOT NULL DEFAULT SYSUTCDATETIME()` (ADR D5 / D9):
 --        evitiamo il tipo user-defined `dbo.DataRecord` del DB legacy.
@@ -23,9 +23,9 @@
 --   incrementali, non modifiche a questo file.
 --
 -- Rollback
---   DROP TABLE sta.Province; DROP TABLE sta.Paesi;
---   DROP TABLE sta.NatureIVA; DROP TABLE sta.ModalitaPagamento;
---   DROP TABLE sta.CondizioniPagamento;
+--   DROP TABLE fatt.Province; DROP TABLE fatt.Paesi;
+--   DROP TABLE fatt.NatureIVA; DROP TABLE fatt.ModalitaPagamento;
+--   DROP TABLE fatt.CondizioniPagamento;
 -- =============================================================================
 
 SET NOCOUNT ON;
@@ -33,60 +33,60 @@ SET XACT_ABORT ON;
 GO
 
 -- ---------------------------------------------------------------------------
--- sta.CondizioniPagamento (codici Agenzia Entrate TP01..TP03 al 2019;
+-- fatt.CondizioniPagamento (codici Agenzia Entrate TP01..TP03 al 2019;
 -- catalogo "fisso" ma estendibile per nuove condizioni future)
 -- ---------------------------------------------------------------------------
-IF OBJECT_ID(N'sta.CondizioniPagamento', N'U') IS NULL
+IF OBJECT_ID(N'fatt.CondizioniPagamento', N'U') IS NULL
 BEGIN
-    CREATE TABLE sta.CondizioniPagamento
+    CREATE TABLE fatt.CondizioniPagamento
     (
         IdCondizionePagamento INT             IDENTITY(1,1) NOT NULL,
         Codice                NCHAR(4)        NOT NULL,
         Descrizione           NVARCHAR(50)    NOT NULL,
-        DataRecord            DATETIME2(3)    NOT NULL CONSTRAINT DF_sta_CondizioniPagamento_DataRecord DEFAULT (SYSUTCDATETIME()),
+        DataRecord            DATETIME2(3)    NOT NULL CONSTRAINT DF_fatt_CondizioniPagamento_DataRecord DEFAULT (SYSUTCDATETIME()),
 
-        CONSTRAINT PK_sta_CondizioniPagamento        PRIMARY KEY CLUSTERED (IdCondizionePagamento),
-        CONSTRAINT UX_sta_CondizioniPagamento_Codice UNIQUE (Codice)
+        CONSTRAINT PK_fatt_CondizioniPagamento        PRIMARY KEY CLUSTERED (IdCondizionePagamento),
+        CONSTRAINT UX_fatt_CondizioniPagamento_Codice UNIQUE (Codice)
     );
 END
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sta.CondizioniPagamento)
+IF NOT EXISTS (SELECT 1 FROM fatt.CondizioniPagamento)
 BEGIN
-    SET IDENTITY_INSERT sta.CondizioniPagamento ON;
+    SET IDENTITY_INSERT fatt.CondizioniPagamento ON;
 
-    INSERT INTO sta.CondizioniPagamento (IdCondizionePagamento, Codice, Descrizione) VALUES
+    INSERT INTO fatt.CondizioniPagamento (IdCondizionePagamento, Codice, Descrizione) VALUES
     (1, N'TP01', N'Pagamento a rate'),
     (2, N'TP02', N'Pagamento completo'),
     (3, N'TP03', N'Anticipo');
 
-    SET IDENTITY_INSERT sta.CondizioniPagamento OFF;
+    SET IDENTITY_INSERT fatt.CondizioniPagamento OFF;
 END
 GO
 
 -- ---------------------------------------------------------------------------
--- sta.ModalitaPagamento (codici Agenzia Entrate MP01..MP22 al 2019)
+-- fatt.ModalitaPagamento (codici Agenzia Entrate MP01..MP22 al 2019)
 -- ---------------------------------------------------------------------------
-IF OBJECT_ID(N'sta.ModalitaPagamento', N'U') IS NULL
+IF OBJECT_ID(N'fatt.ModalitaPagamento', N'U') IS NULL
 BEGIN
-    CREATE TABLE sta.ModalitaPagamento
+    CREATE TABLE fatt.ModalitaPagamento
     (
         IdModalitaPagamento INT             IDENTITY(1,1) NOT NULL,
         Codice              NCHAR(4)        NOT NULL,
         Descrizione         NVARCHAR(50)    NOT NULL,
-        DataRecord          DATETIME2(3)    NOT NULL CONSTRAINT DF_sta_ModalitaPagamento_DataRecord DEFAULT (SYSUTCDATETIME()),
+        DataRecord          DATETIME2(3)    NOT NULL CONSTRAINT DF_fatt_ModalitaPagamento_DataRecord DEFAULT (SYSUTCDATETIME()),
 
-        CONSTRAINT PK_sta_ModalitaPagamento        PRIMARY KEY CLUSTERED (IdModalitaPagamento),
-        CONSTRAINT UX_sta_ModalitaPagamento_Codice UNIQUE (Codice)
+        CONSTRAINT PK_fatt_ModalitaPagamento        PRIMARY KEY CLUSTERED (IdModalitaPagamento),
+        CONSTRAINT UX_fatt_ModalitaPagamento_Codice UNIQUE (Codice)
     );
 END
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sta.ModalitaPagamento)
+IF NOT EXISTS (SELECT 1 FROM fatt.ModalitaPagamento)
 BEGIN
-    SET IDENTITY_INSERT sta.ModalitaPagamento ON;
+    SET IDENTITY_INSERT fatt.ModalitaPagamento ON;
 
-    INSERT INTO sta.ModalitaPagamento (IdModalitaPagamento, Codice, Descrizione) VALUES
+    INSERT INTO fatt.ModalitaPagamento (IdModalitaPagamento, Codice, Descrizione) VALUES
     (1, N'MP01', N'Contanti'),
     (2, N'MP02', N'Assegno'),
     (3, N'MP03', N'Assegno circolare'),
@@ -110,36 +110,36 @@ BEGIN
     (21, N'MP21', N'SEPA Direct Debit B2B'),
     (22, N'MP22', N'Trattenuta su somme già riscosse');
 
-    SET IDENTITY_INSERT sta.ModalitaPagamento OFF;
+    SET IDENTITY_INSERT fatt.ModalitaPagamento OFF;
 END
 GO
 
 -- ---------------------------------------------------------------------------
--- sta.NatureIVA (codici Agenzia Entrate N1..N7 al 2019. Le sotto-nature
+-- fatt.NatureIVA (codici Agenzia Entrate N1..N7 al 2019. Le sotto-nature
 -- introdotte dal 2021 — N2.1, N3.1, N6.1, ecc. — non sono nel seed legacy
 -- e dovranno essere aggiunte con una migration successiva, eventualmente
 -- ampliando il tipo della colonna Natura.)
 -- ---------------------------------------------------------------------------
-IF OBJECT_ID(N'sta.NatureIVA', N'U') IS NULL
+IF OBJECT_ID(N'fatt.NatureIVA', N'U') IS NULL
 BEGIN
-    CREATE TABLE sta.NatureIVA
+    CREATE TABLE fatt.NatureIVA
     (
         IdNaturaIVA         INT             IDENTITY(1,1) NOT NULL,
         Natura              NVARCHAR(2)     NOT NULL,
         DescrizioneNatura   NVARCHAR(100)   NOT NULL,
-        DataRecord          DATETIME2(3)    NOT NULL CONSTRAINT DF_sta_NatureIVA_DataRecord DEFAULT (SYSUTCDATETIME()),
+        DataRecord          DATETIME2(3)    NOT NULL CONSTRAINT DF_fatt_NatureIVA_DataRecord DEFAULT (SYSUTCDATETIME()),
 
-        CONSTRAINT PK_sta_NatureIVA        PRIMARY KEY CLUSTERED (IdNaturaIVA),
-        CONSTRAINT UX_sta_NatureIVA_Natura UNIQUE (Natura)
+        CONSTRAINT PK_fatt_NatureIVA        PRIMARY KEY CLUSTERED (IdNaturaIVA),
+        CONSTRAINT UX_fatt_NatureIVA_Natura UNIQUE (Natura)
     );
 END
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sta.NatureIVA)
+IF NOT EXISTS (SELECT 1 FROM fatt.NatureIVA)
 BEGIN
-    SET IDENTITY_INSERT sta.NatureIVA ON;
+    SET IDENTITY_INSERT fatt.NatureIVA ON;
 
-    INSERT INTO sta.NatureIVA (IdNaturaIVA, Natura, DescrizioneNatura) VALUES
+    INSERT INTO fatt.NatureIVA (IdNaturaIVA, Natura, DescrizioneNatura) VALUES
     (1, N'N1', N'Escluse ex art. 15'),
     (2, N'N2', N'Non soggette'),
     (3, N'N3', N'Non imponibili'),
@@ -148,17 +148,17 @@ BEGIN
     (6, N'N6', N'Inversione contabile'),
     (7, N'N7', N'IVA assolta in altro stato UE');
 
-    SET IDENTITY_INSERT sta.NatureIVA OFF;
+    SET IDENTITY_INSERT fatt.NatureIVA OFF;
 END
 GO
 
 -- ---------------------------------------------------------------------------
--- sta.Paesi (catalogo ISO-3166 + flag CE, allineato al sorgente legacy).
+-- fatt.Paesi (catalogo ISO-3166 + flag CE, allineato al sorgente legacy).
 -- Pk: Id (identità). Codice ISO non è chiave PK ma deve restare unique.
 -- ---------------------------------------------------------------------------
-IF OBJECT_ID(N'sta.Paesi', N'U') IS NULL
+IF OBJECT_ID(N'fatt.Paesi', N'U') IS NULL
 BEGIN
-    CREATE TABLE sta.Paesi
+    CREATE TABLE fatt.Paesi
     (
         Id              INT             IDENTITY(1,1) NOT NULL,
         CodicePaese     NVARCHAR(2)     NOT NULL,
@@ -168,19 +168,19 @@ BEGIN
         ISO             NVARCHAR(2)     NULL,
         Cittadinanza    NVARCHAR(50)    NOT NULL,
         Lingua          NVARCHAR(2)     NOT NULL,
-        DataRecord      DATETIME2(3)    NOT NULL CONSTRAINT DF_sta_Paesi_DataRecord DEFAULT (SYSUTCDATETIME()),
+        DataRecord      DATETIME2(3)    NOT NULL CONSTRAINT DF_fatt_Paesi_DataRecord DEFAULT (SYSUTCDATETIME()),
 
-        CONSTRAINT PK_sta_Paesi             PRIMARY KEY CLUSTERED (Id),
-        CONSTRAINT UX_sta_Paesi_CodicePaese UNIQUE (CodicePaese)
+        CONSTRAINT PK_fatt_Paesi             PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT UX_fatt_Paesi_CodicePaese UNIQUE (CodicePaese)
     );
 END
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sta.Paesi)
+IF NOT EXISTS (SELECT 1 FROM fatt.Paesi)
 BEGIN
-    SET IDENTITY_INSERT sta.Paesi ON;
+    SET IDENTITY_INSERT fatt.Paesi ON;
 
-    INSERT INTO sta.Paesi (Id, CodicePaese, Paese, CE, CodicePaese2, ISO, Cittadinanza, Lingua) VALUES
+    INSERT INTO fatt.Paesi (Id, CodicePaese, Paese, CE, CodicePaese2, ISO, Cittadinanza, Lingua) VALUES
     (1, N'AD', N'ANDORRA', 0, NULL, NULL, N'ANDORRA', N'EN'),
     (2, N'AE', N'EMIRATI ARABI UNITI', 0, NULL, NULL, N'EMIRATI ARABI UNITI', N'EN'),
     (3, N'AF', N'AFGHANISTAN', 0, NULL, NULL, N'AFGHANISTAN', N'EN'),
@@ -450,32 +450,32 @@ BEGIN
     (270, N'MC', N'PRINCIPATO DI MONACO', 0, NULL, NULL, N'PRINCIPATO DI MONACO', N'FR'),
     (271, N'ME', N'MONTENEGRO', 0, NULL, NULL, N'MONTENEGRO', N'EN');
 
-    SET IDENTITY_INSERT sta.Paesi OFF;
+    SET IDENTITY_INSERT fatt.Paesi OFF;
 END
 GO
 
 -- ---------------------------------------------------------------------------
--- sta.Province (sigla provincia italiana → descrizione, codice ISTAT,
+-- fatt.Province (sigla provincia italiana → descrizione, codice ISTAT,
 -- regione). PK naturale: Prov (sigla a 2 lettere).
 -- ---------------------------------------------------------------------------
-IF OBJECT_ID(N'sta.Province', N'U') IS NULL
+IF OBJECT_ID(N'fatt.Province', N'U') IS NULL
 BEGIN
-    CREATE TABLE sta.Province
+    CREATE TABLE fatt.Province
     (
         Prov                NVARCHAR(2)     NOT NULL,
         Provincia           NVARCHAR(30)    NULL,
         CodiceProvincia     SMALLINT        NULL,
         IdRegione           INT             NULL,
-        DataRecord          DATETIME2(3)    NOT NULL CONSTRAINT DF_sta_Province_DataRecord DEFAULT (SYSUTCDATETIME()),
+        DataRecord          DATETIME2(3)    NOT NULL CONSTRAINT DF_fatt_Province_DataRecord DEFAULT (SYSUTCDATETIME()),
 
-        CONSTRAINT PK_sta_Province PRIMARY KEY CLUSTERED (Prov)
+        CONSTRAINT PK_fatt_Province PRIMARY KEY CLUSTERED (Prov)
     );
 END
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sta.Province)
+IF NOT EXISTS (SELECT 1 FROM fatt.Province)
 BEGIN
-    INSERT INTO sta.Province (Prov, Provincia, CodiceProvincia, IdRegione) VALUES
+    INSERT INTO fatt.Province (Prov, Provincia, CodiceProvincia, IdRegione) VALUES
     (N'AG', N'AGRIGENTO', 84, 15),
     (N'AL', N'ALESSANDRIA', 6, 12),
     (N'AN', N'ANCONA', 42, 10),

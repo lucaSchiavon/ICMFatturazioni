@@ -22,7 +22,7 @@ internal sealed class ErrorLogRepository : IErrorLogRepository
     }
 
     private const string SqlInsert = """
-        INSERT INTO dbo.LogErrors
+        INSERT INTO fatt.LogErrors
             (TimestampUtc, ExceptionType, [Message], StackTrace,
              InnerExceptionType, InnerExceptionMessage, InnerExceptionStackTrace,
              [Source], DescrizioneEstesa, Contesto, UserId, UserName, RequestPath,

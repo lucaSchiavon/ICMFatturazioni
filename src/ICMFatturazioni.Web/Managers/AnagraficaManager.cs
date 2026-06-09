@@ -32,21 +32,27 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     // ---------------------------------------------------------------------
 
     public Task<IReadOnlyList<Anagrafica>> ElencoAsync(CancellationToken cancellationToken = default)
-        => _repository.GetAllAsync(cancellationToken);
+        => _repository.GetAttiviAsync(cancellationToken);
 
-    public Task<Anagrafica?> GetByIdAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public Task<Anagrafica?> GetByIdAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
         => _repository.GetByIdAsync(idAnagrafica, cancellationToken);
 
     // ---------------------------------------------------------------------
     // Create
     // ---------------------------------------------------------------------
 
-    public async Task<int> CreaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
+    public async Task<Guid> CreaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
     {
         ValidaCampiObbligatori(anagrafica);
+
+        // Generazione PK app-side (GUID UUIDv7 time-ordered, ADR D22): l'Id è
+        // disponibile prima dell'INSERT, niente IDENTITY/OUTPUT.
+        anagrafica.IdAnagrafica = Guid.CreateVersion7();
+
         try
         {
-            return await _repository.InsertAsync(anagrafica, cancellationToken);
+            await _repository.InsertAsync(anagrafica, cancellationToken);
+            return anagrafica.IdAnagrafica;
         }
         catch (SqlException ex) when (ex.Number == SqlErrorConstraintViolation)
         {
@@ -75,31 +81,23 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     // Delete (con doppia difesa)
     // ---------------------------------------------------------------------
 
-    public async Task EliminaAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public async Task EliminaAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
     {
-        // Pre-check: messaggio specifico per l'utente.
+        // Pre-check: messaggio specifico per l'utente. Con il soft-delete
+        // (ADR D22) non c'è violazione FK a valle da intercettare — disattivare
+        // una riga non rompe l'integrità referenziale — ma manteniamo il
+        // pre-check per la regola di dominio "non disattivare un cliente con
+        // attività collegate" (dispensa cap. 3.4) e per il pattern
+        // visibility-driven della UI.
         if (await _repository.HasDipendenzeAsync(idAnagrafica, cancellationToken))
         {
             throw new AnagraficaConDipendenzeException(idAnagrafica);
         }
 
-        // Sentinel: in Fase 3+ il DELETE potrà fallire per FK violations a
-        // valle (DELETE su anagrafica referenziata da un progetto). Quando
-        // accadrà, intercettiamo il 547 e rilanciamo con l'eccezione
-        // tipizzata. Pattern doppia difesa: il pre-check copre la UX, il
-        // catch copre le race condition (qualcuno crea un progetto fra il
-        // pre-check e il DELETE).
-        try
-        {
-            await _repository.DeleteAsync(idAnagrafica, cancellationToken);
-        }
-        catch (SqlException ex) when (ex.Number == SqlErrorConstraintViolation)
-        {
-            throw new AnagraficaConDipendenzeException(idAnagrafica);
-        }
+        await _repository.DisattivaAsync(idAnagrafica, cancellationToken);
     }
 
-    public async Task<bool> EEliminabileAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public async Task<bool> EEliminabileAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
         => !await _repository.HasDipendenzeAsync(idAnagrafica, cancellationToken);
 
     // ---------------------------------------------------------------------

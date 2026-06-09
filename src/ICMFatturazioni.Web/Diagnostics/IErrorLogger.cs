@@ -11,7 +11,7 @@ namespace ICMFatturazioni.Web.Diagnostics;
 public interface IErrorLogger
 {
     /// <summary>
-    /// Persiste un'eccezione su <c>dbo.LogErrors</c>. Se la scrittura su
+    /// Persiste un'eccezione su <c>fatt.LogErrors</c>. Se la scrittura su
     /// DB fallisce per qualunque motivo, esegue fallback su file locale
     /// (<c>logs/error-logger-fallback.log</c>) prima di tornare al chiamante.
     /// <b>Non rilancia mai</b> eccezioni.

@@ -30,7 +30,7 @@ internal sealed class UtenteRepository : IUtenteRepository
         SELECT
             IdUtente, Username, PasswordHash, PasswordSalt, NomeCompleto,
             Email, Attivo, TemaPreferito, DataRecord, UltimoLoginUtc
-        FROM dbo.Utenti
+        FROM fatt.Utenti
         WHERE Username = @Username;
         """;
 
@@ -48,7 +48,7 @@ internal sealed class UtenteRepository : IUtenteRepository
         SELECT
             IdUtente, Username, PasswordHash, PasswordSalt, NomeCompleto,
             Email, Attivo, TemaPreferito, DataRecord, UltimoLoginUtc
-        FROM dbo.Utenti
+        FROM fatt.Utenti
         WHERE IdUtente = @IdUtente;
         """;
 
@@ -68,7 +68,7 @@ internal sealed class UtenteRepository : IUtenteRepository
     // ---------------------------------------------------------------------
 
     private const string SqlInsert = """
-        INSERT INTO dbo.Utenti
+        INSERT INTO fatt.Utenti
             (Username, PasswordHash, PasswordSalt, NomeCompleto, Email,
              Attivo, TemaPreferito)
         OUTPUT INSERTED.IdUtente
@@ -101,7 +101,7 @@ internal sealed class UtenteRepository : IUtenteRepository
     // ---------------------------------------------------------------------
 
     private const string SqlUpdateUltimoLogin = """
-        UPDATE dbo.Utenti
+        UPDATE fatt.Utenti
         SET UltimoLoginUtc = @IstanteUtc
         WHERE IdUtente = @IdUtente;
         """;
@@ -121,7 +121,7 @@ internal sealed class UtenteRepository : IUtenteRepository
     // ---------------------------------------------------------------------
 
     private const string SqlUpdateTemaPreferito = """
-        UPDATE dbo.Utenti
+        UPDATE fatt.Utenti
         SET TemaPreferito = @TemaPreferito
         WHERE IdUtente = @IdUtente;
         """;

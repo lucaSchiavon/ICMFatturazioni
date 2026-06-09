@@ -3,7 +3,7 @@ using ICMFatturazioni.Web.Entities;
 namespace ICMFatturazioni.Web.Repositories.Interfaces;
 
 /// <summary>
-/// Accesso dati alla tabella <c>dbo.Utenti</c>. Esposto al solo
+/// Accesso dati alla tabella <c>fatt.Utenti</c>. Esposto al solo
 /// <see cref="Managers.Interfaces.IUtenteManager"/> per rispettare la
 /// regola "UI → Manager → Repository".
 /// </summary>

@@ -13,7 +13,7 @@
       Salva contestuale"). Non viene nascosto perché MudBlazor non
       supporta nativamente la "comparsa" alla validità — disabilitarlo
       con tooltip è preferibile per evitare layout-shift.
-    - Paese e Provincia sono dropdown da sta.Paesi/sta.Province via
+    - Paese e Provincia sono dropdown da fatt.Paesi/fatt.Province via
       ILookupRepository: l'utente non può inserire valori inesistenti.
     - Tema default Paese = IT (decisione applicativa D14).
 *@
@@ -249,7 +249,7 @@
         _salvataggio = true;
         try
         {
-            var entity = _model.ToEntity(Iniziale?.IdAnagrafica ?? 0);
+            var entity = _model.ToEntity(Iniziale?.IdAnagrafica ?? Guid.Empty);
             if (IsModifica)
             {
                 await AnagraficaManager.AggiornaAsync(entity);
@@ -318,7 +318,7 @@
             PECFatturaElettronica = a.PECFatturaElettronica,
         };
 
-        public Anagrafica ToEntity(int idAnagrafica) => new()
+        public Anagrafica ToEntity(Guid idAnagrafica) => new()
         {
             IdAnagrafica          = idAnagrafica,
             TipoAnagrafica        = TipoAnagrafica,

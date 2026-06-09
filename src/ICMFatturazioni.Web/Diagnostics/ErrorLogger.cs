@@ -57,7 +57,7 @@ internal sealed class ErrorLogger : IErrorLogger
         // Snapshot dei dati di contesto in un LogError immutabile.
         var entry = BuildEntry(ex, contesto, descrizioneEstesa, severity, handled);
 
-        // Tentativo primario: scrittura su dbo.LogErrors.
+        // Tentativo primario: scrittura su fatt.LogErrors.
         var persisted = await _repository.InsertAsync(entry, cancellationToken);
         if (persisted)
         {

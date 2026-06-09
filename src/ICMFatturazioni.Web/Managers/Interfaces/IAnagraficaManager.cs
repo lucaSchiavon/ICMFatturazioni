@@ -17,14 +17,15 @@ public interface IAnagraficaManager
     /// <summary>
     /// Recupera un'anagrafica per id, o <c>null</c> se non esiste.
     /// </summary>
-    Task<Anagrafica?> GetByIdAsync(int idAnagrafica, CancellationToken cancellationToken = default);
+    Task<Anagrafica?> GetByIdAsync(Guid idAnagrafica, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Crea una nuova anagrafica. Esegue le validazioni di forma e
-    /// rilancia <see cref="AnagraficaInvalidaException"/> con motivo
-    /// specifico in caso di errore. Ritorna l'<c>IdAnagrafica</c> assegnato.
+    /// Crea una nuova anagrafica. Genera la PK GUID (UUIDv7 app-side, ADR D22),
+    /// esegue le validazioni di forma e rilancia
+    /// <see cref="AnagraficaInvalidaException"/> con motivo specifico in caso
+    /// di errore. Ritorna l'<c>IdAnagrafica</c> assegnato.
     /// </summary>
-    Task<int> CreaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default);
+    Task<Guid> CreaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Aggiorna un'anagrafica esistente. Stesse validazioni di
@@ -34,16 +35,16 @@ public interface IAnagraficaManager
     Task AggiornaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Elimina un'anagrafica. Solleva
+    /// Elimina (soft-delete: disattiva) un'anagrafica. Solleva
     /// <see cref="AnagraficaConDipendenzeException"/> se l'anagrafica è
     /// referenziata da entità a valle.
     /// </summary>
-    Task EliminaAsync(int idAnagrafica, CancellationToken cancellationToken = default);
+    Task EliminaAsync(Guid idAnagrafica, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Verifica se l'anagrafica è eliminabile (cioè se NON ha dipendenze).
     /// Usata dalla UI per decidere se mostrare il pulsante "Elimina"
     /// (pattern visibility-driven da CLAUDE.md).
     /// </summary>
-    Task<bool> EEliminabileAsync(int idAnagrafica, CancellationToken cancellationToken = default);
+    Task<bool> EEliminabileAsync(Guid idAnagrafica, CancellationToken cancellationToken = default);
 }

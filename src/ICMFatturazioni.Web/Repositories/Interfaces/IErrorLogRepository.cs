@@ -3,7 +3,7 @@ using ICMFatturazioni.Web.Entities;
 namespace ICMFatturazioni.Web.Repositories.Interfaces;
 
 /// <summary>
-/// Repository dedicato per la scrittura su <c>dbo.LogErrors</c>.
+/// Repository dedicato per la scrittura su <c>fatt.LogErrors</c>.
 /// Eccezione esplicita alla regola "1 repository ↔ 1 manager": il
 /// logger è infrastrutturale (singleton iniettato in ogni layer) e non
 /// ha un Manager di dominio corrispondente.

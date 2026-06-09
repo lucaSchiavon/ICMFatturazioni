@@ -32,7 +32,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     // ---------------------------------------------------------------------
     private sealed class AnagraficaRow
     {
-        public int IdAnagrafica { get; init; }
+        public Guid IdAnagrafica { get; init; }
         public string TipoAnagrafica { get; init; } = string.Empty;
         public string RagioneSociale { get; init; } = string.Empty;
         public string? Indirizzo { get; init; }
@@ -46,13 +46,13 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
         public string? Email { get; init; }
         public string? PIVA { get; init; }
         public string? Contatto { get; init; }
-        public int? IdPag { get; init; }
-        public int? IdBancaAppoggio { get; init; }
-        public int? IdCodiciIVA { get; init; }
-        public int? IdTipologieClientela { get; init; }
+        public Guid? IdPag { get; init; }
+        public Guid? IdBancaAppoggio { get; init; }
+        public Guid? IdCodiciIVA { get; init; }
+        public Guid? IdTipologieClientela { get; init; }
         public string? CodiceDestinatario { get; init; }
         public string? PECFatturaElettronica { get; init; }
-        public DateTime DataRecord { get; init; }
+        public bool IsAttivo { get; init; }
     }
 
     private static Anagrafica ToEntity(AnagraficaRow row) => new()
@@ -77,7 +77,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
         IdTipologieClientela  = row.IdTipologieClientela,
         CodiceDestinatario    = row.CodiceDestinatario,
         PECFatturaElettronica = row.PECFatturaElettronica,
-        DataRecord            = row.DataRecord,
+        IsAttivo              = row.IsAttivo,
     };
 
     // SELECT condivisa: definita una volta sola per non divergere fra
@@ -88,20 +88,21 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
             IdAnagrafica, TipoAnagrafica, RagioneSociale, Indirizzo, CAP, City,
             Provincia, SiglaPaese, Telefono, Cellulare, Fax, Email, PIVA,
             Contatto, IdPag, IdBancaAppoggio, IdCodiciIVA, IdTipologieClientela,
-            CodiceDestinatario, PECFatturaElettronica, DataRecord
-        FROM ana.Anagrafica
+            CodiceDestinatario, PECFatturaElettronica, IsAttivo
+        FROM fatt.Anagrafica
         """;
 
     // ---------------------------------------------------------------------
     // Query: elenco completo (ordinato per RagioneSociale)
     // ---------------------------------------------------------------------
 
-    private const string SqlSelectAll = SqlSelectColumns + " ORDER BY RagioneSociale;";
+    // Solo le attive (soft-delete, ADR D22): le disattivate non compaiono in elenco.
+    private const string SqlSelectAttivi = SqlSelectColumns + " WHERE IsAttivo = 1 ORDER BY RagioneSociale;";
 
-    public async Task<IReadOnlyList<Anagrafica>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Anagrafica>> GetAttiviAsync(CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
-        var cmd = new CommandDefinition(SqlSelectAll, cancellationToken: cancellationToken);
+        var cmd = new CommandDefinition(SqlSelectAttivi, cancellationToken: cancellationToken);
         var rows = await connection.QueryAsync<AnagraficaRow>(cmd);
         return rows.Select(ToEntity).ToList();
     }
@@ -112,7 +113,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
 
     private const string SqlSelectById = SqlSelectColumns + " WHERE IdAnagrafica = @IdAnagrafica;";
 
-    public async Task<Anagrafica?> GetByIdAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public async Task<Anagrafica?> GetByIdAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
@@ -127,28 +128,29 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     // Comando: INSERT con OUTPUT
     // ---------------------------------------------------------------------
 
+    // L'IdAnagrafica (GUID UUIDv7) arriva già valorizzato dal manager
+    // (generazione app-side, ADR D22): niente IDENTITY/OUTPUT.
     private const string SqlInsert = """
-        INSERT INTO ana.Anagrafica
-            (TipoAnagrafica, RagioneSociale, Indirizzo, CAP, City, Provincia,
+        INSERT INTO fatt.Anagrafica
+            (IdAnagrafica, TipoAnagrafica, RagioneSociale, Indirizzo, CAP, City, Provincia,
              SiglaPaese, Telefono, Cellulare, Fax, Email, PIVA, Contatto,
              IdPag, IdBancaAppoggio, IdCodiciIVA, IdTipologieClientela,
-             CodiceDestinatario, PECFatturaElettronica)
-        OUTPUT INSERTED.IdAnagrafica
+             CodiceDestinatario, PECFatturaElettronica, IsAttivo)
         VALUES
-            (@TipoAnagrafica, @RagioneSociale, @Indirizzo, @CAP, @City, @Provincia,
+            (@IdAnagrafica, @TipoAnagrafica, @RagioneSociale, @Indirizzo, @CAP, @City, @Provincia,
              @SiglaPaese, @Telefono, @Cellulare, @Fax, @Email, @PIVA, @Contatto,
              @IdPag, @IdBancaAppoggio, @IdCodiciIVA, @IdTipologieClientela,
-             @CodiceDestinatario, @PECFatturaElettronica);
+             @CodiceDestinatario, @PECFatturaElettronica, @IsAttivo);
         """;
 
-    public async Task<int> InsertAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
+    public async Task InsertAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
             SqlInsert,
             parameters: ToParameters(anagrafica),
             cancellationToken: cancellationToken);
-        return await connection.ExecuteScalarAsync<int>(cmd);
+        await connection.ExecuteAsync(cmd);
     }
 
     // ---------------------------------------------------------------------
@@ -156,7 +158,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     // ---------------------------------------------------------------------
 
     private const string SqlUpdate = """
-        UPDATE ana.Anagrafica SET
+        UPDATE fatt.Anagrafica SET
             TipoAnagrafica        = @TipoAnagrafica,
             RagioneSociale        = @RagioneSociale,
             Indirizzo             = @Indirizzo,
@@ -175,7 +177,8 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
             IdCodiciIVA           = @IdCodiciIVA,
             IdTipologieClientela  = @IdTipologieClientela,
             CodiceDestinatario    = @CodiceDestinatario,
-            PECFatturaElettronica = @PECFatturaElettronica
+            PECFatturaElettronica = @PECFatturaElettronica,
+            IsAttivo              = @IsAttivo
         WHERE IdAnagrafica = @IdAnagrafica;
         """;
 
@@ -183,7 +186,6 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var parameters = ToParameters(anagrafica);
-        parameters.Add("IdAnagrafica", anagrafica.IdAnagrafica);
         var cmd = new CommandDefinition(SqlUpdate, parameters, cancellationToken: cancellationToken);
         await connection.ExecuteAsync(cmd);
     }
@@ -192,13 +194,14 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     // Comando: DELETE
     // ---------------------------------------------------------------------
 
-    private const string SqlDelete = "DELETE FROM ana.Anagrafica WHERE IdAnagrafica = @IdAnagrafica;";
+    // Soft-delete (ADR D22): disattiva, non rimuove fisicamente.
+    private const string SqlDisattiva = "UPDATE fatt.Anagrafica SET IsAttivo = 0 WHERE IdAnagrafica = @IdAnagrafica;";
 
-    public async Task DeleteAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public async Task DisattivaAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
-            SqlDelete,
+            SqlDisattiva,
             parameters: new { IdAnagrafica = idAnagrafica },
             cancellationToken: cancellationToken);
         await connection.ExecuteAsync(cmd);
@@ -208,7 +211,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     // Query: dipendenze (placeholder Fase 2)
     // ---------------------------------------------------------------------
 
-    public Task<bool> HasDipendenzeAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public Task<bool> HasDipendenzeAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
     {
         // In Fase 2 non esistono tabelle a valle (Progetti, Avvisi, Fatture).
         // Quando entreranno, la query diventerà tipicamente un UNION ALL di
@@ -225,6 +228,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
     private static DynamicParameters ToParameters(Anagrafica a)
     {
         var p = new DynamicParameters();
+        p.Add("IdAnagrafica",          a.IdAnagrafica);
         // TipoAnagrafica passato come char (CHAR(1) DB). Dapper riconosce
         // char e lo invia come stringa di 1 carattere.
         p.Add("TipoAnagrafica",        a.TipoAnagrafica.ToDbCode());
@@ -246,6 +250,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
         p.Add("IdTipologieClientela",  a.IdTipologieClientela);
         p.Add("CodiceDestinatario",    a.CodiceDestinatario);
         p.Add("PECFatturaElettronica", a.PECFatturaElettronica);
+        p.Add("IsAttivo",              a.IsAttivo);
         return p;
     }
 }

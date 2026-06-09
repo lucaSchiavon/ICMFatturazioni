@@ -14,8 +14,13 @@ namespace ICMFatturazioni.Web.Entities;
 /// </remarks>
 public sealed class Anagrafica
 {
-    /// <summary>Chiave primaria identity.</summary>
-    public int IdAnagrafica { get; init; }
+    /// <summary>
+    /// Chiave primaria GUID (UUIDv7 time-ordered, generato app-side con
+    /// <c>Guid.CreateVersion7()</c> dal manager). Settabile perché il manager
+    /// assegna l'Id in fase di creazione; il resto dell'entità è immutabile.
+    /// Uniformità con ICMVerbali (ADR D22).
+    /// </summary>
+    public Guid IdAnagrafica { get; set; }
 
     /// <summary>
     /// Tipologia: Società / Privato / Ente pubblico.
@@ -34,11 +39,11 @@ public sealed class Anagrafica
     public string? CAP { get; init; }
     public string? City { get; init; }
 
-    /// <summary>Sigla provincia (FK → <c>sta.Province.Prov</c>).</summary>
+    /// <summary>Sigla provincia (FK → <c>fatt.Province.Prov</c>).</summary>
     public string? Provincia { get; init; }
 
     /// <summary>
-    /// Codice paese ISO-2 (FK → <c>sta.Paesi.CodicePaese</c>).
+    /// Codice paese ISO-2 (FK → <c>fatt.Paesi.CodicePaese</c>).
     /// Default applicativo: <c>"IT"</c> (decisione D14: l'azienda lavora
     /// prevalentemente con clienti italiani).
     /// </summary>
@@ -59,13 +64,13 @@ public sealed class Anagrafica
     public string? Contatto { get; init; }
 
     /// <summary>Codice del pagamento associato (FK futura).</summary>
-    public int? IdPag { get; init; }
+    public Guid? IdPag { get; init; }
     /// <summary>Banca di appoggio del cliente (FK futura).</summary>
-    public int? IdBancaAppoggio { get; init; }
+    public Guid? IdBancaAppoggio { get; init; }
     /// <summary>Codice IVA di default (FK futura).</summary>
-    public int? IdCodiciIVA { get; init; }
+    public Guid? IdCodiciIVA { get; init; }
     /// <summary>Tipologia clientela Agenzia Entrate (FK futura).</summary>
-    public int? IdTipologieClientela { get; init; }
+    public Guid? IdTipologieClientela { get; init; }
 
     /// <summary>Codice destinatario SDI per fatturazione elettronica (7 char).</summary>
     public string? CodiceDestinatario { get; init; }
@@ -77,6 +82,9 @@ public sealed class Anagrafica
     /// </summary>
     public string? PECFatturaElettronica { get; init; }
 
-    /// <summary>Audit timestamp UTC.</summary>
-    public DateTime DataRecord { get; init; }
+    /// <summary>
+    /// Soft-delete (ADR D22): <c>true</c> = attiva, <c>false</c> = disattivata.
+    /// Le anagrafiche non si cancellano fisicamente. Default <c>true</c>.
+    /// </summary>
+    public bool IsAttivo { get; init; } = true;
 }

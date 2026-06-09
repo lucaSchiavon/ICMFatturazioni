@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 002 — Tabella dbo.Utenti per autenticazione cookie
+-- Migration 002 — Tabella fatt.Utenti per autenticazione cookie
 -- =============================================================================
 -- Scopo
 --   Crea la tabella che custodisce le credenziali applicative.
@@ -25,16 +25,16 @@
 --     tabella è governata da operazioni manuali di amministratore.
 --
 -- Rollback
---   DROP TABLE dbo.Utenti;
+--   DROP TABLE fatt.Utenti;
 -- =============================================================================
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 GO
 
-IF OBJECT_ID(N'dbo.Utenti', N'U') IS NULL
+IF OBJECT_ID(N'fatt.Utenti', N'U') IS NULL
 BEGIN
-    CREATE TABLE dbo.Utenti
+    CREATE TABLE fatt.Utenti
     (
         IdUtente         INT             IDENTITY(1,1) NOT NULL,
         Username         NVARCHAR(64)    NOT NULL,
@@ -52,6 +52,6 @@ BEGIN
     );
 
     -- Indice unique sullo Username: il login lo usa come chiave logica.
-    CREATE UNIQUE INDEX UX_Utenti_Username ON dbo.Utenti (Username);
+    CREATE UNIQUE INDEX UX_Utenti_Username ON fatt.Utenti (Username);
 END
 GO

@@ -11,27 +11,27 @@ namespace ICMFatturazioni.Tests.Managers;
 /// </summary>
 internal sealed class FakeAnagraficaRepository : IAnagraficaRepository
 {
-    private readonly Dictionary<int, Anagrafica> _store = new();
-    private int _nextId = 1;
+    private readonly Dictionary<Guid, Anagrafica> _store = new();
 
     /// <summary>Set di id che il fake dichiarerà "con dipendenze".</summary>
-    public HashSet<int> DipendenzeDa { get; } = new();
+    public HashSet<Guid> DipendenzeDa { get; } = new();
 
     /// <summary>
-    /// Se valorizzata, la prossima Insert/Update/Delete lancia
+    /// Se valorizzata, la prossima Insert/Update/Disattiva lancia
     /// l'eccezione configurata. Permette di simulare le SqlException
     /// senza dipendere da SqlClient reale.
     /// </summary>
     public Exception? ForzaSqlException { get; set; }
 
-    public Task<IReadOnlyList<Anagrafica>> GetAllAsync(CancellationToken cancellationToken = default)
+    // Solo le attive, come la query reale (WHERE IsAttivo = 1).
+    public Task<IReadOnlyList<Anagrafica>> GetAttiviAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Anagrafica>>(
-            _store.Values.OrderBy(a => a.RagioneSociale).ToList());
+            _store.Values.Where(a => a.IsAttivo).OrderBy(a => a.RagioneSociale).ToList());
 
-    public Task<Anagrafica?> GetByIdAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public Task<Anagrafica?> GetByIdAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
         => Task.FromResult(_store.TryGetValue(idAnagrafica, out var a) ? a : null);
 
-    public Task<int> InsertAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
+    public Task InsertAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
     {
         if (ForzaSqlException is not null)
         {
@@ -39,10 +39,9 @@ internal sealed class FakeAnagraficaRepository : IAnagraficaRepository
             ForzaSqlException = null;
             throw ex;
         }
-        var id = _nextId++;
-        var withId = CloneWith(anagrafica, id);
-        _store[id] = withId;
-        return Task.FromResult(id);
+        // L'IdAnagrafica è già valorizzato dal manager (generazione app-side).
+        _store[anagrafica.IdAnagrafica] = anagrafica;
+        return Task.CompletedTask;
     }
 
     public Task UpdateAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
@@ -57,7 +56,7 @@ internal sealed class FakeAnagraficaRepository : IAnagraficaRepository
         return Task.CompletedTask;
     }
 
-    public Task DeleteAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public Task DisattivaAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
     {
         if (ForzaSqlException is not null)
         {
@@ -65,19 +64,23 @@ internal sealed class FakeAnagraficaRepository : IAnagraficaRepository
             ForzaSqlException = null;
             throw ex;
         }
-        _store.Remove(idAnagrafica);
+        // Soft-delete: la riga resta nello store ma con IsAttivo = false.
+        if (_store.TryGetValue(idAnagrafica, out var a))
+        {
+            _store[idAnagrafica] = CloneInattiva(a);
+        }
         return Task.CompletedTask;
     }
 
-    public Task<bool> HasDipendenzeAsync(int idAnagrafica, CancellationToken cancellationToken = default)
+    public Task<bool> HasDipendenzeAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
         => Task.FromResult(DipendenzeDa.Contains(idAnagrafica));
 
-    // Crea una copia dell'Anagrafica con l'id specificato. Serve perché
-    // Anagrafica è immutabile (init-only): non possiamo settare l'id
-    // dopo costruzione.
-    private static Anagrafica CloneWith(Anagrafica src, int id) => new()
+    // Copia l'Anagrafica con IsAttivo = false. Serve perché l'entità è
+    // immutabile sui campi di contenuto (init-only): non possiamo flippare
+    // IsAttivo in place.
+    private static Anagrafica CloneInattiva(Anagrafica src) => new()
     {
-        IdAnagrafica          = id,
+        IdAnagrafica          = src.IdAnagrafica,
         TipoAnagrafica        = src.TipoAnagrafica,
         RagioneSociale        = src.RagioneSociale,
         Indirizzo             = src.Indirizzo,
@@ -97,6 +100,6 @@ internal sealed class FakeAnagraficaRepository : IAnagraficaRepository
         IdTipologieClientela  = src.IdTipologieClientela,
         CodiceDestinatario    = src.CodiceDestinatario,
         PECFatturaElettronica = src.PECFatturaElettronica,
-        DataRecord            = src.DataRecord,
+        IsAttivo              = false,
     };
 }

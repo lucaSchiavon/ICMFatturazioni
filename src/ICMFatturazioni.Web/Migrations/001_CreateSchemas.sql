@@ -1,48 +1,40 @@
 -- =============================================================================
--- Migration 001 — Creazione degli schemi applicativi
+-- Migration 001 — Creazione dello schema applicativo
 -- =============================================================================
 -- Scopo
---   Predispone i tre schemi SQL Server su cui poggiano tutte le tabelle
---   dell'applicazione, in coerenza con la convenzione di porting D2:
+--   Predispone l'UNICO schema SQL Server su cui poggiano TUTTE le tabelle
+--   di ICMFatturazioni:
 --
---     sta.*  tabelle di stato/lookup (Paesi, Province, NatureIVA, ...)
---     ana.*  anagrafiche (clienti, fornitori, ...)
---     fat.*  fatturazione (testate, righe, scadenze, ...)
+--     fatt.*   namespace applicativo dell'intero gestionale di fatturazione
+--              (anagrafiche, lookup di stato, codici IVA/pagamento, banche,
+--              attività, utenti, log errori, ...).
 --
---   Le tabelle trasversali (Utenti, LogErrors) rimangono nello schema dbo
---   per riflettere la loro natura infrastrutturale.
+-- Perché uno schema unico (supera la vecchia convenzione sta/ana/fat — ADR D2)
+--   Le due applicazioni ICMVerbali e ICMFatturazioni convergeranno su un
+--   UNICO database condiviso (alcune entità si fonderanno: Anagrafica↔Committente,
+--   Attivita↔Progetto). In quel DB le tabelle di Verbali vivono sotto `dbo.*`.
+--   Mettendo TUTTE le tabelle di Fatturazioni sotto `fatt.*` si ottiene:
+--     * ownership esplicita ("queste sono di ICMFatturazioni");
+--     * zero collisioni con `dbo.*` di Verbali (incluse Utenti/LogErrors, che
+--       altrimenti si mescolerebbero nel calderone dbo);
+--     * fusione futura localizzata a poche tabelle, non un riordino globale.
+--   La motivazione estesa è in docs/decisioni-architetturali.md.
 --
 -- Idempotenza
---   I tre CREATE SCHEMA sono protetti da IF NOT EXISTS sulla vista
---   sys.schemas: rieseguire la migration su un database già aggiornato
---   non produce errori né effetti collaterali.
+--   Il CREATE SCHEMA è protetto da IF NOT EXISTS sulla vista sys.schemas:
+--   rieseguire la migration su un database già aggiornato non produce errori.
 --
 -- Rollback
---   DROP SCHEMA sta;  DROP SCHEMA ana;  DROP SCHEMA fat;
---   (eseguire solo dopo aver rimosso tutti gli oggetti contenuti)
+--   DROP SCHEMA fatt;  (eseguire solo dopo aver rimosso tutti gli oggetti)
 -- =============================================================================
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 GO
 
--- Schema sta -----------------------------------------------------------------
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'sta')
+-- Schema fatt ----------------------------------------------------------------
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'fatt')
 BEGIN
-    EXEC(N'CREATE SCHEMA [sta] AUTHORIZATION [dbo];');
-END
-GO
-
--- Schema ana -----------------------------------------------------------------
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'ana')
-BEGIN
-    EXEC(N'CREATE SCHEMA [ana] AUTHORIZATION [dbo];');
-END
-GO
-
--- Schema fat -----------------------------------------------------------------
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'fat')
-BEGIN
-    EXEC(N'CREATE SCHEMA [fat] AUTHORIZATION [dbo];');
+    EXEC(N'CREATE SCHEMA [fatt] AUTHORIZATION [dbo];');
 END
 GO

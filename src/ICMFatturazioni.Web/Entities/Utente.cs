@@ -2,7 +2,7 @@ namespace ICMFatturazioni.Web.Entities;
 
 /// <summary>
 /// Utente applicativo autenticato via cookie. Entità POCO mappata 1:1
-/// sulla tabella <c>dbo.Utenti</c>: nessuna dipendenza da Dapper, EF o
+/// sulla tabella <c>fatt.Utenti</c>: nessuna dipendenza da Dapper, EF o
 /// ASP.NET. La logica di hashing/verify password vive nel manager.
 /// </summary>
 /// <remarks>

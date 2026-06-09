@@ -259,7 +259,7 @@
         var conferma = await DialogService.ShowMessageBoxAsync(
             title: "Eliminare anagrafica?",
             markupMessage: new MarkupString(
-                $"Stai per eliminare <b>{_selezionata.RagioneSociale}</b>. L'operazione non è reversibile."),
+                $"Stai per eliminare <b>{_selezionata.RagioneSociale}</b>. L'anagrafica verrà disattivata e non comparirà più nell'elenco."),
             yesText: "Elimina",
             cancelText: "Annulla");
         if (conferma != true) return;

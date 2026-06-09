@@ -2,7 +2,7 @@ namespace ICMFatturazioni.Web.Entities;
 
 /// <summary>
 /// Severità di un evento di errore (mappata sulla colonna
-/// <c>dbo.LogErrors.Severity TINYINT</c>).
+/// <c>fatt.LogErrors.Severity TINYINT</c>).
 /// </summary>
 public enum Severity : byte
 {
@@ -17,7 +17,7 @@ public enum Severity : byte
 }
 
 /// <summary>
-/// Riga della tabella <c>dbo.LogErrors</c>. POCO senza dipendenze.
+/// Riga della tabella <c>fatt.LogErrors</c>. POCO senza dipendenze.
 /// </summary>
 public sealed class LogError
 {
