@@ -373,20 +373,33 @@ Regole vincolanti emerse dal decision-gate del 2026-05-20 (decisioni D1-D20). Le
 ### Naming (D1, D2, D3)
 
 - **Entità C# e proprietà**: italiano fedele al PDF/schema originali (`Anagrafica`, `RagioneSociale`, `CodiceFiscale`, `TipoAnagrafica`). Mai tradurre in inglese, anche se "più idiomatico".
-- **Tabelle SQL**: organizzate in **schema SQL Server** (non prefissi nel nome):
-  - `sta.*` — tabelle di stato/lookup (`sta.Paesi`, `sta.Province`, `sta.NatureIVA`, `sta.CondizioniPagamento`, `sta.ModalitaPagamento`)
-  - `ana.*` — anagrafiche (clienti, fornitori, ecc.)
-  - `fat.*` — fatturazione (testate, righe, scadenze)
-  - `dbo.*` — tabelle trasversali/sistema (`dbo.Utenti`, `dbo.LogErrors`)
-  - La prima migration deve creare gli schema (`CREATE SCHEMA sta`, ecc.) prima di qualsiasi tabella.
-  - Tutte le query SQL nei Repository devono usare il nome **schema-qualificato** (`FROM sta.Paesi`, non `FROM Paesi`).
+- **Tabelle SQL**: tutte sotto un **unico schema applicativo `fatt.*`** (namespace dell'app, non prefissi nel nome). ⚠️ **Aggiornato il 2026-06-09 (ADR D21): supera la precedente ripartizione `sta`/`ana`/`fat`/`dbo`.** Motivo: ICMFatturazioni e **ICMVerbali** convergeranno su un **unico DB condiviso** (entità che si fonderanno: `Attivita`↔`Progetto`, `Anagrafica`↔`Committente`); Verbali vive sotto `dbo.*`, quindi mettere TUTTO ICMFatturazioni sotto `fatt.*` dà ownership esplicita e zero collisioni (incluse `fatt.Utenti`, `fatt.LogErrors`).
+  - `fatt.*` — **tutte** le tabelle di ICMFatturazioni: lookup di stato (`fatt.Paesi`, `fatt.Province`, `fatt.NatureIVA`, `fatt.CondizioniPagamento`, `fatt.ModalitaPagamento`), anagrafiche (`fatt.Anagrafica`), codici IVA/pagamento, banche, attività (`fatt.Attivita`, `fatt.AttivitaDettaglio`, `fatt.SchedulazionePagamenti`), e le trasversali (`fatt.Utenti`, `fatt.LogErrors`).
+  - La prima migration (`001_CreateSchemas.sql`) crea **solo** lo schema `fatt` (`CREATE SCHEMA fatt`) prima di qualsiasi tabella.
+  - Tutte le query SQL nei Repository usano il nome **schema-qualificato** (`FROM fatt.Paesi`, non `FROM Paesi`).
+  - **Nomi entità invariati nel contesto ICMFatturazioni**: `Attivita` e `Anagrafica` restano tali (in ICMVerbali sono `Progetto` e `Committente`); la fusione è lavoro futuro con ADR dedicato. Divergenze note da risolvere alla fusione: PK `INT IDENTITY` (qui) vs `uniqueidentifier` (Verbali); `DataRecord` vs `CreatedAt`/`UpdatedAt`+`IsAttivo`. Vedi `docs/piano-sviluppo-fase1-attivita.md` §1.1.
 - **Campi enum-like** (`TipoAnagrafica` con valori `S`/`P`/`E`): enum C# con persistenza `char(1)` (o codice testuale dove l'originale lo prevede). L'enum espone il valore di persistenza esplicitamente, mai derivato dall'ordinale.
+
+### Allineamento a ICMVerbali (D22, 2026-06-09) — VINCOLANTE
+
+ICMFatturazioni deve **uniformarsi a ICMVerbali** (`C:\SVILUPPO\GIT\ICMVerbali`, app già sviluppata e validata) sia nelle convenzioni DB sia nei pattern delle funzionalità. Le due app convergeranno su un DB condiviso e l'uniformità ne semplifica la gestione. Vedi ADR D22 e memoria `mirror-icmverbali`.
+
+- **Principio operativo (precede ogni Tappa)**: prima di implementare una funzionalità nuova, **ispezionare ICMVerbali** per un equivalente (gestione utenti, cambio password, logging, audit, CRUD anagrafiche, cataloghi, ecc.) e **proporne all'utente la replica nello stesso modo** prima di scrivere codice.
+- **Convenzioni DB allineate a ICMVerbali** (sostituiscono PK `INT IDENTITY` e `DataRecord` di D9/D19 per le tabelle di dominio):
+  - **PK `uniqueidentifier` (GUID)**, generata app-side con **`Guid.CreateVersion7()`** (UUIDv7 *time-ordered*, come Verbali) e passata nell'INSERT (no `IDENTITY`, no `OUTPUT`). Modello: `CommittenteRepository`. *(Nota tecnica: l'ordinamento UUIDv7 non si riflette nell'ordine di clustering di SQL Server — che compara `uniqueidentifier` in modo non lessicografico — ma per i volumi del progetto la frammentazione è irrilevante; i veri vantaggi sono Id app-side, URL non enumerabili e fusione DB senza collisioni.)*
+  - **Soft-delete con `IsAttivo BIT NOT NULL DEFAULT 1`** per le anagrafiche/master: niente hard `DELETE`. Letture: `GetAttivi` (`WHERE IsAttivo = 1`), `GetAll` (`ORDER BY IsAttivo DESC, ...`).
+  - **Niente `CreatedAt`/`UpdatedAt` di default** sulle anagrafiche/lookup master (Verbali non li mette su `Committente`/`Cantiere`). Si aggiungono solo dove un lifecycle per-riga serve davvero (es. `Utente`, entità con workflow).
+  - **Audit "chi-ha-fatto-cosa" centralizzato** in una tabella generica `fatt.Audit` (mirror di `dbo.Audit`: `UtenteId`+`UtenteNome` snapshot, `Operazione`, `EntityType`+`EntityId`, `Descrizione`), non con colonne per-riga.
+  - **Logging errori** su `fatt.Log` (mirror di `dbo.Log`) via `ILogManager.LogErroreAsync(ex, spiegazione, sorgente)` + rete automatica `DbLoggerProvider`; le eccezioni tipizzate di validazione **non** si loggano (vedi loro Regola 6 / `docs/B17-logging.md`).
+  - **Nomi tabella/colonna**: restano **fedeli al legacy italiano** (D1, scelta utente) — `CodiciIVA`, `Paesi`, `Anagrafica`, ecc. NON si adotta il singolare di Verbali. (Solo le *caratteristiche strutturali* si uniformano, non i nomi.)
+  - **Lookup ministeriali Fatturazioni-only** (`Paesi`, `Province`, `NatureIVA`, `CondizioniPagamento`, `ModalitaPagamento`): mantengono le loro chiavi naturali/attuali (non si fondono con Verbali, le anagrafiche le referenziano per codice naturale).
+- **Retrofit**: la verticale `Anagrafica` già esistente va riscritta a GUID + `IsAttivo`. `Utenti` e `LogErrors` NON si retrofittano a parte: confluiscono nei rispettivi step di mirror (auth e logging) per non produrre lavoro usa-e-getta.
 
 ### Schema database (D5, D6, D9, D19, D20)
 
 - **Tabelle "fisse" Agenzia Entrate** (Nature IVA, Condizioni/Modalità pagamento, Tipologie clientela): tabelle SQL vere, popolate da seed **idempotente** (`MERGE` o `IF NOT EXISTS`) in `Migrations/`. Niente enum C# come unica fonte.
 - **DB di partenza vuoto**: nessuna importazione dei dati storici dall'Access. L'app nasce pulita.
-- **Lookup di partenza**: schema + dati delle 5 tabelle di lookup sono in `TabelleLookupMancanti.sql` (root del progetto). In Fase 1 vanno importati nel nuovo schema (`sta.*`) e il tipo user-defined `dbo.DataRecord` va ridichiarato (`CREATE TYPE dbo.DataRecord FROM DATETIME NOT NULL`) **oppure** normalizzato a `DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()` colonna per colonna. Scegliere la seconda opzione se non emergono dipendenze sul tipo custom.
+- **Lookup di partenza**: schema + dati delle 5 tabelle di lookup sono in `TabelleLookupMancanti.sql` (root del progetto). In Fase 1 vanno importati nello schema applicativo (`fatt.*`, ADR D21) e il tipo user-defined `dbo.DataRecord` va ridichiarato (`CREATE TYPE dbo.DataRecord FROM DATETIME NOT NULL`) **oppure** normalizzato a `DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()` colonna per colonna. Scegliere la seconda opzione se non emergono dipendenze sul tipo custom.
 - **Colonna `DataRecord` (audit timestamp)**: aggiunta **caso per caso**, non automatica. Tabelle volatili e tabelle dove l'audit serve davvero → sì. Tabelle di lookup statiche → no.
 - **Campo PEC**: il nome corretto è `PECFatturaElettronica`. Il refuso `PerFatturaEletronica` presente nello schema PNG va **scartato** nel nuovo schema.
 
@@ -464,8 +477,8 @@ Niente CRUD di dominio. Solo lo scheletro tecnico:
 
 - Migration `005_Anagrafica.sql`
 - **Decisione D8 chiusa** prima di iniziare
-- `Anagrafica.cs` entity + `IAnagraficaRepository`/`AnagraficaRepository` (Dapper, schema `ana`, JOIN LEFT verso `sta.Paesi`/`sta.Province` come da VBA originale)
-- `IAnagraficaManager`/`AnagraficaManager` con validazioni (campi obbligatori, FK verso `sta`, divieto eliminazione se ci sono dipendenze)
+- `Anagrafica.cs` entity + `IAnagraficaRepository`/`AnagraficaRepository` (Dapper, schema `fatt`, JOIN LEFT verso `fatt.Paesi`/`fatt.Province` come da VBA originale)
+- `IAnagraficaManager`/`AnagraficaManager` con validazioni (campi obbligatori, FK verso `fatt.*`, divieto eliminazione se ci sono dipendenze)
 - Test xUnit del Manager con repository fake
 - 3 pagine Blazor: elenco con `MudDataGrid` filtrabile, dialog "Aggiungi", dialog "Modifica" — pattern visibility-driven (`Modifica`/`Elimina` nascosti finché non c'è selezione)
 - Verifica manuale browser desktop + responsive mobile (scroll orizzontale + sticky)

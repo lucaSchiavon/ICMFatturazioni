@@ -29,7 +29,7 @@ Questo documento raccoglie le decisioni architetturali del progetto **ICM Fattur
 
 ## D2 — Organizzazione dei nomi tabelle SQL
 
-**Stato**: ✅ Accettata (2026-05-20)
+**Stato**: 🔄 Parzialmente superata da **D21** (2026-06-09): la scelta "schema invece di prefisso" resta valida, ma la ripartizione in più schemi logici `sta`/`ana`/`fat` è sostituita da un **unico schema applicativo `fatt`**. Vedi D21.
 
 **Contesto**: l'originale Access usa prefissi con trattino (`STA-Paesi`, `STA-Province`, ecc.) per categorizzare le tabelle. Il trattino in SQL Server richiede l'uso di parentesi quadre (`[STA-Paesi]`) in ogni query, generando rumore e rischio di errori.
 
@@ -336,6 +336,48 @@ Questo documento raccoglie le decisioni architetturali del progetto **ICM Fattur
 **Scelta**: (a) — `PECFatturaElettronica`.
 
 **Motivazione**: il VBA è la fonte affidabile (il PNG è una trascrizione successiva, con refusi di battitura). Coerente con D6 (DB vuoto, nessuna importazione), non c'è alcuna compatibilità da preservare. Trascinare un refuso per sempre solo per fedeltà a un documento errato sarebbe debito tecnico ingiustificato.
+
+---
+
+## D21 — Schema applicativo unico `fatt` (supera la ripartizione `sta`/`ana`/`fat`)
+
+**Stato**: ✅ Accettata (2026-06-09). 🔄 **Rivede D2** (ripartizione in schemi logici `sta`/`ana`/`fat`/`dbo`).
+
+**Contesto**: emerge un requisito non noto al decision-gate del 2026-05-20. ICMFatturazioni e l'app già sviluppata **ICMVerbali** convergeranno su un **unico database condiviso**, perché hanno tabelle in comune: `Attivita` (Fatturazioni) si fonderà con `Progetto` (Verbali) e `Anagrafica` con `Committente`. ICMVerbali tiene **tutte** le sue tabelle sotto `dbo.*` (PK `uniqueidentifier`, audit `CreatedAt`/`UpdatedAt`+`IsAttivo`). Con la ripartizione D2, le tabelle `dbo.*` di ICMFatturazioni (`Utenti`, `LogErrors`) finirebbero mescolate con quelle `dbo.*` di Verbali nel DB condiviso.
+
+**Opzioni valutate**:
+- (a) **Schema unico `fatt.*` per tutte le tabelle di ICMFatturazioni** (incluse Utenti/LogErrors).
+- (b) Tenere `sta`/`ana`/`fat` e spostare solo le `dbo` sotto uno schema app.
+- (c) Prefisso nei nomi tabella (stile legacy `STA-*`).
+
+**Scelta**: (a) — schema unico `fatt`.
+
+**Motivazione**: è il vero "namespace applicativo". Dà ownership esplicita ("queste sono di ICMFatturazioni"), **zero collisioni** col `dbo.*` di Verbali, e rende la fusione futura un'operazione localizzata a poche tabelle invece di un riordino globale. La ripartizione logica `sta`/`ana`/`fat` (D2) era una comodità interna; con ~15 tabelle uno schema piatto è perfettamente leggibile, e il requisito di ownership ora prevale. (c) contraddice lo spirito di D2 (schema, non prefisso). (b) non rende esplicito il nome dell'app nel namespace.
+
+**Impatto**: migration 001-005 e i 4 repository riscritti su `fatt.*` il 2026-06-09 (DB solo di sviluppo, mai applicato in produzione → la Regola 2 "migration immutabili" non si applica). Nel contesto ICMFatturazioni le entità restano `Attivita`/`Anagrafica`; in ICMVerbali sono `Progetto`/`Committente`.
+
+**Da risolvere alla fusione vera (ADR futuro dedicato, NON ora)**: (1) PK `INT IDENTITY` vs `uniqueidentifier`; (2) stili di audit/soft-delete; (3) mapping campi `Anagrafica`↔`Committente` e `Attivita`↔`Progetto`. Dettaglio in `docs/piano-sviluppo-fase1-attivita.md` §1.1.
+
+---
+
+## D22 — Allineamento di convenzioni DB e pattern funzionali a ICMVerbali
+
+**Stato**: ✅ Accettata (2026-06-09). Rivede in parte **D9/D19** (audit `DataRecord`) e i default impliciti su PK.
+
+**Contesto**: ICMVerbali è già sviluppato e validato. Le due app convergeranno su un DB condiviso. L'utente chiede che ICMFatturazioni si **uniformi a ICMVerbali**: prima di implementare una feature, sbirciare in Verbali e replicare lo stesso approccio; e anche le caratteristiche del DB devono uniformarsi.
+
+**Opzioni valutate**:
+- (a) **Uniformare ora** convenzioni DB strutturali (GUID PK, soft-delete `IsAttivo`, audit/log centralizzati) e **retrofittare** ciò che esiste, mantenendo i **nomi** legacy italiani.
+- (b) Uniformare solo le feature nuove d'ora in poi.
+- (c) Uniformare solo i pattern applicativi, non il DB.
+
+**Scelta**: (a) — uniformare ora; nomi tabella/colonna restano legacy (D1).
+
+**Motivazione**: (1) gestione più semplice di due app simili; (2) sono pattern già validati. Siamo al momento più economico (una sola verticale). Il GUID elimina anche la divergenza di chiavi per la futura fusione (vedi D21). I **nomi** restano legacy perché sono contenuto di dominio fedele all'Access/dispensa (D1), non "caratteristiche strutturali"; uniformare solo la struttura.
+
+**Convenzioni adottate** (da `001_InitialSchema.sql` + `CommittenteRepository` di Verbali): PK `uniqueidentifier` generata app-side con `Guid.CreateVersion7()` (UUIDv7 time-ordered); soft-delete `IsAttivo`; niente `CreatedAt`/`UpdatedAt` sulle anagrafiche/lookup master; audit centralizzato `fatt.Audit`; logging `fatt.Log`+`ILogManager`+`DbLoggerProvider`. Lookup ministeriali Fatturazioni-only mantengono le chiavi attuali.
+
+**Impatto / sequenza**: (1) retrofit verticale `Anagrafica` → GUID + `IsAttivo`; (2) step dedicato "mirror auth" (Utenti → stile Verbali: ruoli, policy inclusive, Superadmin seed, reset password via token); (3) step dedicato "mirror logging+audit" (`LogErrors` → `fatt.Log`/`fatt.Audit` + `ILogManager`). `Utenti`/`LogErrors` NON si retrofittano isolatamente per non fare lavoro usa-e-getta. Dettaglio operativo in `CLAUDE.md` → "Allineamento a ICMVerbali".
 
 ---
 
