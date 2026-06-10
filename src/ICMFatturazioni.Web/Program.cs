@@ -3,6 +3,7 @@ using ICMFatturazioni.Web.Authentication;
 using ICMFatturazioni.Web.Components;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Diagnostics;
+using ICMFatturazioni.Web.Email;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
@@ -13,7 +14,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using MudBlazor.Services;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -119,6 +122,44 @@ builder.Services.Configure<SuperadminSeederOptions>(
 // seed hardcoded admin/admin1234).
 builder.Services.AddHostedService<DatabaseSeeder>();
 
+// === Magic-link utente (attivazione/reset password, T4) + invio email ===
+// TimeProvider di sistema: iniettato nel UtenteTokenManager per calcolare le
+// scadenze; nei test si sostituisce con un provider pilotabile.
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<UtenteTokenOptions>(
+    builder.Configuration.GetSection(UtenteTokenOptions.SectionName));
+builder.Services.Configure<SmtpOptions>(
+    builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.AddScoped<IUtenteTokenRepository, UtenteTokenRepository>();
+builder.Services.AddScoped<IUtenteTokenManager, UtenteTokenManager>();
+
+// IEmailSender: SMTP reale (MailKit) se "Smtp:Host" è configurato; altrimenti
+// il LogEmailSender di sviluppo (il link finisce nel log, nessun invio reale).
+var smtpOptions = builder.Configuration.GetSection(SmtpOptions.SectionName).Get<SmtpOptions>();
+if (smtpOptions?.IsConfigured == true)
+{
+    builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+}
+else
+{
+    builder.Services.AddScoped<IEmailSender, LogEmailSender>();
+}
+
+// Rate limiting: max 5 richieste/min per IP sul "password dimenticata", per non
+// trasformarlo in un canale di spam email o in un oracolo di esistenza account.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("forgot-password", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+});
+
 // === Diagnostica / logging errori (Regola 6) ===
 // IErrorLogger singleton: è il canale "infallibile" usato da middleware,
 // circuit handler, ErrorBoundary e dai Manager.
@@ -156,6 +197,9 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Rate limiter: deve stare dopo l'autorizzazione e prima dei map endpoint.
+app.UseRateLimiter();
+
 app.UseAntiforgery();
 
 app.MapStaticAssets();
@@ -187,10 +231,155 @@ app.MapPost("/auth/login", async Task<IResult> (
         return Results.Redirect("/login?Error=Credenziali non valide.");
     }
 
-    // Ruolo dell'utente: il claim di ruolo porta il Codice del ruolo
-    // (SUPERADMIN/ADMIN per i fissi) così le policy RequireRole combaciano;
-    // per i ruoli custom (Codice null) usiamo il nome. id_ruolo serve al
-    // servizio menu (T2) per risolvere i permessi dinamici.
+    // Firma il cookie con i claim dell'utente (logica condivisa con i flussi di
+    // attivazione/reset, che fanno sign-in automatico dopo il set-password).
+    await SignInUtenteAsync(httpContext, utente, ruoloManager, cancellationToken);
+
+    // Protezione open-redirect: accettiamo solo redirect a path locali.
+    var safeReturn = (!string.IsNullOrEmpty(ReturnUrl) && Uri.IsWellFormedUriString(ReturnUrl, UriKind.Relative))
+        ? ReturnUrl
+        : "/";
+    return Results.Redirect(safeReturn);
+})
+.AllowAnonymous();
+
+app.MapPost("/auth/logout", async (HttpContext httpContext) =>
+{
+    await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/login");
+});
+
+// ----------------------------------------------------------------------------
+// Magic-link: imposta password da link di ATTIVAZIONE (primo accesso).
+// Il consumo del token e l'impostazione della password sono atomici (sentinel
+// TOCTOU nel repository). A successo, sign-in automatico e redirect alla home.
+// ----------------------------------------------------------------------------
+app.MapPost("/auth/attiva", async Task<IResult> (
+    [FromForm] string Token,
+    [FromForm] string Password,
+    [FromForm] string PasswordConfirm,
+    HttpContext httpContext,
+    IUtenteTokenManager tokenManager,
+    IUtenteManager utenteManager,
+    IRuoloManager ruoloManager,
+    IPasswordHasherService hasher,
+    CancellationToken cancellationToken) =>
+{
+    var erroreInput = ValidaNuovaPassword(Password, PasswordConfirm);
+    if (erroreInput is not null)
+    {
+        return Results.Redirect(BuildTokenRedirect("/attiva", Token, erroreInput));
+    }
+
+    try
+    {
+        var hash = hasher.HashPassword(Password);
+        var utenteId = await tokenManager.ConsumaAsync(Token, UtenteTokenTipo.Attivazione, hash, cancellationToken);
+        var utente = await utenteManager.GetByIdAsync(utenteId, cancellationToken);
+        if (utente is null)
+        {
+            return Results.Redirect(BuildTokenRedirect("/attiva", Token, "Utente non trovato."));
+        }
+        await SignInUtenteAsync(httpContext, utente, ruoloManager, cancellationToken);
+        return Results.Redirect("/");
+    }
+    catch (UtenteTokenInvalidoException ex)
+    {
+        return Results.Redirect(BuildTokenRedirect("/attiva", Token, UtenteTokenMessaggi.Messaggio(ex.Motivo)));
+    }
+})
+.AllowAnonymous();
+
+// ----------------------------------------------------------------------------
+// Magic-link: imposta nuova password da link di RESET. Identico ad /auth/attiva
+// ma con token di tipo Reset.
+// ----------------------------------------------------------------------------
+app.MapPost("/auth/reset-password", async Task<IResult> (
+    [FromForm] string Token,
+    [FromForm] string Password,
+    [FromForm] string PasswordConfirm,
+    HttpContext httpContext,
+    IUtenteTokenManager tokenManager,
+    IUtenteManager utenteManager,
+    IRuoloManager ruoloManager,
+    IPasswordHasherService hasher,
+    CancellationToken cancellationToken) =>
+{
+    var erroreInput = ValidaNuovaPassword(Password, PasswordConfirm);
+    if (erroreInput is not null)
+    {
+        return Results.Redirect(BuildTokenRedirect("/reset-password", Token, erroreInput));
+    }
+
+    try
+    {
+        var hash = hasher.HashPassword(Password);
+        var utenteId = await tokenManager.ConsumaAsync(Token, UtenteTokenTipo.Reset, hash, cancellationToken);
+        var utente = await utenteManager.GetByIdAsync(utenteId, cancellationToken);
+        if (utente is null)
+        {
+            return Results.Redirect(BuildTokenRedirect("/reset-password", Token, "Utente non trovato."));
+        }
+        await SignInUtenteAsync(httpContext, utente, ruoloManager, cancellationToken);
+        return Results.Redirect("/");
+    }
+    catch (UtenteTokenInvalidoException ex)
+    {
+        return Results.Redirect(BuildTokenRedirect("/reset-password", Token, UtenteTokenMessaggi.Messaggio(ex.Motivo)));
+    }
+})
+.AllowAnonymous();
+
+// ----------------------------------------------------------------------------
+// "Password dimenticata": l'utente inserisce l'email; se corrisponde a un
+// account ATTIVO e già attivato, gli inviamo un link di reset. La risposta è
+// SEMPRE neutra (niente enumeration). Rate-limited per IP.
+// ----------------------------------------------------------------------------
+app.MapPost("/auth/forgot-password", async Task<IResult> (
+    [FromForm] string Email,
+    HttpContext httpContext,
+    IUtenteManager utenteManager,
+    IUtenteTokenManager tokenManager,
+    IEmailSender emailSender,
+    IOptions<UtenteTokenOptions> tokenOptions,
+    CancellationToken cancellationToken) =>
+{
+    if (!string.IsNullOrWhiteSpace(Email))
+    {
+        var utente = await utenteManager.GetByEmailAsync(Email, cancellationToken);
+        // Solo utenti attivi, con email e già attivati (hanno una password):
+        // un invitato non ancora attivato usa il link di attivazione, non il reset.
+        if (utente is { Attivo: true, Email: not null } && !string.IsNullOrEmpty(utente.PasswordHash))
+        {
+            var token = await tokenManager.CreaResetAsync(utente.IdUtente, cancellationToken);
+            var link = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password/{token}";
+            var (subject, htmlBody) = AccountEmailTemplates.Reset(link, utente.Username, tokenOptions.Value.ResetOreDefault);
+            await emailSender.SendAsync(utente.Email, subject, htmlBody, cancellationToken);
+        }
+    }
+    // Esito neutro a prescindere: non riveliamo se l'email esiste.
+    return Results.Redirect("/forgot-password?inviato=1");
+})
+.AllowAnonymous()
+.RequireRateLimiting("forgot-password");
+
+// Il seed degli utenti Admin/Superadmin è gestito da DatabaseSeeder
+// (IHostedService idempotente, registrato sopra): legge le password da
+// user-secrets/env e crea gli utenti all'avvio se non esistono.
+
+app.Run();
+
+// ============================================================================
+// Helper locali condivisi dagli endpoint di autenticazione
+// ============================================================================
+
+// Firma il cookie con i claim dell'utente. Centralizzato: lo usano login,
+// attivazione e reset (questi ultimi due con sign-in automatico). Il claim di
+// ruolo porta il Codice del ruolo (SUPERADMIN/ADMIN) così le policy RequireRole
+// combaciano; per i custom (Codice null) si usa il nome. id_ruolo serve al
+// servizio menu (T2) per i permessi dinamici.
+static async Task SignInUtenteAsync(HttpContext httpContext, Utente utente, IRuoloManager ruoloManager, CancellationToken cancellationToken)
+{
     var ruolo = await ruoloManager.GetByIdAsync(utente.IdRuolo, cancellationToken);
 
     var claims = new List<Claim>
@@ -208,28 +397,23 @@ app.MapPost("/auth/login", async Task<IResult> (
     claims.Add(new Claim("tema_preferito", utente.TemaPreferito));
 
     var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-    var principal = new ClaimsPrincipal(identity);
-
     await httpContext.SignInAsync(
         CookieAuthenticationDefaults.AuthenticationScheme,
-        principal);
+        new ClaimsPrincipal(identity));
+}
 
-    // Protezione open-redirect: accettiamo solo redirect a path locali.
-    var safeReturn = (!string.IsNullOrEmpty(ReturnUrl) && Uri.IsWellFormedUriString(ReturnUrl, UriKind.Relative))
-        ? ReturnUrl
-        : "/";
-    return Results.Redirect(safeReturn);
-})
-.AllowAnonymous();
-
-app.MapPost("/auth/logout", async (HttpContext httpContext) =>
+// Validazione server-side della nuova password: policy condivisa + conferma.
+static string? ValidaNuovaPassword(string? password, string? confirm)
 {
-    await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/login");
-});
+    var errore = PasswordPolicy.Valida(password);
+    if (errore is not null)
+    {
+        return errore;
+    }
+    return password != confirm ? "Le due password non coincidono." : null;
+}
 
-// Il seed degli utenti Admin/Superadmin è gestito da DatabaseSeeder
-// (IHostedService idempotente, registrato sopra): legge le password da
-// user-secrets/env e crea gli utenti all'avvio se non esistono.
-
-app.Run();
+// Redirect alla pagina del magic-link con il token nella rotta e il messaggio
+// d'errore in querystring (la pagina lo mostra sopra il form).
+static string BuildTokenRedirect(string basePath, string token, string errore)
+    => $"{basePath}/{Uri.EscapeDataString(token)}?Error={Uri.EscapeDataString(errore)}";

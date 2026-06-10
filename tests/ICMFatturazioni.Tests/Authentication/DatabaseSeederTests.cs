@@ -100,7 +100,7 @@ public class DatabaseSeederTests
         var seeder = NewSeeder(h, new AdminSeederOptions
         {
             DefaultUsername = "admin",
-            DefaultPassword = "admin1234",
+            DefaultPassword = "Admin12345",
         });
 
         await seeder.StartAsync(CancellationToken.None);
@@ -125,7 +125,7 @@ public class DatabaseSeederTests
             IdRuolo = ruolo.IdRuolo,
             Attivo = true,
         });
-        var seeder = NewSeeder(h, new AdminSeederOptions { DefaultUsername = "admin", DefaultPassword = "admin1234" });
+        var seeder = NewSeeder(h, new AdminSeederOptions { DefaultUsername = "admin", DefaultPassword = "Admin12345" });
 
         await seeder.StartAsync(CancellationToken.None);
 
@@ -138,7 +138,7 @@ public class DatabaseSeederTests
     {
         var h = BuildHarness();
         // NESSUN ruolo ADMIN nel repository.
-        var seeder = NewSeeder(h, new AdminSeederOptions { DefaultUsername = "admin", DefaultPassword = "admin1234" });
+        var seeder = NewSeeder(h, new AdminSeederOptions { DefaultUsername = "admin", DefaultPassword = "Admin12345" });
 
         // Non deve lanciare: l'eccezione è catturata in StartAsync.
         await seeder.StartAsync(CancellationToken.None);
@@ -155,8 +155,8 @@ public class DatabaseSeederTests
         SeedRuoloAdmin(h.Ruoli);
         h.Ruoli.Seed(new Ruolo { IdRuolo = Guid.NewGuid(), Codice = RuoliSistema.Superadmin, Nome = "Superadmin", IsSistema = true });
         var seeder = NewSeeder(h,
-            new AdminSeederOptions { DefaultUsername = "admin", DefaultPassword = "admin1234" },
-            new SuperadminSeederOptions { Username = "super", Password = "super1pass" });
+            new AdminSeederOptions { DefaultUsername = "admin", DefaultPassword = "Admin12345" },
+            new SuperadminSeederOptions { Username = "super", Password = "Super1pass9" });
 
         await seeder.StartAsync(CancellationToken.None);
 

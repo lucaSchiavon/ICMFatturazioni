@@ -30,6 +30,13 @@ internal sealed class FakeUtenteRepository : IUtenteRepository
     public Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default)
         => Task.FromResult(_store.TryGetValue(idUtente, out var u) ? u : null);
 
+    public Task<Utente?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var u = _store.Values.FirstOrDefault(
+            x => string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult<Utente?>(u);
+    }
+
     public Task InsertAsync(Utente utente, CancellationToken cancellationToken = default)
     {
         _store[utente.IdUtente] = utente;

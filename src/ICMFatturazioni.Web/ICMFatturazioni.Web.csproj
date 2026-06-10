@@ -10,6 +10,10 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.79" />
+    <!-- MailKit: invio email SMTP per i magic-link (invito/reset password, T4).
+         Stessa libreria e versione di ICMVerbali (ADR D22), licenza MIT.
+         System.Net.Mail.SmtpClient è deprecato da Microsoft per nuovo sviluppo. -->
+    <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
     <PackageReference Include="MudBlazor" Version="9.4.0" />
   </ItemGroup>

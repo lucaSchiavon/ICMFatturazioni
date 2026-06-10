@@ -54,6 +54,9 @@ public class MenuServiceTests
     [InlineData("Login")]
     [InlineData("AccessDenied")]
     [InlineData("NotFound")]
+    [InlineData("Attiva")]          // magic-link attivazione (anonimo)
+    [InlineData("ResetPassword")]   // magic-link reset (anonimo)
+    [InlineData("ForgotPassword")]  // password dimenticata (anonimo)
     [InlineData("")]
     public async Task PuoAccedereAsync_PagineDiSistema_SempreVere(string pagina)
     {

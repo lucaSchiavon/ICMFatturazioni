@@ -23,10 +23,13 @@ namespace ICMFatturazioni.Web.Managers;
 /// </remarks>
 internal sealed class MenuService : IMenuService
 {
-    // Pagine sempre accessibili a chiunque sia autenticato (non gestite a menu).
+    // Pagine sempre accessibili (non gestite a menu). Includono le pagine
+    // anonime del flusso account (T4): magic-link di attivazione/reset e
+    // "password dimenticata", raggiungibili senza essere autenticati.
     private static readonly HashSet<string> PagineSistema = new(StringComparer.Ordinal)
     {
         "Home", "Dashboard", "Login", "AccessDenied", "NotFound",
+        "Attiva", "ResetPassword", "ForgotPassword",
     };
 
     // Pagine riservate al solo Superadmin (es. log errori). Negate ad Admin e

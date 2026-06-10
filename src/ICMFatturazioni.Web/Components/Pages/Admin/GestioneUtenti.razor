@@ -10,10 +10,15 @@
 @attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireAdmin)]
 
 @using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Email
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
 @inject IUtenteManager UtenteManager
 @inject IRuoloManager RuoloManager
+@inject IUtenteTokenManager TokenManager
+@inject IEmailSender EmailSender
+@inject Microsoft.Extensions.Options.IOptions<ICMFatturazioni.Web.Authentication.UtenteTokenOptions> TokenOptions
+@inject NavigationManager Nav
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
@@ -82,9 +87,10 @@
                         <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Ripple="false"
                                        OnClick="@(() => ApriModifica(context.Item))" />
                     </MudTooltip>
-                    <MudTooltip Text="Reimposta password">
-                        <MudIconButton Icon="@Icons.Material.Filled.Password" Size="Size.Small" Ripple="false"
-                                       OnClick="@(() => ApriReimpostaPassword(context.Item))" />
+                    <MudTooltip Text="@(context.Item.HaPassword ? "Invia link di reset password" : "Reinvia link di attivazione")">
+                        <MudIconButton Icon="@(context.Item.HaPassword ? Icons.Material.Filled.LockReset : Icons.Material.Filled.Send)"
+                                       Size="Size.Small" Ripple="false"
+                                       OnClick="@(() => InviaLinkAsync(context.Item))" />
                     </MudTooltip>
                 </MudStack>
             </CellTemplate>
@@ -166,7 +172,21 @@
             { x => x.Iniziale, null },
             { x => x.Ruoli, RuoliAssegnabili },
         };
-        await MostraDialogUtente("Nuovo utente", parameters, "Utente creato.");
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<UtenteFormDialog>("Nuovo utente", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Guid idNuovo })
+        {
+            Snackbar.Add("Utente creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+            // Mirror Verbali: subito dopo la creazione invia il link di attivazione,
+            // così l'utente invitato riceve l'email senza un secondo passaggio manuale.
+            var nuovo = _utenti.FirstOrDefault(u => u.IdUtente == idNuovo);
+            if (nuovo is not null)
+            {
+                await InviaLinkAsync(nuovo);
+            }
+        }
     }
 
     private async Task ApriModifica(UtenteConRuolo u)
@@ -191,20 +211,42 @@
         }
     }
 
-    private async Task ApriReimpostaPassword(UtenteConRuolo u)
+    // Invia il magic-link via email: attivazione se l'utente è "da attivare"
+    // (senza password), reset se ha già una password. In dev (LogEmailSender) il
+    // link finisce nel log invece di partire davvero.
+    private async Task InviaLinkAsync(UtenteConRuolo u)
     {
-        var parameters = new DialogParameters<ImpostaPasswordDialog>
+        if (string.IsNullOrWhiteSpace(u.Email))
         {
-            { x => x.IdUtente, u.IdUtente },
-            { x => x.Username, u.Username },
-        };
-        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
-        var dialog = await DialogService.ShowAsync<ImpostaPasswordDialog>("Reimposta password", parameters, options);
-        var result = await dialog.Result;
-        if (result is { Canceled: false })
+            Snackbar.Add("L'utente non ha un'email: impossibile inviare il link. Usa «Reimposta password».",
+                MudBlazor.Severity.Warning);
+            return;
+        }
+
+        try
         {
-            Snackbar.Add("Password aggiornata.", MudBlazor.Severity.Success);
-            await RicaricaAsync();
+            string token, subject, body;
+            if (!u.HaPassword)
+            {
+                token = await TokenManager.CreaAttivazioneAsync(u.IdUtente);
+                var link = new Uri(new Uri(Nav.BaseUri), $"attiva/{token}").ToString();
+                (subject, body) = AccountEmailTemplates.Attivazione(link, u.Username, TokenOptions.Value.AttivazioneOreDefault);
+            }
+            else
+            {
+                token = await TokenManager.CreaResetAsync(u.IdUtente);
+                var link = new Uri(new Uri(Nav.BaseUri), $"reset-password/{token}").ToString();
+                (subject, body) = AccountEmailTemplates.Reset(link, u.Username, TokenOptions.Value.ResetOreDefault);
+            }
+
+            await EmailSender.SendAsync(u.Email, subject, body);
+            Snackbar.Add($"Link inviato a {u.Email}.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "GestioneUtenti.InviaLinkAsync");
+            Snackbar.Add("Errore nell'invio del link.", MudBlazor.Severity.Error);
         }
     }
+
 }

@@ -26,6 +26,12 @@ public interface IUtenteManager
     Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Utente per email (case-insensitive), o <c>null</c>. Usato dal flusso
+    /// "password dimenticata" (T4) per individuare il destinatario del reset.
+    /// </summary>
+    Task<Utente?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Crea un nuovo utente assegnandogli il ruolo indicato. La password è
     /// opzionale: se <c>null</c> l'utente nasce "invitato" (senza password,
     /// da attivare via link — T4); se valorizzata viene hashata prima
@@ -57,7 +63,10 @@ public interface IUtenteManager
 
     /// <summary>
     /// Imposta (o reimposta) la password di un utente: la valida e la hasha.
-    /// Usato dall'admin in T3; il reset via email/token è T4.
+    /// <b>Non esposta nella UI</b>: dopo T4 l'impostazione password passa sempre
+    /// dal circuito email (link di attivazione/reset), così nessuno — admin
+    /// compreso — sceglie la password altrui. Resta come capability per usi
+    /// programmatici (script, seed, futuri scenari di servizio).
     /// </summary>
     Task ImpostaPasswordAsync(Guid idUtente, string nuovaPassword, CancellationToken cancellationToken = default);
 }

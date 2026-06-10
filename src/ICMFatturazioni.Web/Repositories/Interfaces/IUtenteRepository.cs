@@ -20,6 +20,13 @@ public interface IUtenteRepository
     Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Utente con quell'email (confronto case-insensitive), o <c>null</c>.
+    /// Usato dal flusso "password dimenticata" (T4). L'email è univoca quando
+    /// presente (indice filtrato).
+    /// </summary>
+    Task<Utente?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Inserisce un nuovo utente. L'<c>IdUtente</c> (GUID v7) è già valorizzato
     /// dal manager prima della chiamata (no IDENTITY, no OUTPUT).
     /// </summary>

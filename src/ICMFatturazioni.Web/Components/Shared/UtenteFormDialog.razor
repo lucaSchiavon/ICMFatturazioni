@@ -1,9 +1,11 @@
 @*
-    Dialog Utente — usato per "Nuovo" e "Modifica".
-    - Nuovo (Iniziale null): Username, Email, Ruolo e Password iniziale (l'admin
-      la imposta direttamente; il flusso invito/reset via email è T4).
-    - Modifica: Username, Email, Ruolo, Attivo. La password NON si cambia qui:
-      si usa l'azione dedicata "Reimposta password".
+    Dialog Utente — usato per "Nuovo" e "Modifica" (allineato a ICMVerbali).
+    - Nuovo (Iniziale null): Username, Email (OBBLIGATORIA) e Ruolo. NESSUNA
+      password: l'utente nasce sempre "invitato" (senza password) e riceve via
+      email un link di attivazione con cui sceglie LUI la propria password. Così
+      nessun altro — admin compreso — conosce mai la password dell'utente.
+    - Modifica: Username, Email, Ruolo, Attivo. La password non si tocca: per
+      cambiarla si usa l'azione "Invia link" (reset via email) dalla lista.
     Il dropdown ruoli è già filtrato dal chiamante (es. niente Superadmin per
     un Admin).
 *@
@@ -45,13 +47,18 @@
                 </MudItem>
 
                 <MudItem xs="12" sm="@(IsModifica ? 6 : 12)">
+                    @* Email obbligatoria in creazione: è il canale per il link di
+                       attivazione. In modifica resta facoltativa (non si reinvita). *@
                     <MudTextField @bind-Value="_model.Email"
-                                  Label="Email"
+                                  Label="@(IsModifica ? "Email" : "Email *")"
                                   InputType="InputType.Email"
+                                  Required="@(!IsModifica)"
+                                  RequiredError="Email obbligatoria"
                                   MaxLength="256"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense"
-                                  HelperText="Opzionale: servirà per il reset password via email" />
+                                  Class="@(IsModifica ? null : "campo-obbligatorio")"
+                                  HelperText="Serve per l'attivazione dell'account e per il reset password" />
                 </MudItem>
 
                 @if (IsModifica)
@@ -59,19 +66,20 @@
                     <MudItem xs="12" sm="6" Class="d-flex align-center">
                         <MudCheckBox @bind-Value="_model.Attivo" Label="Attivo" Color="Color.Primary" />
                     </MudItem>
+                    <MudItem xs="12">
+                        <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Variant="Variant.Outlined">
+                            Per cambiare la password usa «Invia link» dalla lista utenti:
+                            la reimposta l'utente stesso tramite email.
+                        </MudAlert>
+                    </MudItem>
                 }
                 else
                 {
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.Password"
-                                      Label="Password iniziale *"
-                                      InputType="InputType.Password"
-                                      Required="true"
-                                      RequiredError="Password obbligatoria"
-                                      Validation="@(new Func<string, string?>(ValidaPassword))"
-                                      Variant="Variant.Outlined"
-                                      Margin="Margin.Dense"
-                                      Class="campo-obbligatorio" />
+                    <MudItem xs="12">
+                        <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Variant="Variant.Outlined">
+                            Non serve impostare una password: l'utente riceverà via email un
+                            link per attivare l'account e scegliere la propria password.
+                        </MudAlert>
                     </MudItem>
                 }
             </MudGrid>
@@ -92,7 +100,7 @@
             {
                 <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
             }
-            Salva
+            @(IsModifica ? "Salva" : "Crea e invia link")
         </MudButton>
     </DialogActions>
 </MudDialog>
@@ -132,9 +140,6 @@
         }
     }
 
-    private static string? ValidaPassword(string? pwd)
-        => string.IsNullOrEmpty(pwd) || pwd.Length >= 8 ? null : "Almeno 8 caratteri";
-
     private void Annulla() => MudDialog.Cancel();
 
     private async Task Salva()
@@ -149,12 +154,15 @@
             if (IsModifica)
             {
                 await UtenteManager.AggiornaAsync(Iniziale!.IdUtente, _model.Username, _model.Email, _model.IdRuolo, _model.Attivo);
+                MudDialog.Close(DialogResult.Ok<Guid?>(null));
             }
             else
             {
-                await UtenteManager.CreaAsync(_model.Username, _model.Password, _model.Email, _model.IdRuolo);
+                // Crea SEMPRE invitato (password null): la sceglierà l'utente dal
+                // link. Ritorna l'IdUtente così il chiamante invia subito il link.
+                var idNuovo = await UtenteManager.CreaAsync(_model.Username, password: null, _model.Email, _model.IdRuolo);
+                MudDialog.Close(DialogResult.Ok<Guid?>(idNuovo));
             }
-            MudDialog.Close(DialogResult.Ok(true));
         }
         catch (UtenteDuplicatoException ex)
         {
@@ -181,6 +189,5 @@
         public string? Email { get; set; }
         public Guid IdRuolo { get; set; }
         public bool Attivo { get; set; } = true;
-        public string Password { get; set; } = string.Empty;
     }
 }

@@ -1,0 +1,79 @@
+@*
+    Pagina /attiva/{Token} — primo accesso: l'utente invitato imposta la
+    password. Static-rendered (come /login): il form POSTa a /auth/attiva, che
+    ha accesso a HttpContext per consumare il token e firmare il cookie.
+*@
+
+@page "/attiva/{Token}"
+@layout EmptyLayout
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+@using ICMFatturazioni.Web.Components.Account
+@using ICMFatturazioni.Web.Components.Layout
+@using ICMFatturazioni.Web.Authentication
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+
+@inject IUtenteTokenManager TokenManager
+
+<PageTitle>Attiva account · ICM Fatturazioni</PageTitle>
+
+<AuthShell Sottotitolo="Imposta la password per il primo accesso">
+    @if (_tokenValido)
+    {
+        @if (!string.IsNullOrEmpty(Error))
+        {
+            <div class="auth-error" role="alert">@Error</div>
+        }
+
+        <form method="post" action="/auth/attiva">
+            <AntiforgeryToken />
+            <input type="hidden" name="Token" value="@Token" />
+
+            <label class="auth-label" for="password">Nuova password</label>
+            <input id="password" name="Password" type="password" autocomplete="new-password"
+                   class="auth-input" required autofocus />
+
+            <label class="auth-label" for="passwordConfirm">Conferma password</label>
+            <input id="passwordConfirm" name="PasswordConfirm" type="password" autocomplete="new-password"
+                   class="auth-input" required />
+
+            <p class="auth-hint">@PasswordPolicy.Requisiti</p>
+
+            <button type="submit" class="auth-button">Imposta la password e accedi</button>
+        </form>
+    }
+    else
+    {
+        <div class="auth-error" role="alert">@_errore</div>
+        <p class="auth-foot"><a href="/login">Torna al login</a></p>
+    }
+</AuthShell>
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    /// <summary>Eventuale errore propagato dall'endpoint dopo un POST fallito.</summary>
+    [SupplyParameterFromQuery]
+    public string? Error { get; set; }
+
+    private bool _tokenValido;
+    private string? _errore;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Validazione "in lettura": decide se mostrare il form o un messaggio.
+        // Il consumo effettivo avviene solo al POST (atomico, sentinel TOCTOU).
+        try
+        {
+            await TokenManager.ValidaAsync(Token, UtenteTokenTipo.Attivazione);
+            _tokenValido = true;
+        }
+        catch (UtenteTokenInvalidoException ex)
+        {
+            _errore = UtenteTokenMessaggi.Messaggio(ex.Motivo);
+        }
+    }
+}

@@ -54,12 +54,12 @@ public class UtenteManagerTests
         {
             IdUtente = Guid.CreateVersion7(),
             Username = "spento",
-            PasswordHash = hasher.HashPassword("password1"),
+            PasswordHash = hasher.HashPassword("Password123"),
             IdRuolo = RuoloOperatore,
             Attivo = false,
         });
 
-        Assert.Null(await sut.AutenticaAsync("spento", "password1"));
+        Assert.Null(await sut.AutenticaAsync("spento", "Password123"));
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public class UtenteManagerTests
     {
         var (sut, _, _) = NewSut();
         await Assert.ThrowsAsync<ArgumentException>(
-            () => sut.CreaAsync(username, "password1", null, RuoloOperatore));
+            () => sut.CreaAsync(username, "Password123", null, RuoloOperatore));
     }
 
     [Fact]
@@ -128,14 +128,14 @@ public class UtenteManagerTests
     {
         var (sut, _, _) = NewSut();
         await Assert.ThrowsAsync<ArgumentException>(
-            () => sut.CreaAsync("mario", "password1", null, Guid.Empty));
+            () => sut.CreaAsync("mario", "Password123", null, Guid.Empty));
     }
 
     [Fact]
     public async Task CreaAsync_UsernameDuplicato_LanciaUtenteDuplicato()
     {
         var (sut, _, _) = NewSut();
-        await sut.CreaAsync("mario", "password1", null, RuoloOperatore);
+        await sut.CreaAsync("mario", "Password123", null, RuoloOperatore);
 
         var ex = await Assert.ThrowsAsync<UtenteDuplicatoException>(
             () => sut.CreaAsync("mario", "password2", null, RuoloOperatore));
@@ -186,7 +186,7 @@ public class UtenteManagerTests
     public async Task ImpostaTemaPreferitoAsync_TemaValido_AggiornaIlRepository(string tema)
     {
         var (sut, repo, _) = NewSut();
-        var id = await sut.CreaAsync("mario", "password1", null, RuoloOperatore);
+        var id = await sut.CreaAsync("mario", "Password123", null, RuoloOperatore);
 
         await sut.ImpostaTemaPreferitoAsync(id, tema);
 
@@ -209,7 +209,7 @@ public class UtenteManagerTests
     public async Task AggiornaAsync_UsernameVuoto_LanciaArgumentException()
     {
         var (sut, _, _) = NewSut();
-        var id = await sut.CreaAsync("mario", "password1", null, RuoloOperatore);
+        var id = await sut.CreaAsync("mario", "Password123", null, RuoloOperatore);
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => sut.AggiornaAsync(id, "", null, RuoloOperatore, true));
@@ -219,8 +219,8 @@ public class UtenteManagerTests
     public async Task AggiornaAsync_UsernameDiUnAltroUtente_LanciaUtenteDuplicato()
     {
         var (sut, _, _) = NewSut();
-        await sut.CreaAsync("mario", "password1", null, RuoloOperatore);
-        var idLuigi = await sut.CreaAsync("luigi", "password1", null, RuoloOperatore);
+        await sut.CreaAsync("mario", "Password123", null, RuoloOperatore);
+        var idLuigi = await sut.CreaAsync("luigi", "Password123", null, RuoloOperatore);
 
         await Assert.ThrowsAsync<UtenteDuplicatoException>(
             () => sut.AggiornaAsync(idLuigi, "mario", null, RuoloOperatore, true));
@@ -230,7 +230,7 @@ public class UtenteManagerTests
     public async Task AggiornaAsync_StessoUsernameSulloStessoUtente_NonEDuplicato()
     {
         var (sut, repo, _) = NewSut();
-        var id = await sut.CreaAsync("mario", "password1", "m@x.it", RuoloOperatore);
+        var id = await sut.CreaAsync("mario", "Password123", "m@x.it", RuoloOperatore);
 
         // Rinominare lo stesso utente con il suo username corrente non deve
         // scattare come duplicato (l'id è escluso dal pre-check).
@@ -276,7 +276,7 @@ public class UtenteManagerTests
     {
         var (sut, repo, _) = NewSut();
         repo.RuoliNomi[RuoloOperatore] = "Operatore";
-        var id = await sut.CreaAsync("mario", "password1", null, RuoloOperatore);
+        var id = await sut.CreaAsync("mario", "Password123", null, RuoloOperatore);
 
         Assert.NotNull(await sut.GetByUsernameAsync("mario"));
         Assert.NotNull(await sut.GetByIdAsync(id));

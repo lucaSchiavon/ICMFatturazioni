@@ -1,0 +1,123 @@
+@*
+    Guscio visuale condiviso dalle pagine anonime di gestione account
+    (attivazione, reset, password dimenticata). Stessa estetica del /login
+    (card centrata, palette brand) ma fattorizzata qui per non duplicare il CSS.
+*@
+
+<div class="auth-shell">
+    <div class="auth-card">
+        <h1 class="auth-title">ICM Fatturazioni</h1>
+        @if (!string.IsNullOrEmpty(Sottotitolo))
+        {
+            <p class="auth-subtitle">@Sottotitolo</p>
+        }
+        @ChildContent
+    </div>
+</div>
+
+<style>
+    .auth-shell {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #F7F9FB; /* gray-50 */
+        padding: 16px;
+    }
+    .auth-card {
+        width: 100%;
+        max-width: 380px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0; /* gray-200 */
+        border-radius: 8px;
+        box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+        padding: 32px;
+    }
+    .auth-title {
+        margin: 0 0 4px;
+        color: #1E2A3B; /* icm-navy-900 */
+        font-size: 20px;
+        font-weight: 600;
+    }
+    .auth-subtitle {
+        margin: 0 0 24px;
+        color: #475569; /* gray-600 */
+        font-size: 13px;
+    }
+    .auth-label {
+        display: block;
+        margin: 12px 0 4px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #475569;
+    }
+    .auth-input {
+        width: 100%;
+        height: 36px;
+        padding: 0 12px;
+        background: #FFFFFF;
+        border: 1px solid #CBD5E1; /* gray-300 */
+        border-radius: 6px;
+        font-size: 13px;
+        color: #0F172A;
+        box-sizing: border-box;
+    }
+    .auth-input:focus {
+        outline: none;
+        border-color: #245F8C; /* icm-blue-500 */
+        box-shadow: 0 0 0 2px #AEC8E2; /* icm-blue-200 */
+    }
+    .auth-button {
+        margin-top: 24px;
+        width: 100%;
+        height: 36px;
+        background: #245F8C; /* icm-blue-500 */
+        color: #FFFFFF;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 150ms ease-out;
+    }
+    .auth-button:hover { background: #1D4E73; }
+    .auth-button:active { background: #163D59; }
+    .auth-error {
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #FEF2F2;
+        border: 1px solid rgba(220, 38, 38, 0.2);
+        color: #B91C1C;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+    .auth-info {
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #EFF6FF;
+        border: 1px solid rgba(37, 95, 140, 0.2);
+        color: #1D4E73;
+        border-radius: 6px;
+        font-size: 13px;
+    }
+    .auth-hint {
+        margin: 8px 0 0;
+        font-size: 12px;
+        color: #64748B;
+    }
+    .auth-foot {
+        margin-top: 20px;
+        font-size: 12px;
+        text-align: center;
+    }
+    .auth-foot a { color: #245F8C; text-decoration: none; }
+    .auth-foot a:hover { text-decoration: underline; }
+</style>
+
+@code {
+    /// <summary>Sottotitolo opzionale mostrato sotto il titolo.</summary>
+    [Parameter] public string? Sottotitolo { get; set; }
+
+    /// <summary>Contenuto della card (form o messaggio).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

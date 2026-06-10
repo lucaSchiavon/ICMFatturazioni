@@ -70,6 +70,11 @@ internal sealed class UtenteManager : IUtenteManager
     public Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default)
         => _repository.GetByIdAsync(idUtente, cancellationToken);
 
+    public Task<Utente?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+        => string.IsNullOrWhiteSpace(email)
+            ? Task.FromResult<Utente?>(null)
+            : _repository.GetByEmailAsync(email.Trim(), cancellationToken);
+
     // ---------------------------------------------------------------------
     // Creazione utente
     // ---------------------------------------------------------------------
@@ -98,14 +103,16 @@ internal sealed class UtenteManager : IUtenteManager
             throw new UtenteDuplicatoException(username);
         }
 
-        // Password opzionale: null/vuota → utente invitato (PasswordHash null).
-        // Se valorizzata, applichiamo il minimo di policy e hashiamo.
+        // Password opzionale: null/vuota → utente invitato (PasswordHash null),
+        // che imposterà la password via link di attivazione (T4). Se valorizzata,
+        // deve rispettare la policy condivisa prima dell'hashing.
         string? passwordHash = null;
         if (!string.IsNullOrEmpty(password))
         {
-            if (password.Length < 8)
+            var errore = PasswordPolicy.Valida(password);
+            if (errore is not null)
             {
-                throw new ArgumentException("La password deve avere almeno 8 caratteri.", nameof(password));
+                throw new ArgumentException(errore, nameof(password));
             }
             passwordHash = _passwordHasher.HashPassword(password);
         }
@@ -168,9 +175,10 @@ internal sealed class UtenteManager : IUtenteManager
 
     public async Task ImpostaPasswordAsync(Guid idUtente, string nuovaPassword, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(nuovaPassword) || nuovaPassword.Length < 8)
+        var errore = PasswordPolicy.Valida(nuovaPassword);
+        if (errore is not null)
         {
-            throw new ArgumentException("La password deve avere almeno 8 caratteri.", nameof(nuovaPassword));
+            throw new ArgumentException(errore, nameof(nuovaPassword));
         }
         var hash = _passwordHasher.HashPassword(nuovaPassword);
         await _repository.UpdatePasswordHashAsync(idUtente, hash, cancellationToken);

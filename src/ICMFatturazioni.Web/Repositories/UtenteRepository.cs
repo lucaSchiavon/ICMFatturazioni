@@ -47,6 +47,18 @@ internal sealed class UtenteRepository : IUtenteRepository
         return await connection.QuerySingleOrDefaultAsync<Utente>(cmd);
     }
 
+    public async Task<Utente?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        // Email univoca quando valorizzata (indice filtrato); il confronto è
+        // case-insensitive grazie alla collation di default della colonna.
+        var cmd = new CommandDefinition(
+            commandText: SqlSelectColumns + " WHERE Email = @Email;",
+            parameters: new { Email = email },
+            cancellationToken: cancellationToken);
+        return await connection.QuerySingleOrDefaultAsync<Utente>(cmd);
+    }
+
     // IdUtente generato app-side (GUID v7); CreatedAt/UpdatedAt dai DEFAULT del DB.
     private const string SqlInsert = """
         INSERT INTO fatt.Utenti
