@@ -20,4 +20,19 @@ public interface IRuoloRepository
     /// <c>null</c>. Usato dal seeder per risolvere l'IdRuolo dei ruoli fissi.
     /// </summary>
     Task<Ruolo?> GetByCodiceAsync(string codice, CancellationToken cancellationToken = default);
+
+    /// <summary>True se esiste già un ruolo con quel nome (escludendo un id).</summary>
+    Task<bool> ExistsNomeAsync(string nome, Guid? escludiIdRuolo = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Numero di utenti a cui è assegnato il ruolo.</summary>
+    Task<int> CountUtentiAsync(Guid idRuolo, CancellationToken cancellationToken = default);
+
+    /// <summary>Inserisce un nuovo ruolo (custom; IdRuolo GUID v7 dal manager).</summary>
+    Task InsertAsync(Ruolo ruolo, CancellationToken cancellationToken = default);
+
+    /// <summary>Aggiorna nome, descrizione e stato attivo di un ruolo.</summary>
+    Task UpdateAsync(Guid idRuolo, string nome, string? descrizione, bool isAttivo, CancellationToken cancellationToken = default);
+
+    /// <summary>Elimina un ruolo e i suoi mapping di menu (per ruolo). Hard delete.</summary>
+    Task DeleteAsync(Guid idRuolo, CancellationToken cancellationToken = default);
 }

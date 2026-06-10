@@ -12,4 +12,22 @@ public interface IRuoloManager
     Task<IReadOnlyList<Ruolo>> ElencoAsync(CancellationToken cancellationToken = default);
     Task<Ruolo?> GetByIdAsync(Guid idRuolo, CancellationToken cancellationToken = default);
     Task<Ruolo?> GetByCodiceAsync(string codice, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Crea un nuovo ruolo custom. Lancia <see cref="RuoloDuplicatoException"/>
+    /// se il nome esiste già. Ritorna l'IdRuolo (GUID v7) generato.
+    /// </summary>
+    Task<Guid> CreaAsync(string nome, string? descrizione, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Aggiorna un ruolo custom. Lancia <see cref="RuoloProtettoException"/> sui
+    /// ruoli di sistema e <see cref="RuoloDuplicatoException"/> sul nome duplicato.
+    /// </summary>
+    Task AggiornaAsync(Guid idRuolo, string nome, string? descrizione, bool isAttivo, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Elimina un ruolo custom. Lancia <see cref="RuoloProtettoException"/> sui
+    /// ruoli di sistema e <see cref="RuoloInUsoException"/> se assegnato a utenti.
+    /// </summary>
+    Task EliminaAsync(Guid idRuolo, CancellationToken cancellationToken = default);
 }

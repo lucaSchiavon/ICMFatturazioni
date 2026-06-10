@@ -25,4 +25,18 @@ public interface IMenuRepository
     /// e SottoMenuUtente.
     /// </summary>
     Task<IReadOnlySet<Guid>> GetIdSottoMenuVisibiliAsync(Guid idRuolo, Guid idUtente, CancellationToken cancellationToken = default);
+
+    // --- Configurazione mapping per RUOLO (matrice ruolo×menu, T3c) ---
+
+    /// <summary>Id dei Menu mappati al ruolo (solo MenuRuolo, no override utente).</summary>
+    Task<IReadOnlySet<Guid>> GetMenuRuoloIdsAsync(Guid idRuolo, CancellationToken cancellationToken = default);
+
+    /// <summary>Id dei SottoMenu mappati al ruolo (solo SottoMenuRuolo).</summary>
+    Task<IReadOnlySet<Guid>> GetSottoMenuRuoloIdsAsync(Guid idRuolo, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sostituisce integralmente il mapping di visibilità del ruolo: cancella
+    /// le righe MenuRuolo/SottoMenuRuolo esistenti e reinserisce quelle indicate.
+    /// </summary>
+    Task SetMappingRuoloAsync(Guid idRuolo, IReadOnlyCollection<Guid> menuIds, IReadOnlyCollection<Guid> sottoMenuIds, CancellationToken cancellationToken = default);
 }

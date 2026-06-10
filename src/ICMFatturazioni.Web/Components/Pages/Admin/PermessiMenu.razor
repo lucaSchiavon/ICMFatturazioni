@@ -1,0 +1,167 @@
+@*
+    Pagina /admin/permessi — matrice ruolo×menu (T3c).
+
+    Si sceglie un ruolo CUSTOM e si spuntano i menu/sottomenu che quel ruolo
+    può vedere. I ruoli di sistema (Superadmin/Admin) non sono configurabili:
+    vedono tutto per regola fissa. Le modifiche hanno effetto al successivo
+    accesso dell'utente (il menu è calcolato all'apertura della sessione).
+*@
+@page "/admin/permessi"
+@attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireAdmin)]
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IRuoloManager RuoloManager
+@inject IMenuConfigManager Config
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<PageTitle>Permessi menu · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Permessi menu</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Wrap="Wrap.Wrap">
+        <MudSelect T="Guid?" Label="Ruolo da configurare" Value="_selectedRuolo"
+                   ValueChanged="OnRuoloChanged" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Style="min-width: 260px;">
+            @foreach (var r in _ruoliConfigurabili)
+            {
+                <MudSelectItem T="Guid?" Value="@r.IdRuolo">@r.Nome</MudSelectItem>
+            }
+        </MudSelect>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="flex:1;">
+            I ruoli di sistema vedono tutto e non si configurano. Le modifiche valgono dal prossimo accesso dell'utente.
+        </MudText>
+        @if (_selectedRuolo is not null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save" Ripple="false"
+                       Disabled="@_salvataggio" OnClick="Salva">
+                Salva permessi
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@if (_selectedRuolo is null)
+{
+    <MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined">
+        Seleziona un ruolo per configurarne i menu visibili.
+    </MudAlert>
+}
+else if (_ruoliConfigurabili.Count == 0)
+{
+    <MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined">
+        Nessun ruolo configurabile: creane uno in «Gestione ruoli».
+    </MudAlert>
+}
+else
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+        @foreach (var menu in _menus)
+        {
+            var figli = _sottoMenus.Where(s => s.IdMenu == menu.IdMenu).ToList();
+            <div class="mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">
+                    <MudIcon Icon="@ICMFatturazioni.Web.Navigation.IconaResolver.Risolvi(menu.Icona)" Size="Size.Small" Class="mr-1" />
+                    @menu.DescrizioneMenu
+                </MudText>
+                @if (figli.Count == 0 && !string.IsNullOrEmpty(menu.PaginaRazor))
+                {
+                    @* Menu link diretto (senza figli): checkbox sul menu stesso. *@
+                    <div class="ml-6">
+                        <MudCheckBox T="bool" Dense="true" Color="Color.Primary"
+                                     Value="@_menuChecked.Contains(menu.IdMenu)"
+                                     ValueChanged="@(v => ToggleMenu(menu.IdMenu, v))"
+                                     Label="@menu.DescrizioneMenu" />
+                    </div>
+                }
+                else
+                {
+                    <div class="ml-6">
+                        @foreach (var s in figli)
+                        {
+                            <MudCheckBox T="bool" Dense="true" Color="Color.Primary"
+                                         Value="@_sottoChecked.Contains(s.IdSottoMenu)"
+                                         ValueChanged="@(v => ToggleSotto(s.IdSottoMenu, v))"
+                                         Label="@s.Descrizione" />
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </MudPaper>
+}
+
+@code {
+    private IReadOnlyList<Ruolo> _ruoliConfigurabili = Array.Empty<Ruolo>();
+    private IReadOnlyList<Menu> _menus = Array.Empty<Menu>();
+    private IReadOnlyList<SottoMenu> _sottoMenus = Array.Empty<SottoMenu>();
+
+    private Guid? _selectedRuolo;
+    private HashSet<Guid> _menuChecked = new();
+    private HashSet<Guid> _sottoChecked = new();
+    private bool _salvataggio;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var ruoli = await RuoloManager.ElencoAsync();
+            // Solo ruoli custom attivi: i ruoli di sistema non si configurano.
+            _ruoliConfigurabili = ruoli.Where(r => !r.IsSistema && r.IsAttivo).ToList();
+            _menus = await Config.GetMenusAsync();
+            _sottoMenus = await Config.GetSottoMenusAsync();
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiMenu.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private async Task OnRuoloChanged(Guid? idRuolo)
+    {
+        _selectedRuolo = idRuolo;
+        if (idRuolo is null) return;
+        try
+        {
+            var mapping = await Config.GetMappingRuoloAsync(idRuolo.Value);
+            _menuChecked = new HashSet<Guid>(mapping.MenuIds);
+            _sottoChecked = new HashSet<Guid>(mapping.SottoMenuIds);
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiMenu.OnRuoloChanged");
+            Snackbar.Add("Errore nel caricamento dei permessi del ruolo.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private void ToggleMenu(Guid id, bool val)
+    {
+        if (val) _menuChecked.Add(id); else _menuChecked.Remove(id);
+    }
+
+    private void ToggleSotto(Guid id, bool val)
+    {
+        if (val) _sottoChecked.Add(id); else _sottoChecked.Remove(id);
+    }
+
+    private async Task Salva()
+    {
+        if (_selectedRuolo is null) return;
+        _salvataggio = true;
+        try
+        {
+            await Config.SalvaMappingRuoloAsync(_selectedRuolo.Value, _menuChecked.ToList(), _sottoChecked.ToList());
+            Snackbar.Add("Permessi salvati. Avranno effetto al prossimo accesso dell'utente.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiMenu.Salva");
+            Snackbar.Add("Errore nel salvataggio dei permessi.", MudBlazor.Severity.Error);
+        }
+        finally { _salvataggio = false; }
+    }
+}

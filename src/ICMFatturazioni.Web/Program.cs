@@ -103,6 +103,7 @@ builder.Services.AddScoped<IAnagraficaManager, AnagraficaManager>();
 // pagine consentite all'utente. PageRouteResolver singleton: mappa
 // nome-classe → rotta una sola volta (riflessione all'avvio).
 builder.Services.AddScoped<IMenuService, MenuService>();
+builder.Services.AddScoped<IMenuConfigManager, MenuConfigManager>();
 builder.Services.AddSingleton<ICMFatturazioni.Web.Navigation.IPageRouteResolver,
     ICMFatturazioni.Web.Navigation.PageRouteResolver>();
 

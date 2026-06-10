@@ -1,0 +1,168 @@
+@*
+    Pagina /admin/ruoli — gestione ruoli (T3b).
+    Accesso: RequireAdmin. I ruoli di sistema (Superadmin/Admin) sono mostrati
+    ma protetti: niente modifica/eliminazione (icone nascoste). Il Superadmin è
+    nascosto agli Admin.
+*@
+@page "/admin/ruoli"
+@attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireAdmin)]
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IRuoloManager RuoloManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<PageTitle>Gestione ruoli · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Gestione ruoli</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+            I ruoli di sistema (Superadmin, Admin) sono fissi e non modificabili.
+        </MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Ripple="false" OnClick="ApriNuovo">
+            Nuovo ruolo
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="Ruolo" Items="@RuoliVisibili" Dense="true" Hover="true" Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Nome" Title="Ruolo" />
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" />
+        <TemplateColumn Title="Tipo">
+            <CellTemplate>
+                @if (context.Item.IsSistema)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text">Sistema</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">Personalizzato</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Stato">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                         Color="@(context.Item.IsAttivo ? Color.Success : Color.Error)">
+                    @(context.Item.IsAttivo ? "Attivo" : "Disattivato")
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false" Filterable="false">
+            <CellTemplate>
+                @* Solo i ruoli custom sono modificabili/eliminabili. *@
+                @if (!context.Item.IsSistema)
+                {
+                    <MudStack Row="true" Spacing="0">
+                        <MudTooltip Text="Modifica">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Ripple="false"
+                                           OnClick="@(() => ApriModifica(context.Item))" />
+                        </MudTooltip>
+                        <MudTooltip Text="Elimina">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" Ripple="false"
+                                           OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                        </MudTooltip>
+                    </MudStack>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessun ruolo.</MudText></NoRecordsContent>
+</MudDataGrid>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private IReadOnlyList<Ruolo> _ruoli = Array.Empty<Ruolo>();
+    private bool _caricamento = true;
+    private bool _vedeSuperadmin;
+
+    // Il ruolo Superadmin è nascosto a chi non è Superadmin.
+    private IEnumerable<Ruolo> RuoliVisibili =>
+        _vedeSuperadmin ? _ruoli : _ruoli.Where(r => r.Codice != RuoliSistema.Superadmin);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _vedeSuperadmin = state.User.FindFirst("ruolo_codice")?.Value == RuoliSistema.Superadmin;
+        }
+        await RicaricaAsync();
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _ruoli = await RuoloManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "GestioneRuoli.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dei ruoli.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamento = false; }
+    }
+
+    private async Task ApriNuovo()
+    {
+        var parameters = new DialogParameters<RuoloFormDialog> { { x => x.Iniziale, null } };
+        await Mostra("Nuovo ruolo", parameters, "Ruolo creato.");
+    }
+
+    private async Task ApriModifica(Ruolo r)
+    {
+        var parameters = new DialogParameters<RuoloFormDialog> { { x => x.Iniziale, r } };
+        await Mostra("Modifica ruolo", parameters, "Ruolo aggiornato.");
+    }
+
+    private async Task Mostra(string titolo, DialogParameters<RuoloFormDialog> parameters, string successo)
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<RuoloFormDialog>(titolo, parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add(successo, MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(Ruolo r)
+    {
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare ruolo?" },
+            { x => x.NomeElemento, r.Nome },
+            { x => x.Messaggio, "Verrà eliminato insieme alle sue configurazioni di menu. Operazione possibile solo se nessun utente lo usa." },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var risultato = await dialog.Result;
+        if (risultato is not { Canceled: false }) return;
+
+        try
+        {
+            await RuoloManager.EliminaAsync(r.IdRuolo);
+            Snackbar.Add("Ruolo eliminato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+        catch (RuoloInUsoException ex) { Snackbar.Add(ex.Message, MudBlazor.Severity.Warning); }
+        catch (RuoloProtettoException ex) { Snackbar.Add(ex.Message, MudBlazor.Severity.Warning); }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "GestioneRuoli.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

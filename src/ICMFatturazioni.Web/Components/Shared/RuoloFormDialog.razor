@@ -1,0 +1,106 @@
+@*
+    Dialog Ruolo — crea/modifica un ruolo CUSTOM. I ruoli di sistema
+    (Superadmin/Admin) non arrivano qui: la UI non ne consente la modifica.
+*@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IRuoloManager RuoloManager
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            <MudTextField @bind-Value="_model.Nome"
+                          Label="Nome ruolo *"
+                          Required="true"
+                          RequiredError="Nome obbligatorio"
+                          MaxLength="50"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="campo-obbligatorio" />
+            <MudTextField @bind-Value="_model.Descrizione"
+                          Label="Descrizione"
+                          MaxLength="200"
+                          Lines="2"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Class="mt-3" />
+            @if (IsModifica)
+            {
+                <MudCheckBox @bind-Value="_model.IsAttivo" Label="Attivo" Color="Color.Primary" Class="mt-2" />
+            }
+        </MudForm>
+        @if (!string.IsNullOrEmpty(_errore))
+        {
+            <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">@_errore</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="@(() => MudDialog.Cancel())" Ripple="false">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="Salva" Disabled="@(!_isValid || _salvataggio)" Ripple="false">Salva</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public Ruolo? Iniziale { get; set; }
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _errore;
+
+    private bool IsModifica => Iniziale is not null;
+
+    protected override void OnInitialized()
+    {
+        if (Iniziale is not null)
+        {
+            _model = new FormModel
+            {
+                Nome = Iniziale.Nome,
+                Descrizione = Iniziale.Descrizione,
+                IsAttivo = Iniziale.IsAttivo,
+            };
+        }
+    }
+
+    private async Task Salva()
+    {
+        _errore = null;
+        await _form.ValidateAsync();
+        if (!_isValid) return;
+        _salvataggio = true;
+        try
+        {
+            if (IsModifica)
+            {
+                await RuoloManager.AggiornaAsync(Iniziale!.IdRuolo, _model.Nome, _model.Descrizione, _model.IsAttivo);
+            }
+            else
+            {
+                await RuoloManager.CreaAsync(_model.Nome, _model.Descrizione);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (RuoloDuplicatoException ex) { _errore = ex.Message; }
+        catch (RuoloProtettoException ex) { _errore = ex.Message; }
+        catch (ArgumentException ex) { _errore = ex.Message; }
+        catch (Exception ex)
+        {
+            _errore = "Errore durante il salvataggio del ruolo.";
+            await ErrorLogger.LogAsync(ex, contesto: "RuoloFormDialog.Salva");
+        }
+        finally { _salvataggio = false; }
+    }
+
+    private sealed class FormModel
+    {
+        public string Nome { get; set; } = string.Empty;
+        public string? Descrizione { get; set; }
+        public bool IsAttivo { get; set; } = true;
+    }
+}
