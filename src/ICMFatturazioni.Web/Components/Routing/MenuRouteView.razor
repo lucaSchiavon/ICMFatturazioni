@@ -1,0 +1,37 @@
+@*
+    Guardia di rotta dell'autorizzazione dinamica (memoria menu-ruoli-dinamici).
+
+    Sostituisce il RouteView standard in Routes.razor: prima di renderizzare la
+    pagina chiede a IMenuService se l'utente corrente può accedere alla pagina
+    (confronto su routeData.PageType.Name = nome classe Razor, la stessa chiave
+    memorizzata nelle tabelle menu). Se non consentito, reindirizza a
+    /access-denied (pagina di sistema, sempre lecita → nessun loop).
+
+    L'autenticazione di base resta garantita a monte dalla fallback policy
+    (utente non loggato → /login); questa guardia aggiunge il controllo
+    DI ACCESSO PER RUOLO/MENU sopra l'autenticazione.
+*@
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IMenuService MenuService
+@inject NavigationManager Nav
+
+@if (_consentito == true)
+{
+    <RouteView RouteData="RouteData" DefaultLayout="DefaultLayout" />
+}
+
+@code {
+    [Parameter] public RouteData RouteData { get; set; } = default!;
+    [Parameter] public Type? DefaultLayout { get; set; }
+
+    private bool? _consentito;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _consentito = await MenuService.PuoAccedereAsync(RouteData.PageType.Name);
+        if (_consentito == false)
+        {
+            Nav.NavigateTo("/access-denied", forceLoad: false);
+        }
+    }
+}

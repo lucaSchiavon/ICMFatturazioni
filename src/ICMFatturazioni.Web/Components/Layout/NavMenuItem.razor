@@ -1,0 +1,35 @@
+@*
+    Voce foglia del NavMenu dinamico. Rende un MudNavLink a partire da un
+    MenuNodo: risolve la rotta dal nome pagina (IPageRouteResolver) e l'icona
+    dal nome (IconaResolver). Se la voce non è Attivo (funzionalità non ancora
+    implementata) o la rotta non si risolve, viene mostrata disabilitata.
+*@
+@using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Navigation
+@inject IPageRouteResolver RouteResolver
+
+@if (Nodo.Attivo && _href is not null)
+{
+    <MudNavLink Href="@_href" Icon="@_icona" Match="NavLinkMatch.Prefix">
+        @Nodo.Descrizione
+    </MudNavLink>
+}
+else
+{
+    <MudNavLink Disabled="true" Icon="@_icona">
+        @Nodo.Descrizione
+    </MudNavLink>
+}
+
+@code {
+    [Parameter] public MenuNodo Nodo { get; set; } = default!;
+
+    private string? _href;
+    private string _icona = "";
+
+    protected override void OnParametersSet()
+    {
+        _href = Nodo.PaginaRazor is null ? null : RouteResolver.GetRoute(Nodo.PaginaRazor);
+        _icona = IconaResolver.Risolvi(Nodo.Icona);
+    }
+}

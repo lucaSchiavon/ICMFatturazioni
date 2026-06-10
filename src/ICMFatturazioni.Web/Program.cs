@@ -79,6 +79,7 @@ builder.Services.AddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
 // circuit Blazor, coerente con la durata della connessione SQL.
 builder.Services.AddScoped<IUtenteRepository, UtenteRepository>();
 builder.Services.AddScoped<IRuoloRepository, RuoloRepository>();
+builder.Services.AddScoped<IMenuRepository, MenuRepository>();
 builder.Services.AddScoped<IAnagraficaRepository, AnagraficaRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
@@ -96,6 +97,14 @@ builder.Services.AddSingleton<IErrorLogRepository, ErrorLogRepository>();
 builder.Services.AddScoped<IUtenteManager, UtenteManager>();
 builder.Services.AddScoped<IRuoloManager, RuoloManager>();
 builder.Services.AddScoped<IAnagraficaManager, AnagraficaManager>();
+
+// === Menu dinamico / autorizzazione per ruolo ===
+// MenuService scoped: calcola una volta per circuit l'albero visibile e le
+// pagine consentite all'utente. PageRouteResolver singleton: mappa
+// nome-classe → rotta una sola volta (riflessione all'avvio).
+builder.Services.AddScoped<IMenuService, MenuService>();
+builder.Services.AddSingleton<ICMFatturazioni.Web.Navigation.IPageRouteResolver,
+    ICMFatturazioni.Web.Navigation.PageRouteResolver>();
 
 // === Hashing password + seed utenti ===
 // PasswordHasherService singleton: stateless, PBKDF2 via il framework.

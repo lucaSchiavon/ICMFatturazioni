@@ -1,22 +1,21 @@
 @*
-    Menu di navigazione laterale.
+    Menu di navigazione laterale — DINAMICO (memoria menu-ruoli-dinamici).
 
-    Struttura (vedi Evidenze/menuiniziale.png):
-    - In cima un link "Home" verso la dashboard (/dashboard), che sostituisce
-      la vecchia voce "Tabelle amministrative" come entry-point dell'app.
-    - Tre gruppi espandibili (MudNavGroup): "Tabelle Amm.ve", "Attività studio"
-      e "Reports". Le voci che prima erano tab orizzontali della pagina
-      /tabelle-amministrative sono ora sottovoci del menu verticale.
+    La struttura non è più cablata: viene letta da IMenuService, che restituisce
+    l'albero già FILTRATO per l'utente corrente (in base al ruolo e agli
+    eventuali override per utente). Superadmin/Admin vedono tutto; gli altri
+    ruoli solo i menu/sottomenu assegnati.
 
-    Stato Fase 1/2: l'unica sottovoce attiva è "Anagrafiche" (→ /anagrafiche).
-    Le altre sono visibili ma disabilitate, per dare l'idea della struttura
-    completa; verranno abilitate man mano che le entità entrano in sviluppo.
-
-    "Tabelle Amm.ve" parte espanso perché contiene l'unica pagina già operativa.
+    "Home" (→ /dashboard) è fisso: è una pagina di sistema, non gestita a menu.
+    Le voci con funzionalità non ancora implementata (Attivo=false) appaiono
+    disabilitate (vedi NavMenuItem).
 *@
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Navigation
+@inject IMenuService MenuService
 
 <MudNavMenu>
-    @* Home / Dashboard — entry-point con grafici e dati di sintesi. *@
     <MudNavLink Href="/dashboard"
                 Icon="@Icons.Material.Filled.Dashboard"
                 Match="NavLinkMatch.Prefix">
@@ -25,54 +24,40 @@
 
     <MudDivider Class="my-2" />
 
-    <MudNavGroup Title="Tabelle Amm.ve"
-                 Icon="@Icons.Material.Filled.TableChart"
-                 Expanded="true">
-        <MudNavLink Href="/anagrafiche"
-                    Icon="@Icons.Material.Filled.PeopleAlt"
-                    Match="NavLinkMatch.Prefix">
-            Anagrafiche
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.ListAlt">
-            Desc. attività
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.AccountBalance">
-            Banche appoggio
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Percent">
-            Codici IVA
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Payments">
-            Codici pagamento
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.PriceChange">
-            Aliquote vigenti
-        </MudNavLink>
-    </MudNavGroup>
-
-    <MudNavGroup Title="Attività studio"
-                 Icon="@Icons.Material.Filled.WorkOutline"
-                 Expanded="false">
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Assignment">
-            Gest. attività studio
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Category">
-            Tipi attività studio
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Segment">
-            Tipi dett. attività studio
-        </MudNavLink>
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.FactCheck">
-            Schede attività clienti
-        </MudNavLink>
-    </MudNavGroup>
-
-    <MudNavGroup Title="Reports"
-                 Icon="@Icons.Material.Filled.Assessment"
-                 Expanded="false">
-        @* Nessun report ancora disponibile: placeholder disabilitato. *@
-        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.HourglassEmpty">
-            In arrivo
-        </MudNavLink>
-    </MudNavGroup>
+    @if (_menu is null)
+    {
+        <div class="d-flex justify-center pa-4">
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+        </div>
+    }
+    else
+    {
+        @foreach (var nodo in _menu)
+        {
+            @if (nodo.EGruppo)
+            {
+                <MudNavGroup Title="@nodo.Descrizione"
+                             Icon="@IconaResolver.Risolvi(nodo.Icona)"
+                             Expanded="@nodo.Figli.Any(f => f.Attivo)">
+                    @foreach (var figlio in nodo.Figli)
+                    {
+                        <NavMenuItem Nodo="figlio" />
+                    }
+                </MudNavGroup>
+            }
+            else
+            {
+                <NavMenuItem Nodo="nodo" />
+            }
+        }
+    }
 </MudNavMenu>
+
+@code {
+    private IReadOnlyList<MenuNodo>? _menu;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _menu = await MenuService.GetMenuVisibileAsync();
+    }
+}
