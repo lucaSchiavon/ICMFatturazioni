@@ -16,9 +16,9 @@
 @inject ISnackbar Snackbar
 @inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
 
-<PageTitle>Permessi menu · ICM Fatturazioni</PageTitle>
+<PageTitle>Permessi ruolo · ICM Fatturazioni</PageTitle>
 
-<MudText Typo="Typo.h1" Class="mb-4">Permessi menu</MudText>
+<MudText Typo="Typo.h1" Class="mb-4">Permessi ruolo</MudText>
 
 <MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Wrap="Wrap.Wrap">
@@ -59,7 +59,8 @@ else if (_ruoliConfigurabili.Count == 0)
 else
 {
     <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-        @foreach (var menu in _menus)
+        @* I gruppi admin-only (Amministrazione) non sono configurabili. *@
+        @foreach (var menu in _menus.Where(m => !m.SoloAdmin))
         {
             var figli = _sottoMenus.Where(s => s.IdMenu == menu.IdMenu).ToList();
             <div class="mb-3">

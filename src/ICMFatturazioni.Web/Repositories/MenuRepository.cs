@@ -23,7 +23,7 @@ internal sealed class MenuRepository : IMenuRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         const string sql = """
-            SELECT IdMenu, DescrizioneMenu, Menu AS PaginaRazor, Icona, Ordine, Attivo
+            SELECT IdMenu, DescrizioneMenu, Menu AS PaginaRazor, Icona, Ordine, Attivo, SoloAdmin
             FROM fatt.Menu
             ORDER BY Ordine, DescrizioneMenu;
             """;

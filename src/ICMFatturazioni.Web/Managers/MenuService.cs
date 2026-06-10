@@ -151,6 +151,13 @@ internal sealed class MenuService : IMenuService
 
         foreach (var m in menus)
         {
+            // Difesa: i gruppi admin-only non compaiono mai per i non-admin,
+            // a prescindere da eventuali mapping.
+            if (m.SoloAdmin && !_isSuperadmin && !_isAdmin)
+            {
+                continue;
+            }
+
             var figli = sottoMenus
                 .Where(s => s.IdMenu == m.IdMenu && sottoVisibili.Contains(s.IdSottoMenu))
                 .Select(s => new MenuNodo

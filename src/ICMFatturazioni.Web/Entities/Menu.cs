@@ -18,4 +18,10 @@ public sealed class Menu
     public string? Icona { get; init; }
     public int Ordine { get; init; }
     public bool Attivo { get; init; } = true;
+
+    /// <summary>
+    /// Gruppo accessibile SOLO ad Admin/Superadmin (es. "Amministrazione"):
+    /// non configurabile nelle pagine permessi e invisibile ai ruoli custom.
+    /// </summary>
+    public bool SoloAdmin { get; init; }
 }

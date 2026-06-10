@@ -85,7 +85,8 @@ else
     </MudAlert>
 
     <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-        @foreach (var menu in _menus)
+        @* I gruppi admin-only (Amministrazione) non sono configurabili. *@
+        @foreach (var menu in _menus.Where(m => !m.SoloAdmin))
         {
             var figli = _sottoMenus.Where(s => s.IdMenu == menu.IdMenu).ToList();
             <div class="mb-3">
