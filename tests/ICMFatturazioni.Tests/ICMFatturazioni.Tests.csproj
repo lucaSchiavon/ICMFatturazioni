@@ -18,6 +18,16 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!--
+    I test coprono codice che dipende dal framework ASP.NET (es. MenuService usa
+    AuthenticationStateProvider, DatabaseSeeder usa il DI scoping). Il
+    FrameworkReference espone Microsoft.AspNetCore.App al progetto di test: è
+    parte dell'SDK installato, NON un pacchetto NuGet aggiuntivo.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\ICMFatturazioni.Web\ICMFatturazioni.Web.csproj" />
   </ItemGroup>
