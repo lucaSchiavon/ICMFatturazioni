@@ -1,7 +1,9 @@
 using System.Security.Claims;
+using ICMFatturazioni.Web.Authentication;
 using ICMFatturazioni.Web.Components;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Diagnostics;
+using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories;
@@ -43,11 +45,19 @@ builder.Services
 
 // Fallback policy: richiede autenticazione su tutto l'app. Le pagine
 // pubbliche (/login, /access-denied) devono avere [AllowAnonymous].
+// Policy inclusive sui ruoli di sistema (riconosciuti dal claim di ruolo =
+// Codice del ruolo): RequireAdmin vale per Admin O Superadmin; RequireSuperadmin
+// solo per Superadmin (es. pagina log errori). I ruoli custom NON passano da
+// qui: la loro visibilità è guidata dal mapping dinamico ruolo↔menu (T2).
 builder.Services
     .AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
-        .Build());
+        .Build())
+    .AddPolicy(AuthorizationPolicies.RequireAdmin, policy =>
+        policy.RequireRole(RuoliSistema.Admin, RuoliSistema.Superadmin))
+    .AddPolicy(AuthorizationPolicies.RequireSuperadmin, policy =>
+        policy.RequireRole(RuoliSistema.Superadmin));
 
 // Propaga AuthenticationState ai componenti Blazor tramite cascading
 // parameter: serve perché gli @attribute [Authorize] e i componenti
@@ -68,6 +78,7 @@ builder.Services.AddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
 // Scoped per i repository di dominio: una istanza per request HTTP /
 // circuit Blazor, coerente con la durata della connessione SQL.
 builder.Services.AddScoped<IUtenteRepository, UtenteRepository>();
+builder.Services.AddScoped<IRuoloRepository, RuoloRepository>();
 builder.Services.AddScoped<IAnagraficaRepository, AnagraficaRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
@@ -83,7 +94,20 @@ builder.Services.AddSingleton<IErrorLogRepository, ErrorLogRepository>();
 
 // === Manager ===
 builder.Services.AddScoped<IUtenteManager, UtenteManager>();
+builder.Services.AddScoped<IRuoloManager, RuoloManager>();
 builder.Services.AddScoped<IAnagraficaManager, AnagraficaManager>();
+
+// === Hashing password + seed utenti ===
+// PasswordHasherService singleton: stateless, PBKDF2 via il framework.
+builder.Services.AddSingleton<IPasswordHasherService, PasswordHasherService>();
+// Opzioni di seed (password da user-secrets in dev / env var in prod).
+builder.Services.Configure<AdminSeederOptions>(
+    builder.Configuration.GetSection(AdminSeederOptions.SectionName));
+builder.Services.Configure<SuperadminSeederOptions>(
+    builder.Configuration.GetSection(SuperadminSeederOptions.SectionName));
+// Seed idempotente di Admin/Superadmin all'avvio (sostituisce il vecchio
+// seed hardcoded admin/admin1234).
+builder.Services.AddHostedService<DatabaseSeeder>();
 
 // === Diagnostica / logging errori (Regola 6) ===
 // IErrorLogger singleton: è il canale "infallibile" usato da middleware,
@@ -142,6 +166,7 @@ app.MapPost("/auth/login", async Task<IResult> (
     [FromForm] string? ReturnUrl,
     HttpContext httpContext,
     IUtenteManager utenteManager,
+    IRuoloManager ruoloManager,
     CancellationToken cancellationToken) =>
 {
     var utente = await utenteManager.AutenticaAsync(Username, Password, cancellationToken);
@@ -152,10 +177,19 @@ app.MapPost("/auth/login", async Task<IResult> (
         return Results.Redirect("/login?Error=Credenziali non valide.");
     }
 
+    // Ruolo dell'utente: il claim di ruolo porta il Codice del ruolo
+    // (SUPERADMIN/ADMIN per i fissi) così le policy RequireRole combaciano;
+    // per i ruoli custom (Codice null) usiamo il nome. id_ruolo serve al
+    // servizio menu (T2) per risolvere i permessi dinamici.
+    var ruolo = await ruoloManager.GetByIdAsync(utente.IdRuolo, cancellationToken);
+
     var claims = new List<Claim>
     {
         new(ClaimTypes.NameIdentifier, utente.IdUtente.ToString()),
         new(ClaimTypes.Name, utente.Username),
+        new(ClaimTypes.Role, ruolo?.Codice ?? ruolo?.Nome ?? string.Empty),
+        new("id_ruolo", utente.IdRuolo.ToString()),
+        new("ruolo_codice", ruolo?.Codice ?? string.Empty),
     };
     if (!string.IsNullOrWhiteSpace(utente.NomeCompleto))
     {
@@ -184,34 +218,8 @@ app.MapPost("/auth/logout", async (HttpContext httpContext) =>
     return Results.Redirect("/login");
 });
 
-// ============================================================================
-// Seed utente di sviluppo
-// ----------------------------------------------------------------------------
-// Esegue il seed dell'utente admin/admin1234 solo in Development. Da
-// rimuovere prima del rilascio in produzione (vedi Roadmap Fase 1).
-// ============================================================================
-if (app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    try
-    {
-        var utenteManager = scope.ServiceProvider.GetRequiredService<IUtenteManager>();
-        await utenteManager.SeedUtenteSviluppoAsync();
-    }
-    catch (Exception ex)
-    {
-        // Il seed può fallire se il DB non è ancora stato migrato:
-        // logghiamo via IErrorLogger (che ha il fallback su file) e
-        // proseguiamo l'avvio. L'utente vedrà "Credenziali non valide"
-        // al primo login fino a quando non esegue le migration.
-        var logger = scope.ServiceProvider.GetRequiredService<IErrorLogger>();
-        await logger.LogAsync(
-            ex,
-            contesto: "Program.Main (SeedUtenteSviluppoAsync)",
-            descrizioneEstesa: "Probabile DB non migrato. Eseguire gli script in Migrations/ in ordine numerico.",
-            severity: ICMFatturazioni.Web.Entities.Severity.Warning,
-            handled: true);
-    }
-}
+// Il seed degli utenti Admin/Superadmin è gestito da DatabaseSeeder
+// (IHostedService idempotente, registrato sopra): legge le password da
+// user-secrets/env e crea gli utenti all'avvio se non esistono.
 
 app.Run();

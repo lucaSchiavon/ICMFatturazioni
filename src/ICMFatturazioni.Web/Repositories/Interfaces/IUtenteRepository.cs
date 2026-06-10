@@ -10,29 +10,23 @@ namespace ICMFatturazioni.Web.Repositories.Interfaces;
 public interface IUtenteRepository
 {
     /// <summary>
-    /// Restituisce l'utente con lo username indicato, o <c>null</c> se non
-    /// esiste. Il confronto è case-insensitive (lo garantisce il collation
-    /// di default della colonna).
+    /// Utente con lo username indicato, o <c>null</c>. Confronto
+    /// case-insensitive (collation di default della colonna).
     /// </summary>
     Task<Utente?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Restituisce l'utente per chiave primaria, o <c>null</c>.
-    /// </summary>
-    Task<Utente?> GetByIdAsync(int idUtente, CancellationToken cancellationToken = default);
+    /// <summary>Utente per chiave primaria (GUID), o <c>null</c>.</summary>
+    Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Inserisce un nuovo utente. Ritorna l'<c>IdUtente</c> assegnato dall'identity.
+    /// Inserisce un nuovo utente. L'<c>IdUtente</c> (GUID v7) è già valorizzato
+    /// dal manager prima della chiamata (no IDENTITY, no OUTPUT).
     /// </summary>
-    Task<int> InsertAsync(Utente utente, CancellationToken cancellationToken = default);
+    Task InsertAsync(Utente utente, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Aggiorna il timestamp di ultimo login. Idempotente.
-    /// </summary>
-    Task UpdateUltimoLoginAsync(int idUtente, DateTime istanteUtc, CancellationToken cancellationToken = default);
+    /// <summary>Aggiorna il timestamp di ultimo login. Idempotente.</summary>
+    Task UpdateUltimoLoginAsync(Guid idUtente, DateTime istanteUtc, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Cambia la preferenza di tema. Lascia inalterati gli altri campi.
-    /// </summary>
-    Task UpdateTemaPreferitoAsync(int idUtente, string temaPreferito, CancellationToken cancellationToken = default);
+    /// <summary>Cambia la preferenza di tema. Lascia inalterati gli altri campi.</summary>
+    Task UpdateTemaPreferitoAsync(Guid idUtente, string temaPreferito, CancellationToken cancellationToken = default);
 }

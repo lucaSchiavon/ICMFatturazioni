@@ -6,12 +6,8 @@ using ICMFatturazioni.Web.Repositories.Interfaces;
 namespace ICMFatturazioni.Web.Repositories;
 
 /// <summary>
-/// Implementazione Dapper di <see cref="IUtenteRepository"/>.
-/// Le query SQL sono inline come stringhe const private per:
-///   - mantenere il file autocontenuto (zero risorse esterne);
-///   - permettere la diff revision di sintassi SQL senza saltare file;
-///   - evitare la dispersione di query nei layer superiori (regola di
-///     architettura: SQL solo nei repository).
+/// Implementazione Dapper di <see cref="IUtenteRepository"/>. Le query SQL
+/// sono inline come stringhe const private (regola: SQL solo nei repository).
 /// </summary>
 internal sealed class UtenteRepository : IUtenteRepository
 {
@@ -22,91 +18,71 @@ internal sealed class UtenteRepository : IUtenteRepository
         _connectionFactory = connectionFactory;
     }
 
-    // ---------------------------------------------------------------------
-    // Query: estrazione singolo utente
-    // ---------------------------------------------------------------------
-
-    private const string SqlSelectByUsername = """
+    // Colonne centralizzate: GetByUsername e GetById leggono lo stesso set.
+    private const string SqlSelectColumns = """
         SELECT
-            IdUtente, Username, PasswordHash, PasswordSalt, NomeCompleto,
-            Email, Attivo, TemaPreferito, DataRecord, UltimoLoginUtc
+            IdUtente, Username, Email, PasswordHash, IdRuolo, NomeCompleto,
+            Attivo, TemaPreferito, UltimoLoginUtc, CreatedAt, UpdatedAt
         FROM fatt.Utenti
-        WHERE Username = @Username;
         """;
 
     public async Task<Utente?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
-            commandText: SqlSelectByUsername,
+            commandText: SqlSelectColumns + " WHERE Username = @Username;",
             parameters: new { Username = username },
             cancellationToken: cancellationToken);
         return await connection.QuerySingleOrDefaultAsync<Utente>(cmd);
     }
 
-    private const string SqlSelectById = """
-        SELECT
-            IdUtente, Username, PasswordHash, PasswordSalt, NomeCompleto,
-            Email, Attivo, TemaPreferito, DataRecord, UltimoLoginUtc
-        FROM fatt.Utenti
-        WHERE IdUtente = @IdUtente;
-        """;
-
-    public async Task<Utente?> GetByIdAsync(int idUtente, CancellationToken cancellationToken = default)
+    public async Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
-            commandText: SqlSelectById,
+            commandText: SqlSelectColumns + " WHERE IdUtente = @IdUtente;",
             parameters: new { IdUtente = idUtente },
             cancellationToken: cancellationToken);
         return await connection.QuerySingleOrDefaultAsync<Utente>(cmd);
     }
 
-    // ---------------------------------------------------------------------
-    // Comando: inserimento (usato dal seed dev-only e in futuro da
-    // un'eventuale UI di gestione utenti)
-    // ---------------------------------------------------------------------
-
+    // IdUtente generato app-side (GUID v7); CreatedAt/UpdatedAt dai DEFAULT del DB.
     private const string SqlInsert = """
         INSERT INTO fatt.Utenti
-            (Username, PasswordHash, PasswordSalt, NomeCompleto, Email,
+            (IdUtente, Username, Email, PasswordHash, IdRuolo, NomeCompleto,
              Attivo, TemaPreferito)
-        OUTPUT INSERTED.IdUtente
         VALUES
-            (@Username, @PasswordHash, @PasswordSalt, @NomeCompleto, @Email,
+            (@IdUtente, @Username, @Email, @PasswordHash, @IdRuolo, @NomeCompleto,
              @Attivo, @TemaPreferito);
         """;
 
-    public async Task<int> InsertAsync(Utente utente, CancellationToken cancellationToken = default)
+    public async Task InsertAsync(Utente utente, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
             commandText: SqlInsert,
             parameters: new
             {
+                utente.IdUtente,
                 utente.Username,
-                utente.PasswordHash,
-                utente.PasswordSalt,
-                utente.NomeCompleto,
                 utente.Email,
+                utente.PasswordHash,
+                utente.IdRuolo,
+                utente.NomeCompleto,
                 utente.Attivo,
                 utente.TemaPreferito,
             },
             cancellationToken: cancellationToken);
-        return await connection.ExecuteScalarAsync<int>(cmd);
+        await connection.ExecuteAsync(cmd);
     }
-
-    // ---------------------------------------------------------------------
-    // Comando: aggiornamento ultimo login
-    // ---------------------------------------------------------------------
 
     private const string SqlUpdateUltimoLogin = """
         UPDATE fatt.Utenti
-        SET UltimoLoginUtc = @IstanteUtc
+        SET UltimoLoginUtc = @IstanteUtc, UpdatedAt = SYSUTCDATETIME()
         WHERE IdUtente = @IdUtente;
         """;
 
-    public async Task UpdateUltimoLoginAsync(int idUtente, DateTime istanteUtc, CancellationToken cancellationToken = default)
+    public async Task UpdateUltimoLoginAsync(Guid idUtente, DateTime istanteUtc, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(
@@ -116,17 +92,13 @@ internal sealed class UtenteRepository : IUtenteRepository
         await connection.ExecuteAsync(cmd);
     }
 
-    // ---------------------------------------------------------------------
-    // Comando: aggiornamento preferenza tema
-    // ---------------------------------------------------------------------
-
     private const string SqlUpdateTemaPreferito = """
         UPDATE fatt.Utenti
-        SET TemaPreferito = @TemaPreferito
+        SET TemaPreferito = @TemaPreferito, UpdatedAt = SYSUTCDATETIME()
         WHERE IdUtente = @IdUtente;
         """;
 
-    public async Task UpdateTemaPreferitoAsync(int idUtente, string temaPreferito, CancellationToken cancellationToken = default)
+    public async Task UpdateTemaPreferitoAsync(Guid idUtente, string temaPreferito, CancellationToken cancellationToken = default)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(

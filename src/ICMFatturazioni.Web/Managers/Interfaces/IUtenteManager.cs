@@ -3,46 +3,44 @@ using ICMFatturazioni.Web.Entities;
 namespace ICMFatturazioni.Web.Managers.Interfaces;
 
 /// <summary>
-/// Logica applicativa sugli utenti: autenticazione, hashing password,
-/// gestione preferenze. La UI deve sempre passare da qui — il
+/// Logica applicativa sugli utenti: autenticazione, creazione, preferenze.
+/// La UI deve sempre passare da qui — il
 /// <see cref="Repositories.Interfaces.IUtenteRepository"/> non è iniettato
 /// nei componenti Blazor.
 /// </summary>
 public interface IUtenteManager
 {
     /// <summary>
-    /// Verifica le credenziali ricevute dal form di login.
-    /// Ritorna l'utente autenticato se username e password coincidono e
-    /// l'utente è <see cref="Utente.Attivo"/>; altrimenti <c>null</c>.
-    /// Mai distinguere il motivo del fallimento all'esterno (per non
-    /// fornire enumeration ai tentativi di brute force).
+    /// Verifica le credenziali del form di login. Ritorna l'utente se
+    /// username/password coincidono, l'utente è <see cref="Utente.Attivo"/> e
+    /// ha una password impostata; altrimenti <c>null</c>. Non distingue mai il
+    /// motivo del fallimento (anti-enumeration).
     /// </summary>
     Task<Utente?> AutenticaAsync(string username, string password, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Crea un nuovo utente con la password indicata in chiaro (hashata
-    /// internamente prima dell'INSERT). Ritorna l'<c>IdUtente</c> assegnato.
-    /// </summary>
-    Task<int> CreaUtenteAsync(string username, string password, string? nomeCompleto, string? email, CancellationToken cancellationToken = default);
+    /// <summary>Utente per username, o <c>null</c>.</summary>
+    Task<Utente?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
+
+    /// <summary>Utente per id (GUID), o <c>null</c>.</summary>
+    Task<Utente?> GetByIdAsync(Guid idUtente, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Garantisce l'esistenza dell'utente di sviluppo (Username
-    /// <c>admin</c>, password <c>admin</c>). Idempotente: se l'utente
-    /// esiste già non fa nulla. Va invocato solo in Environment Development
-    /// e <b>deve essere rimosso</b> prima del rilascio in produzione.
+    /// Crea un nuovo utente assegnandogli il ruolo indicato. La password è
+    /// opzionale: se <c>null</c> l'utente nasce "invitato" (senza password,
+    /// da attivare via link — T4); se valorizzata viene hashata prima
+    /// dell'INSERT. Ritorna l'<c>IdUtente</c> (GUID v7) generato.
     /// </summary>
-    Task SeedUtenteSviluppoAsync(CancellationToken cancellationToken = default);
+    Task<Guid> CreaAsync(
+        string username,
+        string? password,
+        string? email,
+        Guid idRuolo,
+        string? nomeCompleto = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Aggiorna la preferenza di tema dell'utente. Valori ammessi:
-    /// <c>light</c>, <c>dark</c>, <c>auto</c>. Lancia
-    /// <see cref="ArgumentOutOfRangeException"/> per valori fuori range.
+    /// Aggiorna la preferenza di tema (<c>light</c>/<c>dark</c>/<c>auto</c>).
+    /// Lancia <see cref="ArgumentOutOfRangeException"/> per valori fuori range.
     /// </summary>
-    Task ImpostaTemaPreferitoAsync(int idUtente, string temaPreferito, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Recupera utente per id. Esposto come canale "comodo" per la UI:
-    /// permette al manager di centralizzare future invalidazioni cache.
-    /// </summary>
-    Task<Utente?> GetByIdAsync(int idUtente, CancellationToken cancellationToken = default);
+    Task ImpostaTemaPreferitoAsync(Guid idUtente, string temaPreferito, CancellationToken cancellationToken = default);
 }
