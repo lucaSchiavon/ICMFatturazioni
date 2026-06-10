@@ -14,24 +14,12 @@ public interface IMenuRepository
     /// <summary>Tutte le sottovoci, ordinate per <c>Ordine</c>.</summary>
     Task<IReadOnlyList<SottoMenu>> GetSottoMenusAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Id dei <c>Menu</c> visibili per l'utente: unione del mapping di ruolo
-    /// (MenuRuolo) e dell'override per utente (MenuUtente).
-    /// </summary>
-    Task<IReadOnlySet<Guid>> GetIdMenuVisibiliAsync(Guid idRuolo, Guid idUtente, CancellationToken cancellationToken = default);
+    // --- Mapping per RUOLO (matrice ruolo×menu, T3c) ---
 
-    /// <summary>
-    /// Id dei <c>SottoMenu</c> visibili per l'utente: unione di SottoMenuRuolo
-    /// e SottoMenuUtente.
-    /// </summary>
-    Task<IReadOnlySet<Guid>> GetIdSottoMenuVisibiliAsync(Guid idRuolo, Guid idUtente, CancellationToken cancellationToken = default);
-
-    // --- Configurazione mapping per RUOLO (matrice ruolo×menu, T3c) ---
-
-    /// <summary>Id dei Menu mappati al ruolo (solo MenuRuolo, no override utente).</summary>
+    /// <summary>Id dei Menu mappati al ruolo.</summary>
     Task<IReadOnlySet<Guid>> GetMenuRuoloIdsAsync(Guid idRuolo, CancellationToken cancellationToken = default);
 
-    /// <summary>Id dei SottoMenu mappati al ruolo (solo SottoMenuRuolo).</summary>
+    /// <summary>Id dei SottoMenu mappati al ruolo.</summary>
     Task<IReadOnlySet<Guid>> GetSottoMenuRuoloIdsAsync(Guid idRuolo, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -39,4 +27,18 @@ public interface IMenuRepository
     /// le righe MenuRuolo/SottoMenuRuolo esistenti e reinserisce quelle indicate.
     /// </summary>
     Task SetMappingRuoloAsync(Guid idRuolo, IReadOnlyCollection<Guid> menuIds, IReadOnlyCollection<Guid> sottoMenuIds, CancellationToken cancellationToken = default);
+
+    // --- Mapping per UTENTE (override, T3d): quando presente SOSTITUISCE il ruolo ---
+
+    /// <summary>Id dei Menu mappati direttamente all'utente (override).</summary>
+    Task<IReadOnlySet<Guid>> GetMenuUtenteIdsAsync(Guid idUtente, CancellationToken cancellationToken = default);
+
+    /// <summary>Id dei SottoMenu mappati direttamente all'utente (override).</summary>
+    Task<IReadOnlySet<Guid>> GetSottoMenuUtenteIdsAsync(Guid idUtente, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sostituisce integralmente l'override dell'utente. Passare insiemi vuoti
+    /// rimuove la personalizzazione (l'utente torna a seguire il ruolo).
+    /// </summary>
+    Task SetMappingUtenteAsync(Guid idUtente, IReadOnlyCollection<Guid> menuIds, IReadOnlyCollection<Guid> sottoMenuIds, CancellationToken cancellationToken = default);
 }

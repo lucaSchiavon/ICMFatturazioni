@@ -20,17 +20,51 @@ internal sealed class MenuConfigManager : IMenuConfigManager
     public Task<IReadOnlyList<SottoMenu>> GetSottoMenusAsync(CancellationToken cancellationToken = default)
         => _menuRepository.GetSottoMenusAsync(cancellationToken);
 
-    public async Task<MappingRuolo> GetMappingRuoloAsync(Guid idRuolo, CancellationToken cancellationToken = default)
+    public async Task<MappingMenu> GetMappingRuoloAsync(Guid idRuolo, CancellationToken cancellationToken = default)
     {
         var menu = await _menuRepository.GetMenuRuoloIdsAsync(idRuolo, cancellationToken);
         var sotto = await _menuRepository.GetSottoMenuRuoloIdsAsync(idRuolo, cancellationToken);
-        return new MappingRuolo(menu, sotto);
+        return new MappingMenu(menu, sotto);
     }
 
     public async Task SalvaMappingRuoloAsync(Guid idRuolo, IReadOnlyCollection<Guid> menuIds, IReadOnlyCollection<Guid> sottoMenuIds, CancellationToken cancellationToken = default)
     {
-        // Includi automaticamente i menu-gruppo dei sottomenu selezionati: senza
-        // il gruppo, il NavMenu non mostrerebbe la sottovoce.
+        var menuFinali = await IncludiGruppiAsync(menuIds, sottoMenuIds, cancellationToken);
+        await _menuRepository.SetMappingRuoloAsync(idRuolo, menuFinali, sottoMenuIds, cancellationToken);
+    }
+
+    // --- Per utente / override (T3d) ---
+
+    public async Task<bool> HasPersonalizzazioneUtenteAsync(Guid idUtente, CancellationToken cancellationToken = default)
+    {
+        var menu = await _menuRepository.GetMenuUtenteIdsAsync(idUtente, cancellationToken);
+        if (menu.Count > 0) return true;
+        var sotto = await _menuRepository.GetSottoMenuUtenteIdsAsync(idUtente, cancellationToken);
+        return sotto.Count > 0;
+    }
+
+    public async Task<MappingMenu> GetMappingUtenteAsync(Guid idUtente, CancellationToken cancellationToken = default)
+    {
+        var menu = await _menuRepository.GetMenuUtenteIdsAsync(idUtente, cancellationToken);
+        var sotto = await _menuRepository.GetSottoMenuUtenteIdsAsync(idUtente, cancellationToken);
+        return new MappingMenu(menu, sotto);
+    }
+
+    public async Task SalvaMappingUtenteAsync(Guid idUtente, IReadOnlyCollection<Guid> menuIds, IReadOnlyCollection<Guid> sottoMenuIds, CancellationToken cancellationToken = default)
+    {
+        var menuFinali = await IncludiGruppiAsync(menuIds, sottoMenuIds, cancellationToken);
+        await _menuRepository.SetMappingUtenteAsync(idUtente, menuFinali, sottoMenuIds, cancellationToken);
+    }
+
+    public Task RimuoviPersonalizzazioneUtenteAsync(Guid idUtente, CancellationToken cancellationToken = default)
+        => _menuRepository.SetMappingUtenteAsync(idUtente, Array.Empty<Guid>(), Array.Empty<Guid>(), cancellationToken);
+
+    /// <summary>
+    /// Aggiunge ai menu selezionati i gruppi-padre dei sottomenu spuntati: senza
+    /// il gruppo, il NavMenu non mostrerebbe la sottovoce.
+    /// </summary>
+    private async Task<HashSet<Guid>> IncludiGruppiAsync(IReadOnlyCollection<Guid> menuIds, IReadOnlyCollection<Guid> sottoMenuIds, CancellationToken cancellationToken)
+    {
         var sottoMenus = await _menuRepository.GetSottoMenusAsync(cancellationToken);
         var menuFinali = new HashSet<Guid>(menuIds);
         var sottoSelezionati = sottoMenuIds.ToHashSet();
@@ -41,7 +75,6 @@ internal sealed class MenuConfigManager : IMenuConfigManager
                 menuFinali.Add(s.IdMenu);
             }
         }
-
-        await _menuRepository.SetMappingRuoloAsync(idRuolo, menuFinali, sottoMenuIds, cancellationToken);
+        return menuFinali;
     }
 }

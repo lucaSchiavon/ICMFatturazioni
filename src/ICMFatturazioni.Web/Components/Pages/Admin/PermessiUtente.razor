@@ -1,0 +1,218 @@
+@*
+    Pagina /admin/permessi-utente — override permessi per singolo utente (T3d).
+
+    Si sceglie un utente con ruolo CUSTOM e si spuntano i menu/sottomenu che
+    quell'utente può vedere. Quando un utente ha una personalizzazione, questa
+    SOSTITUISCE i permessi del suo ruolo (può sia aggiungere sia togliere). Se
+    non personalizzato, segue il ruolo. «Torna al ruolo» rimuove l'override.
+    Gli utenti Admin/Superadmin non si configurano (vedono tutto per regola).
+    Le modifiche valgono dal prossimo accesso dell'utente.
+*@
+@page "/admin/permessi-utente"
+@attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireAdmin)]
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@inject IUtenteManager UtenteManager
+@inject IMenuConfigManager Config
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<PageTitle>Permessi utente · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Permessi utente</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Wrap="Wrap.Wrap">
+        <MudSelect T="Guid?" Label="Utente da configurare" Value="_selectedUtenteId"
+                   ValueChanged="OnUtenteChanged" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   Style="min-width: 280px;">
+            @foreach (var u in _utentiConfigurabili)
+            {
+                <MudSelectItem T="Guid?" Value="@u.IdUtente">@u.Username — @u.RuoloNome</MudSelectItem>
+            }
+        </MudSelect>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="flex:1;">
+            L'override sostituisce i permessi del ruolo. Solo utenti con ruolo personalizzato. Valido dal prossimo accesso.
+        </MudText>
+        @if (_selectedUtenteId is not null)
+        {
+            @if (_personalizzato)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.Restore" Ripple="false"
+                           Disabled="@_busy" OnClick="TornaAlRuolo">
+                    Torna al ruolo
+                </MudButton>
+            }
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save" Ripple="false"
+                       Disabled="@_busy" OnClick="Salva">
+                Salva permessi
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@if (_selectedUtenteId is null)
+{
+    @if (_utentiConfigurabili.Count == 0)
+    {
+        <MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined">
+            Nessun utente con ruolo personalizzato. Crea utenti con un ruolo custom in «Gestione utenti».
+        </MudAlert>
+    }
+    else
+    {
+        <MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined">
+            Seleziona un utente per configurarne i permessi personalizzati.
+        </MudAlert>
+    }
+}
+else
+{
+    <MudAlert Severity="@(_personalizzato ? MudBlazor.Severity.Warning : MudBlazor.Severity.Info)"
+              Variant="Variant.Outlined" Class="mb-4" Dense="true">
+        @if (_personalizzato)
+        {
+            <text>Questo utente ha permessi <b>personalizzati</b> che sostituiscono il ruolo.</text>
+        }
+        else
+        {
+            <text>Questo utente <b>segue il ruolo</b>. Spuntando e salvando crei una personalizzazione che lo sostituisce.</text>
+        }
+    </MudAlert>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+        @foreach (var menu in _menus)
+        {
+            var figli = _sottoMenus.Where(s => s.IdMenu == menu.IdMenu).ToList();
+            <div class="mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">
+                    <MudIcon Icon="@ICMFatturazioni.Web.Navigation.IconaResolver.Risolvi(menu.Icona)" Size="Size.Small" Class="mr-1" />
+                    @menu.DescrizioneMenu
+                </MudText>
+                @if (figli.Count == 0 && !string.IsNullOrEmpty(menu.PaginaRazor))
+                {
+                    <div class="ml-6">
+                        <MudCheckBox T="bool" Dense="true" Color="Color.Primary"
+                                     Value="@_menuChecked.Contains(menu.IdMenu)"
+                                     ValueChanged="@(v => ToggleMenu(menu.IdMenu, v))"
+                                     Label="@menu.DescrizioneMenu" />
+                    </div>
+                }
+                else
+                {
+                    <div class="ml-6">
+                        @foreach (var s in figli)
+                        {
+                            <MudCheckBox T="bool" Dense="true" Color="Color.Primary"
+                                         Value="@_sottoChecked.Contains(s.IdSottoMenu)"
+                                         ValueChanged="@(v => ToggleSotto(s.IdSottoMenu, v))"
+                                         Label="@s.Descrizione" />
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </MudPaper>
+}
+
+@code {
+    private IReadOnlyList<UtenteConRuolo> _utentiConfigurabili = Array.Empty<UtenteConRuolo>();
+    private IReadOnlyList<Menu> _menus = Array.Empty<Menu>();
+    private IReadOnlyList<SottoMenu> _sottoMenus = Array.Empty<SottoMenu>();
+
+    private Guid? _selectedUtenteId;
+    private UtenteConRuolo? _selectedUtente;
+    private bool _personalizzato;
+    private HashSet<Guid> _menuChecked = new();
+    private HashSet<Guid> _sottoChecked = new();
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var utenti = await UtenteManager.ElencoAsync();
+            // Solo utenti con ruolo custom (RuoloCodice null) e attivi: gli
+            // Admin/Superadmin vedono tutto e non si configurano.
+            _utentiConfigurabili = utenti.Where(u => u.RuoloCodice is null && u.Attivo).ToList();
+            _menus = await Config.GetMenusAsync();
+            _sottoMenus = await Config.GetSottoMenusAsync();
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiUtente.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private async Task OnUtenteChanged(Guid? idUtente)
+    {
+        _selectedUtenteId = idUtente;
+        _selectedUtente = idUtente is null ? null : _utentiConfigurabili.FirstOrDefault(u => u.IdUtente == idUtente);
+        if (_selectedUtente is null) return;
+        await CaricaMappingAsync();
+    }
+
+    private async Task CaricaMappingAsync()
+    {
+        try
+        {
+            _personalizzato = await Config.HasPersonalizzazioneUtenteAsync(_selectedUtente!.IdUtente);
+            // Se personalizzato → carica l'override; altrimenti pre-compila dal
+            // ruolo (punto di partenza: salvando si crea la personalizzazione).
+            var mapping = _personalizzato
+                ? await Config.GetMappingUtenteAsync(_selectedUtente.IdUtente)
+                : await Config.GetMappingRuoloAsync(_selectedUtente.IdRuolo);
+            _menuChecked = new HashSet<Guid>(mapping.MenuIds);
+            _sottoChecked = new HashSet<Guid>(mapping.SottoMenuIds);
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiUtente.CaricaMappingAsync");
+            Snackbar.Add("Errore nel caricamento dei permessi dell'utente.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private void ToggleMenu(Guid id, bool val) { if (val) _menuChecked.Add(id); else _menuChecked.Remove(id); }
+    private void ToggleSotto(Guid id, bool val) { if (val) _sottoChecked.Add(id); else _sottoChecked.Remove(id); }
+
+    private async Task Salva()
+    {
+        if (_selectedUtente is null) return;
+        _busy = true;
+        try
+        {
+            await Config.SalvaMappingUtenteAsync(_selectedUtente.IdUtente, _menuChecked.ToList(), _sottoChecked.ToList());
+            _personalizzato = _menuChecked.Count > 0 || _sottoChecked.Count > 0;
+            Snackbar.Add("Permessi utente salvati. Effettivi dal prossimo accesso.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiUtente.Salva");
+            Snackbar.Add("Errore nel salvataggio.", MudBlazor.Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task TornaAlRuolo()
+    {
+        if (_selectedUtente is null) return;
+        _busy = true;
+        try
+        {
+            await Config.RimuoviPersonalizzazioneUtenteAsync(_selectedUtente.IdUtente);
+            Snackbar.Add("Personalizzazione rimossa: l'utente torna a seguire il ruolo.", MudBlazor.Severity.Success);
+            await CaricaMappingAsync();   // ricarica: ora pre-compila dal ruolo
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "PermessiUtente.TornaAlRuolo");
+            Snackbar.Add("Errore.", MudBlazor.Severity.Error);
+        }
+        finally { _busy = false; }
+    }
+}

@@ -106,8 +106,11 @@ internal sealed class MenuService : IMenuService
         var menus = await _menuRepository.GetMenusAsync(cancellationToken);
         var sottoMenus = await _menuRepository.GetSottoMenusAsync(cancellationToken);
 
-        // Insiemi di id visibili. Superadmin/Admin: tutto (bypass, niente query
-        // sui mapping). Altri ruoli: unione ruolo + override utente.
+        // Insiemi di id visibili.
+        //  - Superadmin/Admin: tutto (bypass, niente query sui mapping).
+        //  - Altri ruoli: se l'utente ha un OVERRIDE personalizzato (righe
+        //    MenuUtente/SottoMenuUtente) quello SOSTITUISCE il ruolo; altrimenti
+        //    si applicano i permessi del ruolo.
         IReadOnlySet<Guid> menuVisibili;
         IReadOnlySet<Guid> sottoVisibili;
         if (_isSuperadmin || _isAdmin)
@@ -115,15 +118,31 @@ internal sealed class MenuService : IMenuService
             menuVisibili = menus.Select(m => m.IdMenu).ToHashSet();
             sottoVisibili = sottoMenus.Select(s => s.IdSottoMenu).ToHashSet();
         }
-        else if (idRuolo != Guid.Empty || idUtente != Guid.Empty)
-        {
-            menuVisibili = await _menuRepository.GetIdMenuVisibiliAsync(idRuolo, idUtente, cancellationToken);
-            sottoVisibili = await _menuRepository.GetIdSottoMenuVisibiliAsync(idRuolo, idUtente, cancellationToken);
-        }
         else
         {
-            menuVisibili = new HashSet<Guid>();
-            sottoVisibili = new HashSet<Guid>();
+            var userMenu = idUtente != Guid.Empty
+                ? await _menuRepository.GetMenuUtenteIdsAsync(idUtente, cancellationToken)
+                : (IReadOnlySet<Guid>)new HashSet<Guid>();
+            var userSotto = idUtente != Guid.Empty
+                ? await _menuRepository.GetSottoMenuUtenteIdsAsync(idUtente, cancellationToken)
+                : (IReadOnlySet<Guid>)new HashSet<Guid>();
+
+            if (userMenu.Count > 0 || userSotto.Count > 0)
+            {
+                // Override per-utente attivo.
+                menuVisibili = userMenu;
+                sottoVisibili = userSotto;
+            }
+            else if (idRuolo != Guid.Empty)
+            {
+                menuVisibili = await _menuRepository.GetMenuRuoloIdsAsync(idRuolo, cancellationToken);
+                sottoVisibili = await _menuRepository.GetSottoMenuRuoloIdsAsync(idRuolo, cancellationToken);
+            }
+            else
+            {
+                menuVisibili = new HashSet<Guid>();
+                sottoVisibili = new HashSet<Guid>();
+            }
         }
 
         // Costruzione albero: per ogni menu, le sue sottovoci visibili.
