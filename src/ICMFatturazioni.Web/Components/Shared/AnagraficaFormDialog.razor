@@ -36,7 +36,8 @@
                                Required="true"
                                RequiredError="Tipologia obbligatoria"
                                Variant="Variant.Outlined"
-                               Margin="Margin.Dense">
+                               Margin="Margin.Dense"
+                               Class="campo-obbligatorio">
                         <MudSelectItem Value="TipoAnagrafica.Societa">Società</MudSelectItem>
                         <MudSelectItem Value="TipoAnagrafica.Privato">Privato</MudSelectItem>
                         <MudSelectItem Value="TipoAnagrafica.EntePubblico">Ente pubblico</MudSelectItem>
@@ -50,7 +51,8 @@
                                   RequiredError="La ragione sociale è obbligatoria"
                                   MaxLength="200"
                                   Variant="Variant.Outlined"
-                                  Margin="Margin.Dense" />
+                                  Margin="Margin.Dense"
+                                  Class="campo-obbligatorio" />
                 </MudItem>
 
                 <MudItem xs="12" sm="8">
@@ -94,7 +96,8 @@
                                Required="true"
                                RequiredError="Paese obbligatorio"
                                Variant="Variant.Outlined"
-                               Margin="Margin.Dense">
+                               Margin="Margin.Dense"
+                               Class="campo-obbligatorio">
                         @foreach (var p in _paesi)
                         {
                             <MudSelectItem Value="@p.Codice">@p.Codice — @p.Descrizione</MudSelectItem>

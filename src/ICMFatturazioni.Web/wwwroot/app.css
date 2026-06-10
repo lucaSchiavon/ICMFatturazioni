@@ -58,3 +58,54 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* ------------------------------------------------------------------ */
+/* Personalizzazioni ICM (componenti MudBlazor renderizzati a runtime: */
+/* gli stili scoped non li raggiungono, quindi stanno qui in globale). */
+/* ------------------------------------------------------------------ */
+
+/* Le colonne "sticky" della MudDataGrid (prima colonna fissata a sinistra
+   e colonna azioni a destra) hanno di default uno sfondo grigio opaco: su
+   MOBILE/TABLET serve davvero, perché c'è lo scroll orizzontale e quel
+   fondo opaco copre le celle che scorrono sotto la colonna fissata.
+   Su DESKTOP (≥ 960px, breakpoint md di MudBlazor) la tabella sta tutta in
+   pagina e non c'è scroll: lì il grigio risulta "spento", quindi lo
+   riportiamo a bianco (surface). Sotto i 960px resta il grigio di default. */
+@media (min-width: 960px) {
+    .mud-data-grid .mud-table-cell.sticky-left,
+    .mud-data-grid .mud-table-cell.sticky-right {
+        background-color: var(--mud-palette-surface);
+    }
+
+    /* Le celle sticky dell'INTESTAZIONE hanno una regola MudBlazor a
+       specificità più alta (.mud-table-head … .sticky-right) che batte
+       quella sopra: la sovrascriviamo con !important, sicuro qui perché
+       l'header non è mai una riga selezionata (nessun conflitto col giallo). */
+    .mud-data-grid .mud-table-head .mud-table-cell.sticky-left,
+    .mud-data-grid .mud-table-head .mud-table-cell.sticky-right {
+        background-color: var(--mud-palette-surface) !important;
+    }
+}
+
+/* Riga selezionata della griglia anagrafiche: giallo tenue per dare un
+   feedback visivo immediato di "riga attiva". Si usa !important per
+   prevalere su hover/striping della MudDataGrid; le regole sulle celle
+   sticky coprono anche la prima/ultima colonna fissata. */
+.anagrafica-riga-selezionata,
+.anagrafica-riga-selezionata td {
+    background-color: #FEF6D6 !important;
+}
+.anagrafica-riga-selezionata .sticky-left,
+.anagrafica-riga-selezionata .sticky-right {
+    background-color: #FEF6D6 !important;
+}
+
+/* Campi obbligatori dei form: oltre all'asterisco nella label, il controllo
+   riceve una tinta blu tenue (icm-blue-50) per segnalare "da compilare"
+   senza l'allarme del rosso. Vale per MudTextField e MudSelect (outlined):
+   il riempimento va sul contenitore .mud-input-outlined (l'area racchiusa
+   dal fieldset del bordo), non sullo slot dell'input che è trasparente. */
+.campo-obbligatorio .mud-input.mud-input-outlined {
+    background-color: #EEF4FA;
+    border-radius: var(--mud-default-borderradius);
+}

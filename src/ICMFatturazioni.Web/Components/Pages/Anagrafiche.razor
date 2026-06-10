@@ -67,7 +67,7 @@
                        Color="Color.Default"
                        StartIcon="@Icons.Material.Filled.Edit"
                        Ripple="false"
-                       OnClick="ApriDialogModifica">
+                       OnClick="@(() => ApriDialogModifica(_selezionata))">
                 Modifica
             </MudButton>
 
@@ -77,7 +77,7 @@
                            Color="Color.Error"
                            StartIcon="@Icons.Material.Filled.Delete"
                            Ripple="false"
-                           OnClick="ConfermaEdElimina">
+                           OnClick="@(() => ConfermaEdElimina(_selezionata))">
                     Elimina
                 </MudButton>
             }
@@ -97,6 +97,7 @@
              ItemSize="40"
              SelectedItem="_selezionata"
              SelectedItemChanged="OnSelezionataChanged"
+             RowClick="@OnRowClick"
              RowClassFunc="@RigaClass"
              Loading="@_caricamento">
     <Columns>
@@ -122,6 +123,19 @@
         <PropertyColumn Property="x => x.SiglaPaese"  Title="Paese" />
         <PropertyColumn Property="x => x.Email"       Title="Email" />
         <PropertyColumn Property="x => x.Telefono"    Title="Telefono" />
+        @* Azione rapida per riga: elimina (disattiva) la singola anagrafica
+           senza doverla prima selezionare in toolbar. *@
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
     </Columns>
     <NoRecordsContent>
         <MudText>Nessuna anagrafica trovata.</MudText>
@@ -197,10 +211,23 @@
         }
     }
 
+    // Classe applicata alla riga selezionata: la colora di giallo tenue
+    // (vedi app.css → .anagrafica-riga-selezionata) per dare un feedback
+    // visivo immediato di "riga attiva".
     private string RigaClass(Anagrafica a, int _) =>
         _selezionata is not null && _selezionata.IdAnagrafica == a.IdAnagrafica
-            ? "mud-selected-item"
+            ? "anagrafica-riga-selezionata"
             : string.Empty;
+
+    // Doppio click su una riga (Detail >= 2) → apre il dettaglio in modifica.
+    // Il primo click ha già impostato la selezione via SelectedItemChanged.
+    private async Task OnRowClick(DataGridRowClickEventArgs<Anagrafica> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2)
+        {
+            await ApriDialogModifica(args.Item);
+        }
+    }
 
     private static Color TipoColor(TipoAnagrafica tipo) => tipo switch
     {
@@ -231,12 +258,12 @@
         }
     }
 
-    private async Task ApriDialogModifica()
+    private async Task ApriDialogModifica(Anagrafica? a)
     {
-        if (_selezionata is null) return;
+        if (a is null) return;
         var parameters = new DialogParameters<AnagraficaFormDialog>
         {
-            { x => x.Iniziale, _selezionata },
+            { x => x.Iniziale, a },
         };
         var options = new DialogOptions
         {
@@ -253,22 +280,33 @@
         }
     }
 
-    private async Task ConfermaEdElimina()
+    private async Task ConfermaEdElimina(Anagrafica? a)
     {
-        if (_selezionata is null) return;
-        var conferma = await DialogService.ShowMessageBoxAsync(
-            title: "Eliminare anagrafica?",
-            markupMessage: new MarkupString(
-                $"Stai per eliminare <b>{_selezionata.RagioneSociale}</b>. L'anagrafica verrà disattivata e non comparirà più nell'elenco."),
-            yesText: "Elimina",
-            cancelText: "Annulla");
-        if (conferma != true) return;
+        if (a is null) return;
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare anagrafica?" },
+            { x => x.NomeElemento, a.RagioneSociale },
+            { x => x.Messaggio, "Verrà disattivata e non comparirà più nell'elenco. L'operazione è reversibile dall'amministratore." },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraSmall,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var risultato = await dialog.Result;
+        if (risultato is not { Canceled: false }) return;
 
         try
         {
-            await AnagraficaManager.EliminaAsync(_selezionata.IdAnagrafica);
+            await AnagraficaManager.EliminaAsync(a.IdAnagrafica);
             Snackbar.Add("Anagrafica eliminata.", MudBlazor.Severity.Success);
-            _selezionata = null;
+            if (_selezionata is not null && _selezionata.IdAnagrafica == a.IdAnagrafica)
+            {
+                _selezionata = null;
+            }
             await RicaricaAsync();
         }
         catch (AnagraficaConDipendenzeException)

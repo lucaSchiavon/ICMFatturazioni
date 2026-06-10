@@ -1,0 +1,201 @@
+@*
+    Pagina /dashboard — home dell'app autenticata.
+
+    Sintesi a colpo d'occhio: KPI, un istogramma (fatturato per mese), una
+    torta (ripartizione clienti per tipologia) e due tabelle riassuntive.
+
+    NOTA: in questa fase TUTTI i dati sono inventati e cablati nel componente
+    (vedi region "Dati segnaposto"). Verranno sostituiti con dati reali
+    provenienti dai Manager quando le entità Fatture/Attività saranno pronte.
+    Il layout e i componenti grafici restano invariati: cambierà solo la
+    sorgente dati.
+*@
+
+@page "/dashboard"
+
+<PageTitle>Dashboard · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-1">Dashboard</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    Riepilogo generale dello studio. <em>Dati dimostrativi: verranno collegati ai dati reali in seguito.</em>
+</MudText>
+
+@* ---------- Riga KPI ---------- *@
+<MudGrid Spacing="3" Class="mb-2">
+    @foreach (var kpi in _kpi)
+    {
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 d-flex flex-column" Style="height: 100%;">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@kpi.Icona" Color="@kpi.Colore" Size="Size.Medium" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@kpi.Titolo</MudText>
+                </MudStack>
+                <MudText Typo="Typo.h4" Class="mt-2">@kpi.Valore</MudText>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@* ---------- Riga grafici ---------- *@
+<MudGrid Spacing="3" Class="mb-2">
+    <MudItem xs="12" md="7">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4" Style="height: 100%;">
+            <MudText Typo="Typo.h6" Class="mb-3">Fatturato per mese (€ migliaia)</MudText>
+            <MudChart T="double"
+                      ChartType="ChartType.Bar"
+                      ChartSeries="@_serieFatturato"
+                      ChartLabels="@_mesi"
+                      ChartOptions="@_opzioniGrafico"
+                      Width="100%"
+                      Height="320px" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="5">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4" Style="height: 100%;">
+            <MudText Typo="Typo.h6" Class="mb-3">Clienti per tipologia</MudText>
+            <div class="d-flex justify-center">
+                <MudChart T="double"
+                          ChartType="ChartType.Pie"
+                          ChartSeries="@_serieTorta"
+                          ChartLabels="@_etichetteTorta"
+                          ChartOptions="@_opzioniGrafico"
+                          Width="280px"
+                          Height="280px" />
+            </div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@* ---------- Riga tabelle riassuntive ---------- *@
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="6">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4" Style="height: 100%;">
+            <MudText Typo="Typo.h6" Class="mb-3">Ultime fatture emesse</MudText>
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Elevation="0">
+                <thead>
+                    <tr>
+                        <th>Numero</th>
+                        <th>Cliente</th>
+                        <th style="text-align:right">Importo</th>
+                        <th>Stato</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in _ultimeFatture)
+                    {
+                        <tr>
+                            <td>@f.Numero</td>
+                            <td>@f.Cliente</td>
+                            <td style="text-align:right">@f.Importo.ToString("C0", _itCulture)</td>
+                            <td>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@f.ColoreStato">
+                                    @f.Stato
+                                </MudChip>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4" Style="height: 100%;">
+            <MudText Typo="Typo.h6" Class="mb-3">Top clienti per fatturato (anno)</MudText>
+            <MudSimpleTable Dense="true" Hover="true" Striped="true" Elevation="0">
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th style="text-align:right">Fatturato</th>
+                        <th style="text-align:right">N. fatture</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in _topClienti)
+                    {
+                        <tr>
+                            <td>@c.Cliente</td>
+                            <td style="text-align:right">@c.Fatturato.ToString("C0", _itCulture)</td>
+                            <td style="text-align:right">@c.NumeroFatture</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // Cultura italiana per formattare gli importi in euro (€ 12.345).
+    private static readonly System.Globalization.CultureInfo _itCulture = new("it-IT");
+
+    // ---------------- Dati segnaposto (TUTTI inventati) ----------------
+    // Sostituire con dati reali dai Manager quando disponibili.
+
+    private readonly List<Kpi> _kpi = new()
+    {
+        new("Fatture mese", "37", Icons.Material.Filled.ReceiptLong, Color.Primary),
+        new("Fatturato anno", "€ 482k", Icons.Material.Filled.Euro, Color.Success),
+        new("Clienti attivi", "128", Icons.Material.Filled.Groups, Color.Info),
+        new("Da incassare", "€ 64k", Icons.Material.Filled.HourglassBottom, Color.Warning),
+    };
+
+    private readonly string[] _mesi =
+        { "Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic" };
+
+    private readonly List<ChartSeries<double>> _serieFatturato = new()
+    {
+        new ChartSeries<double>
+        {
+            Name = "2026",
+            Data = new double[] { 38, 42, 35, 50, 47, 55, 33, 20, 48, 52, 60, 45 },
+        },
+        new ChartSeries<double>
+        {
+            Name = "2025",
+            Data = new double[] { 30, 36, 34, 41, 39, 44, 28, 18, 40, 46, 50, 39 },
+        },
+    };
+
+    // Torta: nella MudChart generica 9.4 anche i grafici radiali si alimentano
+    // via ChartSeries (una sola serie con i valori delle fette); le etichette
+    // delle fette vanno in ChartLabels.
+    private readonly List<ChartSeries<double>> _serieTorta = new()
+    {
+        new ChartSeries<double>
+        {
+            Name = "Clienti",
+            Data = new double[] { 78, 39, 11 },
+        },
+    };
+    private readonly string[] _etichetteTorta = { "Società", "Privati", "Enti pubblici" };
+
+    // Palette coerente col brand (icm-blue + accenti) per i grafici.
+    private readonly ChartOptions _opzioniGrafico = new()
+    {
+        ChartPalette = new[] { "#245F8C", "#7FA7CC", "#D97706", "#2F855A", "#AEC8E2" },
+    };
+
+    private readonly List<FatturaRiga> _ultimeFatture = new()
+    {
+        new("2026/0142", "Rossi Costruzioni S.r.l.", 4820m, "Pagata",      Color.Success),
+        new("2026/0141", "Studio Bianchi & Associati", 1290m, "Emessa",     Color.Info),
+        new("2026/0140", "Comune di Verona",          7350m, "In scadenza", Color.Warning),
+        new("2026/0139", "Verdi Impianti S.p.A.",     2680m, "Pagata",      Color.Success),
+        new("2026/0138", "Mario Gialli",                540m, "Scaduta",     Color.Error),
+    };
+
+    private readonly List<TopCliente> _topClienti = new()
+    {
+        new("Rossi Costruzioni S.r.l.", 96400m, 24),
+        new("Verdi Impianti S.p.A.",    71200m, 18),
+        new("Comune di Verona",         58900m, 12),
+        new("Neri Logistica S.r.l.",    43150m, 15),
+        new("Studio Bianchi & Associati", 31800m, 9),
+    };
+
+    // ---------------- Tipi di supporto ----------------
+
+    private sealed record Kpi(string Titolo, string Valore, string Icona, Color Colore);
+    private sealed record FatturaRiga(string Numero, string Cliente, decimal Importo, string Stato, Color ColoreStato);
+    private sealed record TopCliente(string Cliente, decimal Fatturato, int NumeroFatture);
+}

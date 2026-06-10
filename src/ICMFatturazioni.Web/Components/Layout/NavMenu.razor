@@ -1,31 +1,78 @@
 @*
-    Menu di navigazione laterale. Per la Fase 1 è abilitata solo la voce
-    "Tabelle amministrative"; le altre sono visibili ma disabilitate per
-    dare un'idea della struttura applicativa completa. Verranno abilitate
-    via via che le entità relative entrano in Fase 2/3.
+    Menu di navigazione laterale.
+
+    Struttura (vedi Evidenze/menuiniziale.png):
+    - In cima un link "Home" verso la dashboard (/dashboard), che sostituisce
+      la vecchia voce "Tabelle amministrative" come entry-point dell'app.
+    - Tre gruppi espandibili (MudNavGroup): "Tabelle Amm.ve", "Attività studio"
+      e "Reports". Le voci che prima erano tab orizzontali della pagina
+      /tabelle-amministrative sono ora sottovoci del menu verticale.
+
+    Stato Fase 1/2: l'unica sottovoce attiva è "Anagrafiche" (→ /anagrafiche).
+    Le altre sono visibili ma disabilitate, per dare l'idea della struttura
+    completa; verranno abilitate man mano che le entità entrano in sviluppo.
+
+    "Tabelle Amm.ve" parte espanso perché contiene l'unica pagina già operativa.
 *@
 
 <MudNavMenu>
-    <MudNavLink Href="/tabelle-amministrative"
-                Icon="@Icons.Material.Filled.TableChart"
+    @* Home / Dashboard — entry-point con grafici e dati di sintesi. *@
+    <MudNavLink Href="/dashboard"
+                Icon="@Icons.Material.Filled.Dashboard"
                 Match="NavLinkMatch.Prefix">
-        Tabelle amministrative
+        Home
     </MudNavLink>
 
     <MudDivider Class="my-2" />
 
-    <MudNavLink Href="/anagrafiche"
-                Icon="@Icons.Material.Filled.PeopleAlt"
-                Match="NavLinkMatch.Prefix">
-        Anagrafiche
-    </MudNavLink>
-    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Description">
-        Fatture
-    </MudNavLink>
-    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.PriceCheck">
-        Pagamenti
-    </MudNavLink>
-    <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Assessment">
-        Report
-    </MudNavLink>
+    <MudNavGroup Title="Tabelle Amm.ve"
+                 Icon="@Icons.Material.Filled.TableChart"
+                 Expanded="true">
+        <MudNavLink Href="/anagrafiche"
+                    Icon="@Icons.Material.Filled.PeopleAlt"
+                    Match="NavLinkMatch.Prefix">
+            Anagrafiche
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.ListAlt">
+            Desc. attività
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.AccountBalance">
+            Banche appoggio
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Percent">
+            Codici IVA
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Payments">
+            Codici pagamento
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.PriceChange">
+            Aliquote vigenti
+        </MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Attività studio"
+                 Icon="@Icons.Material.Filled.WorkOutline"
+                 Expanded="false">
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Assignment">
+            Gest. attività studio
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Category">
+            Tipi attività studio
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.Segment">
+            Tipi dett. attività studio
+        </MudNavLink>
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.FactCheck">
+            Schede attività clienti
+        </MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="Reports"
+                 Icon="@Icons.Material.Filled.Assessment"
+                 Expanded="false">
+        @* Nessun report ancora disponibile: placeholder disabilitato. *@
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.HourglassEmpty">
+            In arrivo
+        </MudNavLink>
+    </MudNavGroup>
 </MudNavMenu>

@@ -1,7 +1,6 @@
 @*
-    Landing autenticata. Per la Fase 1 reindirizza all'unica sezione
-    attiva (/tabelle-amministrative). In fasi successive evolverà in una
-    dashboard di sintesi.
+    Landing autenticata. Reindirizza alla dashboard di sintesi (/dashboard),
+    che è il nuovo entry-point dell'app dopo il login.
 *@
 @page "/"
 @inject NavigationManager Nav
@@ -11,6 +10,6 @@
 @code {
     protected override void OnInitialized()
     {
-        Nav.NavigateTo("/tabelle-amministrative", replace: true);
+        Nav.NavigateTo("/dashboard", replace: true);
     }
 }

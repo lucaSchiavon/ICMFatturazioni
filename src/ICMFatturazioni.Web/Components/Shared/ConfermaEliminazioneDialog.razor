@@ -1,0 +1,77 @@
+@*
+    Dialog di conferma eliminazione — riutilizzabile per tutte le entità.
+
+    Più ricco del semplice MessageBox testuale: icona di avviso in evidenza,
+    nome dell'elemento da eliminare messo in risalto e (opzionale) una nota
+    esplicativa sul tipo di eliminazione (es. soft-delete).
+
+    Uso:
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare anagrafica?" },
+            { x => x.NomeElemento, anagrafica.RagioneSociale },
+            { x => x.Messaggio, "Verrà disattivata e non comparirà più nell'elenco." },
+        };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>("", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false }) { ... }
+*@
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex flex-column align-center text-center pa-2" style="max-width: 380px;">
+            @* Icona di avviso entro un cerchio rosso tenue: comunica
+               "azione distruttiva" senza essere aggressiva. *@
+            <MudAvatar Color="Color.Error" Variant="Variant.Filled"
+                       Style="background-color: #FEF2F2; color: #DC2626;" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Outlined.DeleteForever" Size="Size.Large" />
+            </MudAvatar>
+
+            <MudText Typo="Typo.h6" Class="mb-1">@Titolo</MudText>
+
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Stai per eliminare
+            </MudText>
+            <MudText Typo="Typo.subtitle1" Class="mb-2" Style="font-weight: 600;">
+                @NomeElemento
+            </MudText>
+
+            @if (!string.IsNullOrWhiteSpace(Messaggio))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@Messaggio</MudText>
+            }
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Annulla" Ripple="false">
+            Annulla
+        </MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Error"
+                   StartIcon="@Icons.Material.Filled.Delete"
+                   OnClick="Conferma"
+                   Ripple="false">
+            @TestoConferma
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Titolo del dialog (es. "Eliminare anagrafica?").</summary>
+    [Parameter] public string Titolo { get; set; } = "Confermi l'eliminazione?";
+
+    /// <summary>Nome dell'elemento da eliminare, mostrato in evidenza.</summary>
+    [Parameter] public string NomeElemento { get; set; } = string.Empty;
+
+    /// <summary>Nota esplicativa opzionale (es. soft-delete / dipendenze).</summary>
+    [Parameter] public string? Messaggio { get; set; }
+
+    /// <summary>Etichetta del pulsante di conferma.</summary>
+    [Parameter] public string TestoConferma { get; set; } = "Elimina";
+
+    private void Annulla() => MudDialog.Cancel();
+    private void Conferma() => MudDialog.Close(DialogResult.Ok(true));
+}
