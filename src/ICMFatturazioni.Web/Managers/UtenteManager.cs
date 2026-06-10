@@ -1,6 +1,7 @@
 using ICMFatturazioni.Web.Authentication;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Web.Managers;
@@ -90,6 +91,13 @@ internal sealed class UtenteManager : IUtenteManager
             throw new ArgumentException("Il ruolo è obbligatorio.", nameof(idRuolo));
         }
 
+        // Username univoco: pre-check user-friendly (la unique sul DB è la
+        // difesa finale sotto race condition).
+        if (await _repository.ExistsUsernameAsync(username, null, cancellationToken))
+        {
+            throw new UtenteDuplicatoException(username);
+        }
+
         // Password opzionale: null/vuota → utente invitato (PasswordHash null).
         // Se valorizzata, applichiamo il minimo di policy e hashiamo.
         string? passwordHash = null;
@@ -132,5 +140,39 @@ internal sealed class UtenteManager : IUtenteManager
                 $"Tema non valido. Valori ammessi: {string.Join(", ", TemiAmmessi)}.");
         }
         return _repository.UpdateTemaPreferitoAsync(idUtente, temaPreferito, cancellationToken);
+    }
+
+    // ---------------------------------------------------------------------
+    // Amministrazione utenti (T3)
+    // ---------------------------------------------------------------------
+
+    public Task<IReadOnlyList<UtenteConRuolo>> ElencoAsync(CancellationToken cancellationToken = default)
+        => _repository.GetAllConRuoloAsync(cancellationToken);
+
+    public async Task AggiornaAsync(Guid idUtente, string username, string? email, Guid idRuolo, bool attivo, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            throw new ArgumentException("Lo username è obbligatorio.", nameof(username));
+        }
+        if (idRuolo == Guid.Empty)
+        {
+            throw new ArgumentException("Il ruolo è obbligatorio.", nameof(idRuolo));
+        }
+        if (await _repository.ExistsUsernameAsync(username, idUtente, cancellationToken))
+        {
+            throw new UtenteDuplicatoException(username);
+        }
+        await _repository.UpdateProfiloAsync(idUtente, username, email, idRuolo, attivo, cancellationToken);
+    }
+
+    public async Task ImpostaPasswordAsync(Guid idUtente, string nuovaPassword, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(nuovaPassword) || nuovaPassword.Length < 8)
+        {
+            throw new ArgumentException("La password deve avere almeno 8 caratteri.", nameof(nuovaPassword));
+        }
+        var hash = _passwordHasher.HashPassword(nuovaPassword);
+        await _repository.UpdatePasswordHashAsync(idUtente, hash, cancellationToken);
     }
 }

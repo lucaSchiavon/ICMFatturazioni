@@ -1,4 +1,5 @@
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Web.Managers.Interfaces;
 
@@ -43,4 +44,20 @@ public interface IUtenteManager
     /// Lancia <see cref="ArgumentOutOfRangeException"/> per valori fuori range.
     /// </summary>
     Task ImpostaTemaPreferitoAsync(Guid idUtente, string temaPreferito, CancellationToken cancellationToken = default);
+
+    /// <summary>Elenco utenti con il nome del ruolo, per la UI di amministrazione.</summary>
+    Task<IReadOnlyList<UtenteConRuolo>> ElencoAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Aggiorna profilo (username, email, ruolo, attivo) di un utente esistente.
+    /// Lancia <see cref="UtenteDuplicatoException"/> se lo username è già usato
+    /// da un altro utente. Non tocca la password.
+    /// </summary>
+    Task AggiornaAsync(Guid idUtente, string username, string? email, Guid idRuolo, bool attivo, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imposta (o reimposta) la password di un utente: la valida e la hasha.
+    /// Usato dall'admin in T3; il reset via email/token è T4.
+    /// </summary>
+    Task ImpostaPasswordAsync(Guid idUtente, string nuovaPassword, CancellationToken cancellationToken = default);
 }

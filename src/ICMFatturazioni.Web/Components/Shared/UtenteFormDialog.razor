@@ -1,0 +1,186 @@
+@*
+    Dialog Utente — usato per "Nuovo" e "Modifica".
+    - Nuovo (Iniziale null): Username, Email, Ruolo e Password iniziale (l'admin
+      la imposta direttamente; il flusso invito/reset via email è T4).
+    - Modifica: Username, Email, Ruolo, Attivo. La password NON si cambia qui:
+      si usa l'azione dedicata "Reimposta password".
+    Il dropdown ruoli è già filtrato dal chiamante (es. niente Superadmin per
+    un Admin).
+*@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@inject IUtenteManager UtenteManager
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Username"
+                                  Label="Username *"
+                                  Required="true"
+                                  RequiredError="Username obbligatorio"
+                                  MaxLength="80"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Class="campo-obbligatorio" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid"
+                               Label="Ruolo *"
+                               @bind-Value="_model.IdRuolo"
+                               Required="true"
+                               RequiredError="Ruolo obbligatorio"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Class="campo-obbligatorio">
+                        @foreach (var r in Ruoli)
+                        {
+                            <MudSelectItem Value="@r.IdRuolo">@r.Nome</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="12" sm="@(IsModifica ? 6 : 12)">
+                    <MudTextField @bind-Value="_model.Email"
+                                  Label="Email"
+                                  InputType="InputType.Email"
+                                  MaxLength="256"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  HelperText="Opzionale: servirà per il reset password via email" />
+                </MudItem>
+
+                @if (IsModifica)
+                {
+                    <MudItem xs="12" sm="6" Class="d-flex align-center">
+                        <MudCheckBox @bind-Value="_model.Attivo" Label="Attivo" Color="Color.Primary" />
+                    </MudItem>
+                }
+                else
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.Password"
+                                      Label="Password iniziale *"
+                                      InputType="InputType.Password"
+                                      Required="true"
+                                      RequiredError="Password obbligatoria"
+                                      Validation="@(new Func<string, string?>(ValidaPassword))"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Class="campo-obbligatorio" />
+                    </MudItem>
+                }
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_erroreServer))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">
+                    @_erroreServer
+                </MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Annulla" Ripple="false">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="Salva" Disabled="@(!_isValid || _salvataggio)" Ripple="false">
+            @if (_salvataggio)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
+            }
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>Utente da modificare; null = creazione.</summary>
+    [Parameter] public UtenteConRuolo? Iniziale { get; set; }
+
+    /// <summary>Ruoli selezionabili (già filtrati dal chiamante).</summary>
+    [Parameter] public IReadOnlyList<Ruolo> Ruoli { get; set; } = Array.Empty<Ruolo>();
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _erroreServer;
+
+    private bool IsModifica => Iniziale is not null;
+
+    protected override void OnInitialized()
+    {
+        if (Iniziale is not null)
+        {
+            _model = new FormModel
+            {
+                Username = Iniziale.Username,
+                Email = Iniziale.Email,
+                IdRuolo = Iniziale.IdRuolo,
+                Attivo = Iniziale.Attivo,
+            };
+        }
+        else if (Ruoli.Count > 0)
+        {
+            _model.IdRuolo = Ruoli[0].IdRuolo;
+        }
+    }
+
+    private static string? ValidaPassword(string? pwd)
+        => string.IsNullOrEmpty(pwd) || pwd.Length >= 8 ? null : "Almeno 8 caratteri";
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        _erroreServer = null;
+        await _form.ValidateAsync();
+        if (!_isValid) return;
+
+        _salvataggio = true;
+        try
+        {
+            if (IsModifica)
+            {
+                await UtenteManager.AggiornaAsync(Iniziale!.IdUtente, _model.Username, _model.Email, _model.IdRuolo, _model.Attivo);
+            }
+            else
+            {
+                await UtenteManager.CreaAsync(_model.Username, _model.Password, _model.Email, _model.IdRuolo);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (UtenteDuplicatoException ex)
+        {
+            _erroreServer = ex.Message;
+        }
+        catch (ArgumentException ex)
+        {
+            _erroreServer = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
+            await ErrorLogger.LogAsync(ex, contesto: "UtenteFormDialog.Salva");
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    private sealed class FormModel
+    {
+        public string Username { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public Guid IdRuolo { get; set; }
+        public bool Attivo { get; set; } = true;
+        public string Password { get; set; } = string.Empty;
+    }
+}

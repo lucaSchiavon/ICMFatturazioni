@@ -1,0 +1,210 @@
+@*
+    Pagina /admin/utenti — gestione utenti (T3a).
+
+    Accesso: policy RequireAdmin (Admin + Superadmin). Inoltre gli utenti con
+    ruolo Superadmin sono nascosti agli Admin (li vede solo un Superadmin), e
+    il dropdown ruoli del dialog esclude Superadmin per gli Admin: il ruolo di
+    servizio non è creabile/assegnabile dall'interfaccia.
+*@
+@page "/admin/utenti"
+@attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireAdmin)]
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@inject IUtenteManager UtenteManager
+@inject IRuoloManager RuoloManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+
+<PageTitle>Gestione utenti · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Gestione utenti</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per username, email, ruolo…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="200"
+                      Style="min-width: 280px; flex: 1;" />
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PersonAdd" Ripple="false"
+                   OnClick="ApriNuovo">
+            Nuovo utente
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="UtenteConRuolo"
+             Items="@UtentiFiltrati"
+             Dense="true" Hover="true" FixedHeader="true"
+             Height="calc(100vh - 280px)"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Username" Title="Username" StickyLeft="true" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <TemplateColumn Title="Ruolo">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                         Color="@(context.Item.RuoloCodice == RuoliSistema.Superadmin ? Color.Secondary : context.Item.RuoloCodice == RuoliSistema.Admin ? Color.Primary : Color.Default)">
+                    @context.Item.RuoloNome
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Stato">
+            <CellTemplate>
+                @if (!context.Item.HaPassword)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Da attivare</MudChip>
+                }
+                else if (context.Item.Attivo)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Attivo</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">Disattivato</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.UltimoLoginUtc" Title="Ultimo login" Format="dd/MM/yyyy HH:mm" />
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudStack Row="true" Spacing="0">
+                    <MudTooltip Text="Modifica">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Ripple="false"
+                                       OnClick="@(() => ApriModifica(context.Item))" />
+                    </MudTooltip>
+                    <MudTooltip Text="Reimposta password">
+                        <MudIconButton Icon="@Icons.Material.Filled.Password" Size="Size.Small" Ripple="false"
+                                       OnClick="@(() => ApriReimpostaPassword(context.Item))" />
+                    </MudTooltip>
+                </MudStack>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessun utente trovato.</MudText></NoRecordsContent>
+</MudDataGrid>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private IReadOnlyList<UtenteConRuolo> _utenti = Array.Empty<UtenteConRuolo>();
+    private IReadOnlyList<Ruolo> _ruoli = Array.Empty<Ruolo>();
+    private bool _caricamento = true;
+    private bool _vedeSuperadmin;
+    private string _filtro = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _vedeSuperadmin = state.User.FindFirst("ruolo_codice")?.Value == RuoliSistema.Superadmin;
+        }
+        await RicaricaAsync();
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _utenti = await UtenteManager.ElencoAsync();
+            _ruoli = await RuoloManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await ErrorLogger.LogAsync(ex, contesto: "GestioneUtenti.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento degli utenti.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    // Superadmin nascosti agli Admin.
+    private IEnumerable<UtenteConRuolo> UtentiFiltrati
+    {
+        get
+        {
+            IEnumerable<UtenteConRuolo> q = _utenti;
+            if (!_vedeSuperadmin)
+            {
+                q = q.Where(u => u.RuoloCodice != RuoliSistema.Superadmin);
+            }
+            if (!string.IsNullOrWhiteSpace(_filtro))
+            {
+                var f = _filtro.Trim();
+                q = q.Where(u =>
+                    u.Username.Contains(f, StringComparison.OrdinalIgnoreCase)
+                    || (u.Email?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || u.RuoloNome.Contains(f, StringComparison.OrdinalIgnoreCase));
+            }
+            return q;
+        }
+    }
+
+    // Ruoli assegnabili: l'Admin non può assegnare il ruolo Superadmin.
+    private IReadOnlyList<Ruolo> RuoliAssegnabili =>
+        (_vedeSuperadmin ? _ruoli : _ruoli.Where(r => r.Codice != RuoliSistema.Superadmin))
+            .Where(r => r.IsAttivo)
+            .ToList();
+
+    private async Task ApriNuovo()
+    {
+        var parameters = new DialogParameters<UtenteFormDialog>
+        {
+            { x => x.Iniziale, null },
+            { x => x.Ruoli, RuoliAssegnabili },
+        };
+        await MostraDialogUtente("Nuovo utente", parameters, "Utente creato.");
+    }
+
+    private async Task ApriModifica(UtenteConRuolo u)
+    {
+        var parameters = new DialogParameters<UtenteFormDialog>
+        {
+            { x => x.Iniziale, u },
+            { x => x.Ruoli, RuoliAssegnabili },
+        };
+        await MostraDialogUtente("Modifica utente", parameters, "Utente aggiornato.");
+    }
+
+    private async Task MostraDialogUtente(string titolo, DialogParameters<UtenteFormDialog> parameters, string successo)
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<UtenteFormDialog>(titolo, parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add(successo, MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriReimpostaPassword(UtenteConRuolo u)
+    {
+        var parameters = new DialogParameters<ImpostaPasswordDialog>
+        {
+            { x => x.IdUtente, u.IdUtente },
+            { x => x.Username, u.Username },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ImpostaPasswordDialog>("Reimposta password", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Password aggiornata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+}

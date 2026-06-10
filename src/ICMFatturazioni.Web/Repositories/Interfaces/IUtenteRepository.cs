@@ -1,4 +1,5 @@
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Web.Repositories.Interfaces;
 
@@ -29,4 +30,19 @@ public interface IUtenteRepository
 
     /// <summary>Cambia la preferenza di tema. Lascia inalterati gli altri campi.</summary>
     Task UpdateTemaPreferitoAsync(Guid idUtente, string temaPreferito, CancellationToken cancellationToken = default);
+
+    /// <summary>Elenco utenti con il nome del ruolo (JOIN), per la UI admin.</summary>
+    Task<IReadOnlyList<UtenteConRuolo>> GetAllConRuoloAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// True se esiste già un utente con quello username (confronto
+    /// case-insensitive), escludendo eventualmente un id (per la modifica).
+    /// </summary>
+    Task<bool> ExistsUsernameAsync(string username, Guid? escludiIdUtente = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Aggiorna profilo (username, email, ruolo, attivo). Non tocca la password.</summary>
+    Task UpdateProfiloAsync(Guid idUtente, string username, string? email, Guid idRuolo, bool attivo, CancellationToken cancellationToken = default);
+
+    /// <summary>Imposta il nuovo hash password (o <c>null</c> per "da attivare").</summary>
+    Task UpdatePasswordHashAsync(Guid idUtente, string? passwordHash, CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,7 @@
 using Dapper;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Web.Repositories;
@@ -106,5 +107,66 @@ internal sealed class UtenteRepository : IUtenteRepository
             parameters: new { IdUtente = idUtente, TemaPreferito = temaPreferito },
             cancellationToken: cancellationToken);
         await connection.ExecuteAsync(cmd);
+    }
+
+    // ---------------------------------------------------------------------
+    // Amministrazione utenti (T3)
+    // ---------------------------------------------------------------------
+
+    public async Task<IReadOnlyList<UtenteConRuolo>> GetAllConRuoloAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        const string sql = """
+            SELECT
+                u.IdUtente, u.Username, u.Email, u.IdRuolo,
+                r.Ruolo AS RuoloNome, r.Codice AS RuoloCodice, u.Attivo,
+                CAST(CASE WHEN u.PasswordHash IS NULL THEN 0 ELSE 1 END AS BIT) AS HaPassword,
+                u.UltimoLoginUtc
+            FROM fatt.Utenti u
+            JOIN fatt.Ruoli r ON u.IdRuolo = r.IdRuolo
+            ORDER BY u.Username;
+            """;
+        var rows = await connection.QueryAsync<UtenteConRuolo>(new CommandDefinition(sql, cancellationToken: cancellationToken));
+        return rows.ToList();
+    }
+
+    public async Task<bool> ExistsUsernameAsync(string username, Guid? escludiIdUtente = null, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1 FROM fatt.Utenti
+                WHERE Username = @Username
+                  AND (@Escludi IS NULL OR IdUtente <> @Escludi)
+            ) THEN 1 ELSE 0 END;
+            """;
+        return await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+            sql, new { Username = username, Escludi = escludiIdUtente }, cancellationToken: cancellationToken));
+    }
+
+    public async Task UpdateProfiloAsync(Guid idUtente, string username, string? email, Guid idRuolo, bool attivo, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        const string sql = """
+            UPDATE fatt.Utenti
+            SET Username = @Username, Email = @Email, IdRuolo = @IdRuolo,
+                Attivo = @Attivo, UpdatedAt = SYSUTCDATETIME()
+            WHERE IdUtente = @IdUtente;
+            """;
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql, new { IdUtente = idUtente, Username = username, Email = email, IdRuolo = idRuolo, Attivo = attivo },
+            cancellationToken: cancellationToken));
+    }
+
+    public async Task UpdatePasswordHashAsync(Guid idUtente, string? passwordHash, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        const string sql = """
+            UPDATE fatt.Utenti
+            SET PasswordHash = @PasswordHash, UpdatedAt = SYSUTCDATETIME()
+            WHERE IdUtente = @IdUtente;
+            """;
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql, new { IdUtente = idUtente, PasswordHash = passwordHash }, cancellationToken: cancellationToken));
     }
 }
