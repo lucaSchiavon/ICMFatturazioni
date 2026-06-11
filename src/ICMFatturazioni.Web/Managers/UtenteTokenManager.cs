@@ -13,22 +13,29 @@ namespace ICMFatturazioni.Web.Managers;
 /// </summary>
 /// <remarks>
 /// Usa <see cref="TimeProvider"/> per leggere "adesso": rende testabili scadenza
-/// e validità senza attese reali. La registrazione audit "chi-ha-emesso-cosa"
-/// arriverà con lo step di mirror logging+audit (<c>fatt.Audit</c>): qui è
-/// volutamente assente per non anticiparlo.
+/// e validità senza attese reali. Registra in <c>fatt.Audit</c> via
+/// <see cref="IAuditManager"/> l'emissione e il consumo dei token (mirror
+/// logging+audit di ICMVerbali): emissione = creazione, consumo = modifica.
+/// L'audit è best-effort e non fa fallire l'operazione.
 /// </remarks>
 internal sealed class UtenteTokenManager : IUtenteTokenManager
 {
+    // EntityType usato nelle righe di audit relative ai magic-link.
+    private const string EntityTypeToken = nameof(UtenteToken);
+
     private readonly IUtenteTokenRepository _repository;
+    private readonly IAuditManager _audit;
     private readonly TimeProvider _clock;
     private readonly UtenteTokenOptions _options;
 
     public UtenteTokenManager(
         IUtenteTokenRepository repository,
+        IAuditManager audit,
         TimeProvider clock,
         IOptions<UtenteTokenOptions> options)
     {
         _repository = repository;
+        _audit = audit;
         _clock = clock;
         _options = options.Value;
     }
@@ -53,6 +60,14 @@ internal sealed class UtenteTokenManager : IUtenteTokenManager
             CreatedAt = nowUtc,
         };
         await _repository.CreaRevocandoPrecedentiAsync(entity, cancellationToken);
+
+        // Audit "chi-ha-emesso-cosa": traccia l'emissione del magic-link. L'utente
+        // corrente è chi opera (un admin che invita) oppure nessuno (flusso
+        // anonimo "password dimenticata"): lo risolve l'AuditManager.
+        await _audit.RegistraCreazioneAsync(EntityTypeToken, entity.Id,
+            $"Emesso token {tipo} per l'utente {utenteId} (scadenza {entity.ScadenzaUtc:O}).",
+            cancellationToken: cancellationToken);
+
         return raw;
     }
 
@@ -106,6 +121,14 @@ internal sealed class UtenteTokenManager : IUtenteTokenManager
                 UtenteTokenInvalidoMotivo.GiaUsato,
                 "Token non più utilizzabile (consumato o revocato).");
         }
+
+        // Audit "chi-ha-consumato-cosa": il token è stato usato e la password
+        // impostata. Al consumo l'utente non è ancora autenticato (il sign-in
+        // avviene a valle), quindi l'attore è di norma anonimo: il riferimento
+        // all'utente target resta nella descrizione.
+        await _audit.RegistraModificaAsync(EntityTypeToken, entity.Id,
+            $"Consumato token {tipoAtteso} e impostata la password per l'utente {entity.UtenteId}.",
+            cancellationToken: cancellationToken);
 
         return entity.UtenteId;
     }

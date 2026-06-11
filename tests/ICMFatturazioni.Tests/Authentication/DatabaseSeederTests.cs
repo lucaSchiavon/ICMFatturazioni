@@ -1,5 +1,4 @@
 using ICMFatturazioni.Web.Authentication;
-using ICMFatturazioni.Web.Diagnostics;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
@@ -21,25 +20,12 @@ namespace ICMFatturazioni.Tests.Authentication;
 /// </summary>
 public class DatabaseSeederTests
 {
-    // Fake logger che cattura le chiamate, così si verifica il "log + prosegui".
-    private sealed class FakeErrorLogger : IErrorLogger
-    {
-        public List<Exception> Logged { get; } = new();
-
-        public Task LogAsync(Exception ex, string? contesto = null, string? descrizioneEstesa = null,
-            Severity severity = Severity.Error, bool handled = false, CancellationToken cancellationToken = default)
-        {
-            Logged.Add(ex);
-            return Task.CompletedTask;
-        }
-    }
-
     private sealed class Harness
     {
         public required ServiceProvider Provider { get; init; }
         public required FakeUtenteRepository Utenti { get; init; }
         public required FakeRuoloRepository Ruoli { get; init; }
-        public required FakeErrorLogger Logger { get; init; }
+        public required FakeLogManager Logger { get; init; }
     }
 
     /// <summary>Compone il provider con i fake condivisi (ispezionabili dopo il seed).</summary>
@@ -47,13 +33,14 @@ public class DatabaseSeederTests
     {
         var utenti = new FakeUtenteRepository();
         var ruoli = new FakeRuoloRepository();
-        var logger = new FakeErrorLogger();
+        var logger = new FakeLogManager();
 
         var services = new ServiceCollection();
         services.AddSingleton<IUtenteRepository>(utenti);
         services.AddSingleton<IRuoloRepository>(ruoli);
         services.AddSingleton<IPasswordHasherService, PasswordHasherService>();
-        services.AddSingleton<IErrorLogger>(logger);
+        services.AddSingleton<ILogManager>(logger);
+        services.AddSingleton<IAuditManager>(new FakeAuditManager());
         services.AddScoped<IUtenteManager, UtenteManager>();
         services.AddScoped<IRuoloManager, RuoloManager>();
 
@@ -89,7 +76,7 @@ public class DatabaseSeederTests
         await seeder.StartAsync(CancellationToken.None);
 
         Assert.Empty(h.Utenti.Store);
-        Assert.Empty(h.Logger.Logged);   // nessun errore: skip pulito
+        Assert.Empty(h.Logger.Errori);   // nessun errore: skip pulito
     }
 
     [Fact]
@@ -108,7 +95,7 @@ public class DatabaseSeederTests
         var creato = await h.Utenti.GetByUsernameAsync("admin");
         Assert.NotNull(creato);
         Assert.NotNull(creato!.PasswordHash);
-        Assert.Empty(h.Logger.Logged);
+        Assert.Empty(h.Logger.Errori);
     }
 
     [Fact]
@@ -144,8 +131,8 @@ public class DatabaseSeederTests
         await seeder.StartAsync(CancellationToken.None);
 
         Assert.Empty(h.Utenti.Store);
-        Assert.Single(h.Logger.Logged);
-        Assert.IsType<InvalidOperationException>(h.Logger.Logged[0]);
+        Assert.Single(h.Logger.Errori);
+        Assert.IsType<InvalidOperationException>(h.Logger.Errori[0].Eccezione);
     }
 
     [Fact]

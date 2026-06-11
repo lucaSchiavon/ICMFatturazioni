@@ -6,7 +6,7 @@
 @using ICMFatturazioni.Web.Managers
 @using ICMFatturazioni.Web.Managers.Interfaces
 @inject IRuoloManager RuoloManager
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <MudDialog>
     <DialogContent>
@@ -92,7 +92,8 @@
         catch (Exception ex)
         {
             _errore = "Errore durante il salvataggio del ruolo.";
-            await ErrorLogger.LogAsync(ex, contesto: "RuoloFormDialog.Salva");
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio del ruolo fallito per un errore imprevisto.", "RuoloFormDialog.Salva");
         }
         finally { _salvataggio = false; }
     }

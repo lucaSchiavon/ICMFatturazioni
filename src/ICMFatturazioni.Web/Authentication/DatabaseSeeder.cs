@@ -1,4 +1,3 @@
-using ICMFatturazioni.Web.Diagnostics;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using Microsoft.Extensions.Options;
@@ -20,7 +19,7 @@ namespace ICMFatturazioni.Web.Authentication;
 /// <para>
 /// È un <see cref="IHostedService"/> (singleton): apre un proprio scope DI per
 /// risolvere i servizi scoped (manager). Eventuali errori (es. DB non ancora
-/// migrato) vengono loggati via <see cref="IErrorLogger"/> e non bloccano
+/// migrato) vengono loggati via <see cref="ILogManager"/> e non bloccano
 /// l'avvio.
 /// </para>
 /// </remarks>
@@ -45,7 +44,7 @@ internal sealed class DatabaseSeeder : IHostedService
         using var scope = _services.CreateScope();
         var utenteManager = scope.ServiceProvider.GetRequiredService<IUtenteManager>();
         var ruoloManager = scope.ServiceProvider.GetRequiredService<IRuoloManager>();
-        var errorLogger = scope.ServiceProvider.GetRequiredService<IErrorLogger>();
+        var logManager = scope.ServiceProvider.GetRequiredService<ILogManager>();
 
         try
         {
@@ -63,12 +62,11 @@ internal sealed class DatabaseSeeder : IHostedService
         {
             // Probabile DB non migrato: logghiamo (con fallback su file) e
             // proseguiamo l'avvio. Login fallirà finché non si applicano le migration.
-            await errorLogger.LogAsync(
+            await logManager.LogErroreAsync(
                 ex,
-                contesto: "DatabaseSeeder.StartAsync",
-                descrizioneEstesa: "Seed utenti fallito. Eseguire le migration (execution/recreate-db.ps1).",
-                severity: Severity.Warning,
-                handled: true,
+                "Seed utenti Admin/Superadmin fallito all'avvio. Probabile DB non migrato: " +
+                "eseguire le migration (execution/recreate-db.ps1). L'avvio prosegue comunque.",
+                "DatabaseSeeder.StartAsync",
                 cancellationToken: cancellationToken);
         }
     }

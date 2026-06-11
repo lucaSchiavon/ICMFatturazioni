@@ -1,3 +1,4 @@
+using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Authentication;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
@@ -23,13 +24,17 @@ internal sealed class UtenteManager : IUtenteManager
         "light", "dark", "auto",
     };
 
+    private const string EntityType = nameof(Utente);
+
     private readonly IUtenteRepository _repository;
     private readonly IPasswordHasherService _passwordHasher;
+    private readonly IAuditManager _audit;
 
-    public UtenteManager(IUtenteRepository repository, IPasswordHasherService passwordHasher)
+    public UtenteManager(IUtenteRepository repository, IPasswordHasherService passwordHasher, IAuditManager audit)
     {
         _repository = repository;
         _passwordHasher = passwordHasher;
+        _audit = audit;
     }
 
     // ---------------------------------------------------------------------
@@ -130,6 +135,9 @@ internal sealed class UtenteManager : IUtenteManager
         };
 
         await _repository.InsertAsync(nuovo, cancellationToken);
+        // Snapshot del nuovo utente; il PasswordHash è escluso da AuditDettaglio.
+        await _audit.RegistraCreazioneAsync(EntityType, nuovo.IdUtente, nuovo.Username,
+            AuditDettaglio.Snapshot(nuovo), cancellationToken);
         return nuovo.IdUtente;
     }
 
@@ -170,7 +178,17 @@ internal sealed class UtenteManager : IUtenteManager
         {
             throw new UtenteDuplicatoException(username);
         }
+
+        // Stato precedente per il diff dell'audit (solo i campi modificabili qui).
+        var precedente = await _repository.GetByIdAsync(idUtente, cancellationToken);
         await _repository.UpdateProfiloAsync(idUtente, username, email, idRuolo, attivo, cancellationToken);
+        var dopo = new { Username = username, Email = email, IdRuolo = idRuolo, Attivo = attivo };
+        var dati = precedente is null
+            ? AuditDettaglio.Snapshot(dopo)
+            : AuditDettaglio.Diff(
+                new { precedente.Username, precedente.Email, precedente.IdRuolo, precedente.Attivo },
+                dopo);
+        await _audit.RegistraModificaAsync(EntityType, idUtente, username, dati, cancellationToken);
     }
 
     public async Task ImpostaPasswordAsync(Guid idUtente, string nuovaPassword, CancellationToken cancellationToken = default)
@@ -182,5 +200,8 @@ internal sealed class UtenteManager : IUtenteManager
         }
         var hash = _passwordHasher.HashPassword(nuovaPassword);
         await _repository.UpdatePasswordHashAsync(idUtente, hash, cancellationToken);
+        // Nessuno snapshot: la password è un segreto, si traccia solo l'evento.
+        await _audit.RegistraModificaAsync(EntityType, idUtente, "Reimpostazione password",
+            cancellationToken: cancellationToken);
     }
 }

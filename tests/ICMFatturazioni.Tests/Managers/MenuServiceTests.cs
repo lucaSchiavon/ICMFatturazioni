@@ -22,6 +22,7 @@ public class MenuServiceTests
     private static readonly Guid SubAnagrafiche = Guid.Parse("b0000000-0000-0000-0000-000000000001");
     private static readonly Guid SubBanche = Guid.Parse("b0000000-0000-0000-0000-000000000002");
     private static readonly Guid SubGestioneUtenti = Guid.Parse("b0000000-0000-0000-0000-000000000003");
+    private static readonly Guid SubLog = Guid.Parse("b0000000-0000-0000-0000-000000000009");
 
     private static readonly Guid IdRuoloCustom = Guid.Parse("c0000000-0000-0000-0000-000000000001");
     private static readonly Guid IdUtente = Guid.Parse("d0000000-0000-0000-0000-000000000001");
@@ -38,6 +39,8 @@ public class MenuServiceTests
         repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = SubAnagrafiche, IdMenu = GruppoTabelle, Descrizione = "Anagrafiche", PaginaRazor = "Anagrafiche", Ordine = 10 });
         repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = SubBanche, IdMenu = GruppoTabelle, Descrizione = "Banche", PaginaRazor = "Banche", Ordine = 20 });
         repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = SubGestioneUtenti, IdMenu = GruppoAdmin, Descrizione = "Gestione utenti", PaginaRazor = "GestioneUtenti", Ordine = 10 });
+        // Sottovoce SOLO Superadmin (es. log errori): visibile/accessibile solo al Superadmin.
+        repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = SubLog, IdMenu = GruppoAdmin, Descrizione = "Log errori", PaginaRazor = "LogErrors", Ordine = 20, SoloSuperadmin = true });
         return repo;
     }
 
@@ -111,6 +114,29 @@ public class MenuServiceTests
         var albero = await sut.GetMenuVisibileAsync();
 
         Assert.Contains(albero, n => n.Descrizione == "Amministrazione");
+    }
+
+    [Fact]
+    public async Task Admin_NonVedeLaSottovoceSoloSuperadmin_NelMenu()
+    {
+        var sut = NewSut(NewRepo(), TestAuthStateProvider.Admin());
+
+        var albero = await sut.GetMenuVisibileAsync();
+
+        var amministrazione = albero.Single(n => n.Descrizione == "Amministrazione");
+        Assert.Contains(amministrazione.Figli, f => f.Descrizione == "Gestione utenti");
+        Assert.DoesNotContain(amministrazione.Figli, f => f.Descrizione == "Log errori"); // solo-Superadmin
+    }
+
+    [Fact]
+    public async Task Superadmin_VedeLaSottovoceSoloSuperadmin_NelMenu()
+    {
+        var sut = NewSut(NewRepo(), TestAuthStateProvider.Superadmin());
+
+        var albero = await sut.GetMenuVisibileAsync();
+
+        var amministrazione = albero.Single(n => n.Descrizione == "Amministrazione");
+        Assert.Contains(amministrazione.Figli, f => f.Descrizione == "Log errori");
     }
 
     // =================================================================

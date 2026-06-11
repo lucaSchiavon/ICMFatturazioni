@@ -24,6 +24,42 @@ public class AnagraficaManagerTests
     };
 
     // =================================================================
+    // Audit
+    // =================================================================
+
+    [Fact]
+    public async Task CreaAsync_RegistraAuditDiCreazione()
+    {
+        var fake = new FakeAnagraficaRepository();
+        var audit = new FakeAuditManager();
+        var sut = new AnagraficaManager(fake, audit);
+
+        var id = await sut.CreaAsync(AnagraficaValida(rs: "Acme S.r.l."));
+
+        var voce = Assert.Single(audit.Voci);
+        Assert.Equal(AuditOperazione.Creazione, voce.Operazione);
+        Assert.Equal("Anagrafica", voce.EntityType);
+        Assert.Equal(id, voce.EntityId);
+        Assert.Equal("Acme S.r.l.", voce.Descrizione);
+    }
+
+    [Fact]
+    public async Task EliminaAsync_RegistraAuditDiEliminazione()
+    {
+        var fake = new FakeAnagraficaRepository();
+        var audit = new FakeAuditManager();
+        var sut = new AnagraficaManager(fake, audit);
+        var id = await sut.CreaAsync(AnagraficaValida(rs: "Da eliminare"));
+        audit.Voci.Clear();   // ignoriamo la voce di creazione
+
+        await sut.EliminaAsync(id);
+
+        var voce = Assert.Single(audit.Voci);
+        Assert.Equal(AuditOperazione.Eliminazione, voce.Operazione);
+        Assert.Equal(id, voce.EntityId);
+    }
+
+    // =================================================================
     // Validazione campi obbligatori
     // =================================================================
 
@@ -31,7 +67,7 @@ public class AnagraficaManagerTests
     public async Task CreaAsync_RagioneSocialeVuota_LanciaAnagraficaInvalidaConMotivoRagioneSociale()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
         var input = AnagraficaValida(rs: "");
 
         var ex = await Assert.ThrowsAsync<AnagraficaInvalidaException>(
@@ -44,7 +80,7 @@ public class AnagraficaManagerTests
     public async Task CreaAsync_RagioneSocialeWhitespace_LanciaAnagraficaInvalida()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
         var input = AnagraficaValida(rs: "   \t  ");
 
         var ex = await Assert.ThrowsAsync<AnagraficaInvalidaException>(
@@ -57,7 +93,7 @@ public class AnagraficaManagerTests
     public async Task AggiornaAsync_RagioneSocialeVuota_LanciaAnagraficaInvalida()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
         var input = AnagraficaValida(rs: "");
 
         var ex = await Assert.ThrowsAsync<AnagraficaInvalidaException>(
@@ -74,7 +110,7 @@ public class AnagraficaManagerTests
     public async Task CreaAsync_AnagraficaValida_RestituisceIdEPersisteSulRepository()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
 
         var id = await sut.CreaAsync(AnagraficaValida());
 
@@ -88,7 +124,7 @@ public class AnagraficaManagerTests
     public async Task ElencoAsync_RestituisceLeAnagraficheOrdinatePerRagioneSociale()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
 
         await sut.CreaAsync(AnagraficaValida(rs: "Beta S.p.A."));
         await sut.CreaAsync(AnagraficaValida(rs: "Alfa S.r.l."));
@@ -110,7 +146,7 @@ public class AnagraficaManagerTests
     public async Task EliminaAsync_SeHasDipendenze_LanciaAnagraficaConDipendenze_NoCallSulRepository()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
         var id = await sut.CreaAsync(AnagraficaValida());
         fake.DipendenzeDa.Add(id);
 
@@ -126,7 +162,7 @@ public class AnagraficaManagerTests
     public async Task EliminaAsync_SenzaDipendenze_DisattivaLaRiga()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
         var id = await sut.CreaAsync(AnagraficaValida());
 
         await sut.EliminaAsync(id);
@@ -143,7 +179,7 @@ public class AnagraficaManagerTests
     public async Task EEliminabileAsync_RispecchiaLoStatoDelleDipendenze()
     {
         var fake = new FakeAnagraficaRepository();
-        var sut = new AnagraficaManager(fake);
+        var sut = new AnagraficaManager(fake, new FakeAuditManager());
         var id = await sut.CreaAsync(AnagraficaValida());
 
         Assert.True(await sut.EEliminabileAsync(id));

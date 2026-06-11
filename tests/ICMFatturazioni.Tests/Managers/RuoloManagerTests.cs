@@ -16,7 +16,23 @@ public class RuoloManagerTests
     private static (RuoloManager sut, FakeRuoloRepository repo) NewSut()
     {
         var repo = new FakeRuoloRepository();
-        return (new RuoloManager(repo), repo);
+        return (new RuoloManager(repo, new FakeAuditManager()), repo);
+    }
+
+    [Fact]
+    public async Task CreaAsync_RegistraAuditDiCreazione()
+    {
+        var repo = new FakeRuoloRepository();
+        var audit = new FakeAuditManager();
+        var sut = new RuoloManager(repo, audit);
+
+        var id = await sut.CreaAsync("Magazziniere", "desc");
+
+        var voce = Assert.Single(audit.Voci);
+        Assert.Equal(AuditOperazione.Creazione, voce.Operazione);
+        Assert.Equal("Ruolo", voce.EntityType);
+        Assert.Equal(id, voce.EntityId);
+        Assert.Equal("Magazziniere", voce.Descrizione);
     }
 
     private static Ruolo SeedRuoloSistema(FakeRuoloRepository repo)

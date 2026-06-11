@@ -14,7 +14,7 @@
 @inject IRuoloManager RuoloManager
 @inject IMenuConfigManager Config
 @inject ISnackbar Snackbar
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Permessi ruolo · ICM Fatturazioni</PageTitle>
 
@@ -117,7 +117,9 @@ else
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "PermessiMenu.OnInitializedAsync");
+            await LogManager.LogErroreAsync(ex,
+                "Inizializzazione della pagina Permessi ruolo fallita (caricamento ruoli/menu).",
+                "PermessiMenu.OnInitializedAsync");
             Snackbar.Add("Errore nel caricamento.", MudBlazor.Severity.Error);
         }
     }
@@ -134,7 +136,8 @@ else
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "PermessiMenu.OnRuoloChanged");
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dei permessi del ruolo selezionato fallito.", "PermessiMenu.OnRuoloChanged");
             Snackbar.Add("Errore nel caricamento dei permessi del ruolo.", MudBlazor.Severity.Error);
         }
     }
@@ -160,7 +163,8 @@ else
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "PermessiMenu.Salva");
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio della matrice permessi del ruolo fallito.", "PermessiMenu.Salva");
             Snackbar.Add("Errore nel salvataggio dei permessi.", MudBlazor.Severity.Error);
         }
         finally { _salvataggio = false; }

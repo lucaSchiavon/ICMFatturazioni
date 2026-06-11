@@ -1,3 +1,4 @@
+using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories.Interfaces;
@@ -8,10 +9,12 @@ namespace ICMFatturazioni.Web.Managers;
 internal sealed class MenuConfigManager : IMenuConfigManager
 {
     private readonly IMenuRepository _menuRepository;
+    private readonly IAuditManager _audit;
 
-    public MenuConfigManager(IMenuRepository menuRepository)
+    public MenuConfigManager(IMenuRepository menuRepository, IAuditManager audit)
     {
         _menuRepository = menuRepository;
+        _audit = audit;
     }
 
     public Task<IReadOnlyList<Menu>> GetMenusAsync(CancellationToken cancellationToken = default)
@@ -31,6 +34,9 @@ internal sealed class MenuConfigManager : IMenuConfigManager
     {
         var menuFinali = await IncludiGruppiAsync(menuIds, sottoMenuIds, cancellationToken);
         await _menuRepository.SetMappingRuoloAsync(idRuolo, menuFinali, sottoMenuIds, cancellationToken);
+        await _audit.RegistraModificaAsync("PermessiRuolo", idRuolo,
+            $"Permessi ruolo aggiornati: {menuFinali.Count} menu, {sottoMenuIds.Count} sottovoci.",
+            AuditDettaglio.Snapshot(new { Menu = menuFinali, SottoMenu = sottoMenuIds }), cancellationToken);
     }
 
     // --- Per utente / override (T3d) ---
@@ -54,10 +60,17 @@ internal sealed class MenuConfigManager : IMenuConfigManager
     {
         var menuFinali = await IncludiGruppiAsync(menuIds, sottoMenuIds, cancellationToken);
         await _menuRepository.SetMappingUtenteAsync(idUtente, menuFinali, sottoMenuIds, cancellationToken);
+        await _audit.RegistraModificaAsync("PermessiUtente", idUtente,
+            $"Override permessi utente impostato: {menuFinali.Count} menu, {sottoMenuIds.Count} sottovoci.",
+            AuditDettaglio.Snapshot(new { Menu = menuFinali, SottoMenu = sottoMenuIds }), cancellationToken);
     }
 
-    public Task RimuoviPersonalizzazioneUtenteAsync(Guid idUtente, CancellationToken cancellationToken = default)
-        => _menuRepository.SetMappingUtenteAsync(idUtente, Array.Empty<Guid>(), Array.Empty<Guid>(), cancellationToken);
+    public async Task RimuoviPersonalizzazioneUtenteAsync(Guid idUtente, CancellationToken cancellationToken = default)
+    {
+        await _menuRepository.SetMappingUtenteAsync(idUtente, Array.Empty<Guid>(), Array.Empty<Guid>(), cancellationToken);
+        await _audit.RegistraEliminazioneAsync("PermessiUtente", idUtente,
+            "Override permessi utente rimosso (ritorno al ruolo).", cancellationToken: cancellationToken);
+    }
 
     /// <summary>
     /// Aggiunge ai menu selezionati i gruppi-padre dei sottomenu spuntati: senza

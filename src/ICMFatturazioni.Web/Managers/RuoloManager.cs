@@ -1,3 +1,4 @@
+using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories.Interfaces;
@@ -11,11 +12,15 @@ namespace ICMFatturazioni.Web.Managers;
 /// </summary>
 internal sealed class RuoloManager : IRuoloManager
 {
-    private readonly IRuoloRepository _repository;
+    private const string EntityType = nameof(Ruolo);
 
-    public RuoloManager(IRuoloRepository repository)
+    private readonly IRuoloRepository _repository;
+    private readonly IAuditManager _audit;
+
+    public RuoloManager(IRuoloRepository repository, IAuditManager audit)
     {
         _repository = repository;
+        _audit = audit;
     }
 
     public Task<IReadOnlyList<Ruolo>> ElencoAsync(CancellationToken cancellationToken = default)
@@ -52,6 +57,8 @@ internal sealed class RuoloManager : IRuoloManager
             IsAttivo = true,
         };
         await _repository.InsertAsync(ruolo, cancellationToken);
+        await _audit.RegistraCreazioneAsync(EntityType, ruolo.IdRuolo, ruolo.Nome,
+            AuditDettaglio.Snapshot(ruolo), cancellationToken);
         return ruolo.IdRuolo;
     }
 
@@ -72,6 +79,11 @@ internal sealed class RuoloManager : IRuoloManager
             throw new RuoloDuplicatoException(nome);
         }
         await _repository.UpdateAsync(idRuolo, nome.Trim(), descrizione, isAttivo, cancellationToken);
+        // Diff prima→dopo sui soli campi modificabili del ruolo.
+        var dati = AuditDettaglio.Diff(
+            new { esistente.Nome, esistente.Descrizione, esistente.IsAttivo },
+            new { Nome = nome.Trim(), Descrizione = descrizione, IsAttivo = isAttivo });
+        await _audit.RegistraModificaAsync(EntityType, idRuolo, nome.Trim(), dati, cancellationToken);
     }
 
     public async Task EliminaAsync(Guid idRuolo, CancellationToken cancellationToken = default)
@@ -88,5 +100,7 @@ internal sealed class RuoloManager : IRuoloManager
             throw new RuoloInUsoException(esistente.Nome, utenti);
         }
         await _repository.DeleteAsync(idRuolo, cancellationToken);
+        await _audit.RegistraEliminazioneAsync(EntityType, idRuolo, esistente.Nome,
+            AuditDettaglio.Snapshot(esistente), cancellationToken);
     }
 }

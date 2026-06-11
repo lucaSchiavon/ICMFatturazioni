@@ -1,0 +1,176 @@
+@*
+    Pagina /admin/log — consultazione del log errori (fatt.Log).
+
+    Accesso: policy RequireSuperadmin (SOLO Superadmin). La voce di menu è
+    marcata SoloSuperadmin (invisibile agli Admin); qui l'[Authorize] è la
+    seconda linea di difesa sull'accesso diretto via URL.
+*@
+@page "/admin/log"
+@attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireSuperadmin)]
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Presentation
+@inject ILogManager LogManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Log errori · ICM Fatturazioni</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h1">Log errori</MudText>
+    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+               StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="PurgaAsync">
+        Purga &gt; 90 giorni
+    </MudButton>
+</MudStack>
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker @bind-Date="_da" Label="Dal" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker @bind-Date="_a" Label="Al (incluso)" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="LogLivello?" @bind-Value="_livello" Label="Livello" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem T="LogLivello?" Value="@(LogLivello.Warning)">Warning</MudSelectItem>
+                <MudSelectItem T="LogLivello?" Value="@(LogLivello.Error)">Error</MudSelectItem>
+                <MudSelectItem T="LogLivello?" Value="@(LogLivello.Critical)">Critical</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudTextField @bind-Value="_sorgente" Label="Sorgente" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="8" md="2">
+            <MudTextField @bind-Value="_testo" Label="Testo (messaggio/spiegazione)" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+    </MudGrid>
+    <MudStack Row="true" Spacing="2" Class="mt-3">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search" OnClick="CercaAsync">Cerca</MudButton>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="PulisciAsync">Pulisci</MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid @ref="_grid" T="Log" ServerData="CaricaAsync" Dense="true" Hover="true" Striped="true"
+             Elevation="0" Class="border">
+    <Columns>
+        <HierarchyColumn T="Log" />
+        <TemplateColumn Title="Data/ora" Sortable="false">
+            <CellTemplate>@DataOra.Italiana(context.Item.TimestampUtc)</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Livello" Sortable="false">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="@ColoreLivello(context.Item.Livello)" Variant="Variant.Filled">
+                    @context.Item.Livello
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.Sorgente" Title="Sorgente" />
+        <TemplateColumn Title="Messaggio" Sortable="false">
+            <CellTemplate>
+                <span style="display:inline-block;max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    @context.Item.Messaggio
+                </span>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.EccezioneTipo" Title="Eccezione" />
+    </Columns>
+    <ChildRowContent>
+        <MudCard Elevation="0" Class="pa-3 ma-2" Outlined="true">
+            <MudText Typo="Typo.subtitle2">Messaggio</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2" Style="white-space:pre-wrap;">@context.Item.Messaggio</MudText>
+            @if (!string.IsNullOrWhiteSpace(context.Item.SpiegazioneUtente))
+            {
+                <MudText Typo="Typo.subtitle2">Spiegazione</MudText>
+                <MudText Typo="Typo.body2" Class="mb-2" Style="white-space:pre-wrap;">@context.Item.SpiegazioneUtente</MudText>
+            }
+            @if (!string.IsNullOrWhiteSpace(context.Item.StackTrace))
+            {
+                <MudText Typo="Typo.subtitle2">Stack trace</MudText>
+                <MudText Typo="Typo.caption" Style="white-space:pre-wrap;font-family:monospace;">@context.Item.StackTrace</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">
+                RequestId: @(context.Item.RequestId ?? "—") · EntityType: @(context.Item.EntityType ?? "—") · UtenteId: @(context.Item.UtenteId?.ToString() ?? "—")
+            </MudText>
+        </MudCard>
+    </ChildRowContent>
+    <PagerContent>
+        <MudDataGridPager T="Log" PageSizeOptions="@(new[] { 25, 50, 100 })" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText Class="pa-4">Nessun log corrispondente ai filtri.</MudText>
+    </NoRecordsContent>
+</MudDataGrid>
+
+@code {
+    private MudDataGrid<Log> _grid = default!;
+
+    // Filtri (bindati ai controlli).
+    private DateTime? _da;
+    private DateTime? _a;
+    private LogLivello? _livello;
+    private string? _sorgente;
+    private string? _testo;
+
+    // Callback ServerData del DataGrid: traduce stato pagina + filtri in una
+    // ricerca paginata sul manager.
+    private async Task<GridData<Log>> CaricaAsync(GridState<Log> state, CancellationToken ct)
+    {
+        var filtro = new LogFiltro
+        {
+            DaUtc = _da?.Date,
+            // "Al" incluso: estendiamo al giorno successivo (limite superiore escluso).
+            AUtc = _a?.Date.AddDays(1),
+            Livello = _livello,
+            SorgenteContiene = _sorgente,
+            Testo = _testo,
+            Pagina = state.Page + 1,            // GridState è 0-based
+            Dimensione = state.PageSize,
+        };
+        var risultato = await LogManager.CercaAsync(filtro, ct);
+        return new GridData<Log> { Items = risultato.Righe, TotalItems = risultato.TotaleRighe };
+    }
+
+    private Task CercaAsync() => _grid.ReloadServerData();
+
+    private Task PulisciAsync()
+    {
+        _da = _a = null;
+        _livello = null;
+        _sorgente = _testo = null;
+        return _grid.ReloadServerData();
+    }
+
+    private async Task PurgaAsync()
+    {
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Purga log?" },
+            { x => x.NomeElemento, "Log più vecchi di 90 giorni" },
+            { x => x.Messaggio, "Verranno eliminati definitivamente dalla tabella fatt.Log." },
+            { x => x.TestoConferma, "Elimina" },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var result = await dialog.Result;
+        if (result is not { Canceled: false })
+        {
+            return;
+        }
+
+        var eliminati = await LogManager.PurgaPrecedentiAsync(90);
+        Snackbar.Add($"Eliminate {eliminati} righe di log.", MudBlazor.Severity.Success);
+        await _grid.ReloadServerData();
+    }
+
+    private static Color ColoreLivello(LogLivello l) => l switch
+    {
+        LogLivello.Warning => Color.Warning,
+        LogLivello.Error => Color.Error,
+        LogLivello.Critical => Color.Dark,
+        _ => Color.Default,
+    };
+}

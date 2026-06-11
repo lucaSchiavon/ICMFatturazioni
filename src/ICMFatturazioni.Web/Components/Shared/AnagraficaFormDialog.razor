@@ -23,7 +23,7 @@
 @using ICMFatturazioni.Web.Repositories.Interfaces
 @inject IAnagraficaManager AnagraficaManager
 @inject ILookupRepository LookupRepository
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <MudDialog>
     <DialogContent>
@@ -265,14 +265,16 @@
         }
         catch (AnagraficaInvalidaException ex)
         {
-            // Eccezione tipizzata → messaggio user-friendly già pronto.
+            // Eccezione tipizzata di validazione → messaggio user-friendly già
+            // pronto. NON si logga: è flusso previsto, non un errore (Regola 6).
             _erroreServer = ex.Message;
-            await ErrorLogger.LogAsync(ex, contesto: "AnagraficaFormDialog.Salva", handled: true);
         }
         catch (Exception ex)
         {
             _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
-            await ErrorLogger.LogAsync(ex, contesto: "AnagraficaFormDialog.Salva");
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio dell'anagrafica fallito per un errore imprevisto.",
+                "AnagraficaFormDialog.Salva");
         }
         finally
         {

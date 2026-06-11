@@ -22,7 +22,23 @@ public class UtenteManagerTests
     {
         var repo = new FakeUtenteRepository();
         var hasher = new PasswordHasherService();
-        return (new UtenteManager(repo, hasher), repo, hasher);
+        return (new UtenteManager(repo, hasher, new FakeAuditManager()), repo, hasher);
+    }
+
+    [Fact]
+    public async Task CreaAsync_RegistraAuditDiCreazione()
+    {
+        var repo = new FakeUtenteRepository();
+        var audit = new FakeAuditManager();
+        var sut = new UtenteManager(repo, new PasswordHasherService(), audit);
+
+        var id = await sut.CreaAsync("mrossi", null, "m@x.it", RuoloOperatore, "Mario Rossi");
+
+        var voce = Assert.Single(audit.Voci);
+        Assert.Equal(AuditOperazione.Creazione, voce.Operazione);
+        Assert.Equal("Utente", voce.EntityType);
+        Assert.Equal(id, voce.EntityId);
+        Assert.Equal("mrossi", voce.Descrizione);
     }
 
     // =================================================================

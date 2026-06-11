@@ -39,7 +39,22 @@ public class UtenteTokenManagerTests
             AttivazioneOreDefault = attivazioneOre,
             ResetOreDefault = resetOre,
         });
-        return (new UtenteTokenManager(repo, clock, options), repo, clock);
+        return (new UtenteTokenManager(repo, new FakeAuditManager(), clock, options), repo, clock);
+    }
+
+    // Variante che espone anche l'audit, per i test che ne verificano le voci.
+    private static (UtenteTokenManager sut, FakeUtenteTokenRepository repo, FakeAuditManager audit) NewSutConAudit(
+        int attivazioneOre = 168, int resetOre = 1)
+    {
+        var clock = new MutableTimeProvider(T0);
+        var repo = new FakeUtenteTokenRepository(clock);
+        var audit = new FakeAuditManager();
+        var options = Options.Create(new UtenteTokenOptions
+        {
+            AttivazioneOreDefault = attivazioneOre,
+            ResetOreDefault = resetOre,
+        });
+        return (new UtenteTokenManager(repo, audit, clock, options), repo, audit);
     }
 
     private static byte[] Hash(string raw) => SHA256.HashData(Encoding.UTF8.GetBytes(raw));
@@ -207,5 +222,38 @@ public class UtenteTokenManagerTests
         await Assert.ThrowsAsync<UtenteTokenInvalidoException>(
             () => sut.ConsumaAsync(raw, UtenteTokenTipo.Reset, "hashX"));
         Assert.Empty(repo.PasswordImpostate);
+    }
+
+    // =================================================================
+    // Audit (mirror logging+audit): emissione → Creazione, consumo → Modifica
+    // =================================================================
+
+    [Fact]
+    public async Task CreaAttivazioneAsync_RegistraAuditDiCreazione()
+    {
+        var (sut, repo, audit) = NewSutConAudit();
+
+        await sut.CreaAttivazioneAsync(Utente);
+
+        var voce = Assert.Single(audit.Voci);
+        Assert.Equal(AuditOperazione.Creazione, voce.Operazione);
+        Assert.Equal(nameof(UtenteToken), voce.EntityType);
+        Assert.Equal(repo.Tokens[0].Id, voce.EntityId);    // riferisce il token emesso
+        Assert.Contains(Utente.ToString(), voce.Descrizione);
+    }
+
+    [Fact]
+    public async Task ConsumaAsync_RegistraAuditDiModifica()
+    {
+        var (sut, repo, audit) = NewSutConAudit();
+        var raw = await sut.CreaAttivazioneAsync(Utente);   // 1ª voce: Creazione
+
+        await sut.ConsumaAsync(raw, UtenteTokenTipo.Attivazione, "hash-nuova");
+
+        // Seconda voce: la Modifica del consumo, sullo stesso token.
+        Assert.Equal(2, audit.Voci.Count);
+        var consumo = audit.Voci[1];
+        Assert.Equal(AuditOperazione.Modifica, consumo.Operazione);
+        Assert.Equal(repo.Tokens[0].Id, consumo.EntityId);
     }
 }

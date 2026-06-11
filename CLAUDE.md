@@ -305,66 +305,96 @@ Quando un valore può legittimamente essere null, dichiararlo esplicitamente (`s
 - Mai concatenare input utente in stringhe SQL: usare sempre parametri Dapper
 - Le policy di autorizzazione si dichiarano in `Authentication/AuthorizationPolicies.cs`, non sparse nei componenti
 
-### 6. Logging degli errori (tabella `LogErrors`)
+### 6. Logging degli errori (tabella `fatt.Log`)
 
-**Ogni errore di runtime o eccezione sollevata dall'applicazione DEVE essere persistita nella tabella `LogErrors`.** La regola è categorica e si applica a tutti i layer (UI Blazor, Manager, Repository, middleware, background job). L'obiettivo è avere visibilità completa, in produzione, su errori subdoli, silenti all'interfaccia o difficili da riprodurre.
+**Ogni errore di runtime o eccezione sollevata dall'applicazione DEVE essere persistito nella tabella `fatt.Log`.** La regola è categorica e si applica a tutti i layer (UI Blazor, Manager, Repository, middleware, background job). L'obiettivo è avere visibilità completa, in produzione, su errori subdoli, silenti all'interfaccia o difficili da riprodurre.
+
+> **Impianto attuale (mirror di `dbo.Log` di ICMVerbali, migration `014_Log.sql`).** Sostituisce il precedente `LogErrors` (BIGINT/IDENTITY + servizio `IErrorLogger`): scrittura **asincrona disaccoppiata** e **cattura automatica** dei log del framework. Tabella **immutabile** (solo INSERT, mai UPDATE).
 
 #### Cosa deve essere tracciato
 
-Per ogni eccezione, la riga di `LogErrors` deve contenere almeno i seguenti campi:
+Per ogni evento, la riga di `fatt.Log` contiene:
 
-| Campo                       | Tipo SQL          | Descrizione                                                                                  |
-|-----------------------------|-------------------|----------------------------------------------------------------------------------------------|
-| `Id`                        | `BIGINT IDENTITY` | PK auto-incrementale                                                                         |
-| `TimestampUtc`              | `DATETIME2`       | Data e ora UTC dell'errore (default `SYSUTCDATETIME()`)                                      |
-| `ExceptionType`             | `NVARCHAR(512)`   | FQN del tipo di eccezione (es. `System.NullReferenceException`)                              |
-| `Message`                   | `NVARCHAR(MAX)`   | `ex.Message`                                                                                 |
-| `StackTrace`                | `NVARCHAR(MAX)`   | `ex.StackTrace` completo                                                                     |
-| `InnerExceptionType`        | `NVARCHAR(512)`   | FQN dell'inner exception (nullable)                                                          |
-| `InnerExceptionMessage`     | `NVARCHAR(MAX)`   | `ex.InnerException?.Message` (nullable)                                                      |
-| `InnerExceptionStackTrace`  | `NVARCHAR(MAX)`   | `ex.InnerException?.StackTrace` (nullable)                                                   |
-| `Source`                    | `NVARCHAR(512)`   | `ex.Source` (assembly che ha sollevato l'errore)                                             |
-| `DescrizioneEstesa`         | `NVARCHAR(MAX)`   | Descrizione personalizzata, user-friendly, fornita dal chiamante (nullable)                  |
-| `Contesto`                  | `NVARCHAR(512)`   | Componente/metodo che ha catturato l'errore (es. `OrdiniManager.ConfermaOrdineAsync`)        |
-| `UserId`                    | `INT`             | Id dell'utente loggato al momento dell'errore (nullable, anonimo se non autenticato)         |
-| `UserName`                  | `NVARCHAR(256)`   | Username dell'utente loggato (nullable)                                                      |
-| `RequestPath`               | `NVARCHAR(2048)`  | URL/route corrente o nome del componente Blazor (nullable)                                   |
-| `MachineName`               | `NVARCHAR(256)`   | `Environment.MachineName` — utile in scenari multi-server                                    |
-| `EnvironmentName`           | `NVARCHAR(64)`    | `Development` / `Staging` / `Production`                                                     |
-| `CorrelationId`             | `NVARCHAR(64)`    | `TraceIdentifier` della request per correlare a log applicativi (nullable)                   |
-| `Severity`                  | `TINYINT`         | 0 = Info, 1 = Warning, 2 = Error, 3 = Critical (default 2)                                   |
-| `Handled`                   | `BIT`             | `1` se l'eccezione è stata gestita (catturata e non rilanciata), `0` se ha fatto bubble-up   |
+| Campo | Tipo SQL | Descrizione |
+|---|---|---|
+| `Id` | `UNIQUEIDENTIFIER` | PK, GUID v7 generato app-side |
+| `TimestampUtc` | `DATETIME2(3)` | Data e ora UTC (default `SYSUTCDATETIME()`) |
+| `Livello` | `TINYINT` | 3 = Warning, 4 = Error, 5 = Critical (allineato a `Microsoft.Extensions.Logging.LogLevel`) |
+| `Sorgente` | `NVARCHAR(256)` | Categoria del logger o sorgente esplicita (es. `Auth.ForgotPassword`) |
+| `Messaggio` | `NVARCHAR(MAX)` | `ex.Message` o messaggio formattato del log |
+| `EccezioneTipo` | `NVARCHAR(512)` | FQN del tipo di eccezione (nullable) |
+| `StackTrace` | `NVARCHAR(MAX)` | `ex.ToString()` completo (nullable) |
+| `SpiegazioneUtente` | `NVARCHAR(MAX)` | Spiegazione user-friendly: valorizzata **solo** dal path esplicito `LogErroreAsync` (nullable) |
+| `RequestId` | `NVARCHAR(128)` | `Activity.Current?.Id`, per correlare alla richiesta (nullable) |
+| `UtenteId` | `UNIQUEIDENTIFIER` | Utente coinvolto, se noto (nullable) |
+| `EntityId` / `EntityType` | `UNIQUEIDENTIFIER` / `NVARCHAR(128)` | Entità di dominio coinvolta, se pertinente (nullable) |
 
-La migration di creazione tabella sarà uno script SQL versionato in `Migrations/` (es. `00X_CreateLogErrorsTable.sql`).
+La tabella è creata dalla migration `014_Log.sql`. Indici: `TimestampUtc` (desc), `Livello`, `EntityId` (filtrato).
 
-#### Pattern di utilizzo
+#### Due vie di scrittura
 
-- Esiste un servizio dedicato `IErrorLogger` (con `ErrorLogger` come implementazione) registrato come **singleton** nel DI container e disponibile in tutti i layer.
-- Espone almeno: `Task LogAsync(Exception ex, string? contesto = null, string? descrizioneEstesa = null, Severity severity = Severity.Error, CancellationToken ct = default)`.
-- Internamente usa un `IErrorLogRepository` dedicato — unica eccezione alla regola "1 repository ↔ 1 manager", perché il logger è infrastrutturale e non un manager di dominio.
-- I componenti Blazor **non** chiamano il repository direttamente: iniettano `IErrorLogger`.
+1. **Automatica (rete del framework)** — `DbLoggerProvider` (`ILoggerProvider`, con filtro forzato a `Warning`+) cattura i log `Warning`/`Error`/`Critical` della pipeline standard, **incluse le eccezioni non gestite** di HTTP e dei circuiti Blazor (il framework le logga a livello `Error`). Non richiede chiamate esplicite. Anti-ricorsione: esclude le categorie del proprio namespace (`*.Logging`) e di `Microsoft.Data.SqlClient`.
+2. **Esplicita (path "ricco")** — `ILogManager.LogErroreAsync(eccezione, spiegazione, sorgente, utenteId?, entityId?, entityType?, ct)` nei `catch` che gestiscono un'eccezione **senza** rilanciarla, per aggiungere una `SpiegazioneUtente` che la rete automatica non può fornire. I componenti Blazor iniettano `ILogManager`, mai il repository.
 
-#### Punti di cattura obbligatori
+Disaccoppiamento: entrambe le vie **accodano** su `ILogQueue` (channel bounded, modalità `DropWrite`: non bloccano mai la richiesta); il `LogWriterService` (`BackgroundService`) drena la coda a batch e scrive su `fatt.Log` via `ILogRepository`.
 
-L'errore va loggato **prima** di essere mostrato all'utente o silenziato. I punti dove l'integrazione è obbligatoria:
+#### Registrazione DI
 
-1. **Middleware globale ASP.NET Core** (`UseExceptionHandler`) — cattura tutte le eccezioni non gestite del pipeline HTTP.
-2. **`ErrorBoundary` di Blazor** (o equivalente custom in `MainLayout`) — cattura le eccezioni dei componenti che altrimenti terminerebbero il circuit.
-3. **`CircuitHandler` custom** — per intercettare errori non legati a una request specifica (es. eventi async, timer).
-4. **Ogni `try/catch` nei Manager** che gestisce un'eccezione senza rilanciarla: prima di restituire un risultato di fallback, loggare. I `catch` che rilanciano possono evitare il log (verrà catturato a monte), ma se aggiungono contesto utile (es. parametri di input) devono loggare con `DescrizioneEstesa` valorizzata e poi rilanciare.
-5. **Background services / hosted services** — loop principale avvolto in try/catch con log; un'eccezione non loggata in un BackgroundService è invisibile.
+- **Singleton**: `ILogRepository`, `ILogQueue`, `ILogFallbackWriter`, `DbLoggerProvider` (+ `builder.Logging.AddFilter<DbLoggerProvider>(null, LogLevel.Warning)`).
+- **Scoped**: `ILogManager`. **Hosted**: `LogWriterService`.
+- **Rete globale** in `Program.cs`: `AppDomain.UnhandledException` e `TaskScheduler.UnobservedTaskException` → coda a livello `Critical` (errori fuori dal ciclo di richiesta: thread di background, Task non osservate).
+
+#### Punti di cattura
+
+L'errore va tracciato **prima** di essere mostrato all'utente o silenziato:
+
+1. **Eccezioni non gestite HTTP / circuiti Blazor** — catturate **automaticamente** dal `DbLoggerProvider` (il framework le logga a `Error`). In produzione `UseExceptionHandler` + `ProblemDetails` per la risposta; in sviluppo la developer page.
+2. **`ErrorBoundary` custom (`IcmErrorBoundary`)** — mostra il fallback UI e registra via `ILogManager.LogErroreAsync` (l'ErrorBoundary intercetta l'eccezione prima del logging del framework, quindi va loggata esplicitamente).
+3. **Ogni `try/catch` nei Manager/componenti** che gestisce un'eccezione senza rilanciarla: loggare via `LogErroreAsync` con `spiegazione` prima di restituire un fallback. I `catch` che rilanciano possono evitare il log (catturato a monte).
+4. **Background / hosted services** — loop avvolto in try/catch con log; un'eccezione non loggata in un `BackgroundService` è invisibile.
 
 #### Regole anti-mascheramento
 
-- Il logging **non deve mai** lanciare eccezioni che mascherano l'errore originale. L'implementazione di `ErrorLogger.LogAsync` deve avere un suo `try/catch` interno e, in caso di fallimento della scrittura su DB (es. SQL Server irraggiungibile), fare fallback su un log testuale locale (file `logs/error-logger-fallback.log`) per non perdere l'evento.
-- Mai usare `catch { }` vuoti. Mai `catch (Exception) { return null; }` senza log. Un'eccezione silenziata senza traccia in `LogErrors` è un bug.
-- Rispettare la **regola 5 (Sicurezza)**: mai inserire in `Message`, `StackTrace` o `DescrizioneEstesa` password, token, cookie o stringhe di connessione. Se i parametri dell'eccezione possono contenerli, sanitizzarli prima di loggare.
+- Il logging **non deve mai** lanciare eccezioni che mascherano l'errore originale: `LogManager` e `LogWriterService` hanno il proprio `try/catch` e, in caso di fallimento della scrittura su DB (es. SQL Server irraggiungibile), ricadono su `ILogFallbackWriter` che scrive **sia su `Console.Error`** (raccolto dalle piattaforme PaaS) **sia sul file** `logs/error-logger-fallback.log` (utile on-prem/IIS).
+- Mai `catch { }` vuoti. Mai `catch (Exception) { return null; }` senza log. Un'eccezione silenziata senza traccia in `fatt.Log` è un bug.
+- **Sanitizzazione obbligatoria** (Regola 5): `LogSanitizer` maschera `Password`/`Token`/connection string (`→ ***`) su **entrambe** le vie, prima della persistenza. Mai password, token, cookie o stringhe di connessione in chiaro.
+- Le **eccezioni tipizzate di validazione** (flusso previsto, es. `AnagraficaInvalidaException`, `UtenteTokenInvalidoException`) **NON** si loggano: non sono errori.
 
-#### Audit e diagnostica
+#### Consultazione e retention
 
-- Indicizzare `TimestampUtc` (descending) e `ExceptionType` per supportare query diagnostiche frequenti.
-- Prevedere fin dall'inizio una pagina amministrativa (`/admin/log-errors`) per consultare gli errori più recenti, filtrabili per data, tipo, utente — anche in forma minimale.
-- Definire una policy di retention (es. eliminare righe con `TimestampUtc < DATEADD(month, -6, SYSUTCDATETIME())`) tramite SQL job o migration successiva, per evitare crescita illimitata della tabella.
+- Pagina amministrativa **`/admin/log`** (accesso **solo Superadmin**): filtri per data/livello/sorgente/testo, dettaglio espandibile (messaggio, stack, `RequestId`), in **ora locale italiana**.
+- Retention: `ILogManager.PurgaPrecedentiAsync(giorni)` (pulsante in pagina) oppure SQL job, per evitare crescita illimitata della tabella.
+
+### 7. Audit delle modifiche dati (tabella `fatt.Audit`)
+
+**Ogni operazione che modifica il database per mano dell'utente (INSERT / UPDATE / DELETE) DEVE essere tracciata in `fatt.Audit`.** La regola è categorica e vale per ogni CRUD o funzionalità, presente e futura. È distinta dalla Regola 6 (che traccia gli *errori* in `fatt.Log`): qui si traccia **chi ha fatto cosa** sui dati.
+
+#### Cosa tracciare
+
+Oltre a chi/quando/quale entità (utente snapshot, timestamp, `EntityType`+`EntityId`, descrizione breve), va salvato il **dettaglio strutturato in JSON** (colonna `fatt.Audit.Dati`) che rende evidente *cosa* è stato scritto:
+
+- **Insert** → snapshot completo del nuovo record.
+- **Update** → diff dei soli campi cambiati (`{ campo: { prima, dopo } }`); leggere lo stato **precedente** *prima* dell'update.
+- **Delete** → snapshot del record eliminato.
+
+**Mai** salvare la query SQL letterale (parametrizzata, e a rischio di esporre segreti) né i segreti stessi (`PasswordHash`/`Salt`/`TokenHash`): l'helper `AuditDettaglio` li esclude già a monte (coerente con Regola 5 e Regola 6).
+
+#### Pattern di utilizzo
+
+- Il Manager dipende da `IAuditManager` e registra **dopo** che la scrittura su DB è andata a buon fine: `RegistraCreazioneAsync` / `RegistraModificaAsync` / `RegistraEliminazioneAsync`.
+- `descrizione` = etichetta breve leggibile (ragione sociale, username…); `dati` = JSON via `AuditDettaglio.Snapshot(...)` (insert/delete) o `AuditDettaglio.Diff(prima, dopo)` (update). Per operazioni puramente segrete (es. reset password) `dati = null`: si traccia solo l'evento.
+- L'utente corrente è risolto da `ICurrentUserAccessor` (claim del cookie): il Manager passa solo il "cosa".
+- L'audit è **best-effort**: un suo fallimento non deve far fallire l'operazione di business già completata (viene loggato in `fatt.Log`, non propagato).
+- Scrivere **contestualmente** il test che verifica la voce di audit (operazione + `EntityType` + `EntityId`).
+- **Nota firma**: `RegistraX(entityType, entityId, descrizione, string? dati = null, CancellationToken ct = default)` — passare il `CancellationToken` **nominato** (`cancellationToken:`) per non farlo collassare sul parametro `dati`.
+
+#### Cosa NON tracciare
+
+Operazioni che non sono modifiche di dominio dell'utente: preferenze cosmetiche (tema), timestamp tecnici (ultimo login), seed di sistema all'avvio, tabelle di lookup ministeriali read-only. In caso di dubbio, **segnalare** prima di decidere.
+
+#### Infrastruttura
+
+`fatt.Audit` (con colonna `Dati`) + `IAuditManager`/`AuditManager` + `IAuditRepository`/`AuditRepository` + `ICurrentUserAccessor` + helper `Auditing/AuditDettaglio` (`Snapshot`/`Diff`/`Pretty`) + pagina di consultazione `/admin/audit` (accesso Admin+Superadmin, dettaglio JSON in riga espandibile). Mirror di ICMVerbali (`dbo.Audit`), con in più il dettaglio JSON `Dati`.
 
 ## Convenzioni di porting
 
@@ -374,7 +404,7 @@ Regole vincolanti emerse dal decision-gate del 2026-05-20 (decisioni D1-D20). Le
 
 - **Entità C# e proprietà**: italiano fedele al PDF/schema originali (`Anagrafica`, `RagioneSociale`, `CodiceFiscale`, `TipoAnagrafica`). Mai tradurre in inglese, anche se "più idiomatico".
 - **Tabelle SQL**: tutte sotto un **unico schema applicativo `fatt.*`** (namespace dell'app, non prefissi nel nome). ⚠️ **Aggiornato il 2026-06-09 (ADR D21): supera la precedente ripartizione `sta`/`ana`/`fat`/`dbo`.** Motivo: ICMFatturazioni e **ICMVerbali** convergeranno su un **unico DB condiviso** (entità che si fonderanno: `Attivita`↔`Progetto`, `Anagrafica`↔`Committente`); Verbali vive sotto `dbo.*`, quindi mettere TUTTO ICMFatturazioni sotto `fatt.*` dà ownership esplicita e zero collisioni (incluse `fatt.Utenti`, `fatt.LogErrors`).
-  - `fatt.*` — **tutte** le tabelle di ICMFatturazioni: lookup di stato (`fatt.Paesi`, `fatt.Province`, `fatt.NatureIVA`, `fatt.CondizioniPagamento`, `fatt.ModalitaPagamento`), anagrafiche (`fatt.Anagrafica`), codici IVA/pagamento, banche, attività (`fatt.Attivita`, `fatt.AttivitaDettaglio`, `fatt.SchedulazionePagamenti`), e le trasversali (`fatt.Utenti`, `fatt.LogErrors`).
+  - `fatt.*` — **tutte** le tabelle di ICMFatturazioni: lookup di stato (`fatt.Paesi`, `fatt.Province`, `fatt.NatureIVA`, `fatt.CondizioniPagamento`, `fatt.ModalitaPagamento`), anagrafiche (`fatt.Anagrafica`), codici IVA/pagamento, banche, attività (`fatt.Attivita`, `fatt.AttivitaDettaglio`, `fatt.SchedulazionePagamenti`), e le trasversali (`fatt.Utenti`, `fatt.Log`, `fatt.Audit`).
   - La prima migration (`001_CreateSchemas.sql`) crea **solo** lo schema `fatt` (`CREATE SCHEMA fatt`) prima di qualsiasi tabella.
   - Tutte le query SQL nei Repository usano il nome **schema-qualificato** (`FROM fatt.Paesi`, non `FROM Paesi`).
   - **Nomi entità invariati nel contesto ICMFatturazioni**: `Attivita` e `Anagrafica` restano tali (in ICMVerbali sono `Progetto` e `Committente`); la fusione è lavoro futuro con ADR dedicato. Divergenze note da risolvere alla fusione: PK `INT IDENTITY` (qui) vs `uniqueidentifier` (Verbali); `DataRecord` vs `CreatedAt`/`UpdatedAt`+`IsAttivo`. Vedi `docs/piano-sviluppo-fase1-attivita.md` §1.1.
@@ -393,7 +423,7 @@ ICMFatturazioni deve **uniformarsi a ICMVerbali** (`C:\SVILUPPO\GIT\ICMVerbali`,
   - **Logging errori** su `fatt.Log` (mirror di `dbo.Log`) via `ILogManager.LogErroreAsync(ex, spiegazione, sorgente)` + rete automatica `DbLoggerProvider`; le eccezioni tipizzate di validazione **non** si loggano (vedi loro Regola 6 / `docs/B17-logging.md`).
   - **Nomi tabella/colonna**: restano **fedeli al legacy italiano** (D1, scelta utente) — `CodiciIVA`, `Paesi`, `Anagrafica`, ecc. NON si adotta il singolare di Verbali. (Solo le *caratteristiche strutturali* si uniformano, non i nomi.)
   - **Lookup ministeriali Fatturazioni-only** (`Paesi`, `Province`, `NatureIVA`, `CondizioniPagamento`, `ModalitaPagamento`): mantengono le loro chiavi naturali/attuali (non si fondono con Verbali, le anagrafiche le referenziano per codice naturale).
-- **Retrofit**: la verticale `Anagrafica` già esistente va riscritta a GUID + `IsAttivo`. `Utenti` e `LogErrors` NON si retrofittano a parte: confluiscono nei rispettivi step di mirror (auth e logging) per non produrre lavoro usa-e-getta.
+- **Retrofit**: la verticale `Anagrafica` già esistente va riscritta a GUID + `IsAttivo`. `Utenti` e `LogErrors` NON si retrofittano a parte: confluiscono nei rispettivi step di mirror (auth e logging) per non produrre lavoro usa-e-getta. *(Step logging completato: `LogErrors` → `fatt.Log`/`fatt.Audit`, vedi Regola 6.)*
 
 ### Schema database (D5, D6, D9, D19, D20)
 
@@ -455,6 +485,8 @@ Strategia in 4 fasi per costruire l'app verticalmente, senza accumulare codice n
 Chiusa il 2026-05-20. Output: sezioni "Convenzioni di porting" e "Roadmap di porting" in `CLAUDE.md` + `docs/decisioni-architetturali.md` (ADR) + aggiornamento di `brand-guidelines.md`.
 
 ### Fase 1 — Spina dorsale (1 commit)
+
+> *Nota storica: descrive il piano originale di Fase 1. Diverse scelte sono poi evolute e questo elenco va letto come record del percorso, non come stato attuale — in particolare: schema unico `fatt` (ADR D21, supera `sta`/`ana`/`fat`); `dbo.Utenti` → `fatt.Utenti`; e l'impianto di logging (`003_LogErrors`/`IErrorLogger`/`dbo.LogErrors`) sostituito da `fatt.Log` + `DbLoggerProvider` + `ILogManager` (vedi Regola 6).*
 
 Niente CRUD di dominio. Solo lo scheletro tecnico:
 

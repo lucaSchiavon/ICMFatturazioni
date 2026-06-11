@@ -13,7 +13,7 @@
 @inject IRuoloManager RuoloManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Gestione ruoli · ICM Fatturazioni</PageTitle>
 
@@ -108,7 +108,8 @@
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "GestioneRuoli.RicaricaAsync");
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco ruoli fallito.", "GestioneRuoli.RicaricaAsync");
             Snackbar.Add("Errore nel caricamento dei ruoli.", MudBlazor.Severity.Error);
         }
         finally { _caricamento = false; }
@@ -161,7 +162,8 @@
         catch (RuoloProtettoException ex) { Snackbar.Add(ex.Message, MudBlazor.Severity.Warning); }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "GestioneRuoli.ConfermaEdElimina");
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione del ruolo fallita per un errore imprevisto.", "GestioneRuoli.ConfermaEdElimina");
             Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
         }
     }

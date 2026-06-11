@@ -1,0 +1,144 @@
+@*
+    Pagina /admin/audit — consultazione dell'audit "chi-ha-fatto-cosa" (fatt.Audit).
+
+    Accesso: policy RequireAdmin (Admin + Superadmin). La voce di menu sta nel
+    gruppo Amministrazione (SoloAdmin).
+*@
+@page "/admin/audit"
+@attribute [Authorize(Policy = ICMFatturazioni.Web.Authentication.AuthorizationPolicies.RequireAdmin)]
+
+@using ICMFatturazioni.Web.Auditing
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Presentation
+@inject IAuditManager AuditManager
+
+<PageTitle>Audit · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Audit operazioni</MudText>
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker @bind-Date="_da" Label="Dal" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker @bind-Date="_a" Label="Al (incluso)" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="AuditOperazione?" @bind-Value="_operazione" Label="Operazione" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                <MudSelectItem T="AuditOperazione?" Value="@(AuditOperazione.Creazione)">Creazione</MudSelectItem>
+                <MudSelectItem T="AuditOperazione?" Value="@(AuditOperazione.Modifica)">Modifica</MudSelectItem>
+                <MudSelectItem T="AuditOperazione?" Value="@(AuditOperazione.Eliminazione)">Eliminazione</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="string" @bind-Value="_entityType" Label="Tipo entità" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                @foreach (var t in _entityTypes)
+                {
+                    <MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="8" md="2">
+            <MudTextField @bind-Value="_testo" Label="Testo (utente/descrizione)" Clearable="true" Margin="Margin.Dense" Variant="Variant.Outlined" />
+        </MudItem>
+    </MudGrid>
+    <MudStack Row="true" Spacing="2" Class="mt-3">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search" OnClick="CercaAsync">Cerca</MudButton>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="PulisciAsync">Pulisci</MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid @ref="_grid" T="Audit" ServerData="CaricaAsync" Dense="true" Hover="true" Striped="true"
+             Elevation="0" Class="border">
+    <Columns>
+        <HierarchyColumn T="Audit" />
+        <TemplateColumn Title="Data/ora" Sortable="false">
+            <CellTemplate>@DataOra.Italiana(context.Item.TimestampUtc)</CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.UtenteNome" Title="Utente" />
+        <TemplateColumn Title="Operazione" Sortable="false">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Color="@ColoreOperazione(context.Item.Operazione)" Variant="Variant.Filled">
+                    @context.Item.Operazione
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.EntityType" Title="Tipo entità" />
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" />
+    </Columns>
+    <ChildRowContent>
+        <MudCard Elevation="0" Class="pa-3 ma-2" Outlined="true">
+            <MudText Typo="Typo.subtitle2">Dettaglio</MudText>
+            @if (string.IsNullOrWhiteSpace(context.Item.Dati))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Nessun dettaglio strutturato per questa operazione.
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Style="white-space:pre-wrap;font-family:monospace;">@AuditDettaglio.Pretty(context.Item.Dati)</MudText>
+            }
+            <MudText Typo="Typo.caption" Class="mt-2 mud-text-secondary">
+                EntityType: @context.Item.EntityType · EntityId: @(context.Item.EntityId?.ToString() ?? "—")
+            </MudText>
+        </MudCard>
+    </ChildRowContent>
+    <PagerContent>
+        <MudDataGridPager T="Audit" PageSizeOptions="@(new[] { 25, 50, 100 })" />
+    </PagerContent>
+    <NoRecordsContent>
+        <MudText Class="pa-4">Nessuna operazione corrispondente ai filtri.</MudText>
+    </NoRecordsContent>
+</MudDataGrid>
+
+@code {
+    private MudDataGrid<Audit> _grid = default!;
+    private IReadOnlyList<string> _entityTypes = Array.Empty<string>();
+
+    private DateTime? _da;
+    private DateTime? _a;
+    private AuditOperazione? _operazione;
+    private string? _entityType;
+    private string? _testo;
+
+    protected override async Task OnInitializedAsync()
+        => _entityTypes = await AuditManager.GetEntityTypesAsync();
+
+    private async Task<GridData<Audit>> CaricaAsync(GridState<Audit> state, CancellationToken ct)
+    {
+        var filtro = new AuditFiltro
+        {
+            DaUtc = _da?.Date,
+            AUtc = _a?.Date.AddDays(1),     // "Al" incluso
+            Operazione = _operazione,
+            EntityType = _entityType,
+            Testo = _testo,
+            Pagina = state.Page + 1,
+            Dimensione = state.PageSize,
+        };
+        var risultato = await AuditManager.CercaAsync(filtro, ct);
+        return new GridData<Audit> { Items = risultato.Righe, TotalItems = risultato.TotaleRighe };
+    }
+
+    private Task CercaAsync() => _grid.ReloadServerData();
+
+    private Task PulisciAsync()
+    {
+        _da = _a = null;
+        _operazione = null;
+        _entityType = _testo = null;
+        return _grid.ReloadServerData();
+    }
+
+    private static Color ColoreOperazione(AuditOperazione op) => op switch
+    {
+        AuditOperazione.Creazione => Color.Success,
+        AuditOperazione.Modifica => Color.Info,
+        AuditOperazione.Eliminazione => Color.Error,
+        _ => Color.Default,
+    };
+}

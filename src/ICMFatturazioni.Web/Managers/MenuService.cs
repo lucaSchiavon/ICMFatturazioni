@@ -32,19 +32,15 @@ internal sealed class MenuService : IMenuService
         "Attiva", "ResetPassword", "ForgotPassword",
     };
 
-    // Pagine riservate al solo Superadmin (es. log errori). Negate ad Admin e
-    // a tutti gli altri. Il nome è predisposto per quando la pagina esisterà.
-    private static readonly HashSet<string> PagineSoloSuperadmin = new(StringComparer.Ordinal)
-    {
-        "LogErrors",
-    };
-
     private readonly IMenuRepository _menuRepository;
     private readonly AuthenticationStateProvider _authStateProvider;
 
     // Cache per-circuit (servizio scoped): calcolo una volta sola.
     private IReadOnlyList<MenuNodo>? _albero;
     private HashSet<string>? _pagineConsentite;
+    // Pagine riservate al solo Superadmin (es. log errori): derivate dal flag
+    // SoloSuperadmin delle sottovoci. Negate ad Admin e a tutti gli altri.
+    private HashSet<string>? _pagineSoloSuperadmin;
     private bool _isSuperadmin;
     private bool _isAdmin;
     private bool _caricato;
@@ -74,7 +70,7 @@ internal sealed class MenuService : IMenuService
         {
             return true;
         }
-        if (PagineSoloSuperadmin.Contains(pageName))
+        if (_pagineSoloSuperadmin!.Contains(pageName))
         {
             return false;   // Admin e altri: negato
         }
@@ -108,6 +104,13 @@ internal sealed class MenuService : IMenuService
 
         var menus = await _menuRepository.GetMenusAsync(cancellationToken);
         var sottoMenus = await _menuRepository.GetSottoMenusAsync(cancellationToken);
+
+        // Pagine solo-Superadmin: derivate dal flag sulle sottovoci, usate sia
+        // per negare l'accesso (PuoAccedereAsync) sia per nasconderle dall'albero.
+        _pagineSoloSuperadmin = sottoMenus
+            .Where(s => s.SoloSuperadmin && !string.IsNullOrEmpty(s.PaginaRazor))
+            .Select(s => s.PaginaRazor)
+            .ToHashSet(StringComparer.Ordinal);
 
         // Insiemi di id visibili.
         //  - Superadmin/Admin: tutto (bypass, niente query sui mapping).
@@ -162,7 +165,10 @@ internal sealed class MenuService : IMenuService
             }
 
             var figli = sottoMenus
-                .Where(s => s.IdMenu == m.IdMenu && sottoVisibili.Contains(s.IdSottoMenu))
+                .Where(s => s.IdMenu == m.IdMenu && sottoVisibili.Contains(s.IdSottoMenu)
+                    // Le sottovoci solo-Superadmin spariscono dall'albero per
+                    // chiunque non sia Superadmin (anche per gli Admin).
+                    && !(s.SoloSuperadmin && !_isSuperadmin))
                 .Select(s => new MenuNodo
                 {
                     Descrizione = s.Descrizione,

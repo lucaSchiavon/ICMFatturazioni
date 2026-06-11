@@ -15,4 +15,11 @@ public sealed class SottoMenu
     public string? Icona { get; init; }
     public int Ordine { get; init; }
     public bool Attivo { get; init; } = true;
+
+    /// <summary>
+    /// Sottovoce riservata al SOLO Superadmin (es. "Log errori"): invisibile
+    /// nel menu agli Admin e ai ruoli custom, e con accesso negato dalla guardia
+    /// di rotta. Distinta da <see cref="Menu.SoloAdmin"/> (gruppo per Admin+).
+    /// </summary>
+    public bool SoloSuperadmin { get; init; }
 }

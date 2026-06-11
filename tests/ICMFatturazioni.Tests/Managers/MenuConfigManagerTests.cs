@@ -23,7 +23,26 @@ public class MenuConfigManagerTests
         repo.Menus.Add(new Menu { IdMenu = Gruppo, DescrizioneMenu = "Tabelle", Ordine = 10 });
         repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = Sotto1, IdMenu = Gruppo, Descrizione = "Anagrafiche", PaginaRazor = "Anagrafiche", Ordine = 10 });
         repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = Sotto2, IdMenu = Gruppo, Descrizione = "Banche", PaginaRazor = "Banche", Ordine = 20 });
-        return (new MenuConfigManager(repo), repo);
+        return (new MenuConfigManager(repo, new FakeAuditManager()), repo);
+    }
+
+    [Fact]
+    public async Task SalvaMappingRuoloAsync_RegistraAuditDiModifica()
+    {
+        // SUT con un audit ispezionabile (NewSut ne crea uno interno non esposto).
+        var audit = new FakeAuditManager();
+        var repo = new FakeMenuRepository();
+        repo.Menus.Add(new Menu { IdMenu = Gruppo, DescrizioneMenu = "Tabelle", Ordine = 10 });
+        repo.SottoMenus.Add(new SottoMenu { IdSottoMenu = Sotto1, IdMenu = Gruppo, Descrizione = "Anagrafiche", PaginaRazor = "Anagrafiche", Ordine = 10 });
+        var sut = new MenuConfigManager(repo, audit);
+        var idRuolo = Guid.NewGuid();
+
+        await sut.SalvaMappingRuoloAsync(idRuolo, Array.Empty<Guid>(), new[] { Sotto1 });
+
+        var voce = Assert.Single(audit.Voci);
+        Assert.Equal(AuditOperazione.Modifica, voce.Operazione);
+        Assert.Equal("PermessiRuolo", voce.EntityType);
+        Assert.Equal(idRuolo, voce.EntityId);
     }
 
     [Fact]

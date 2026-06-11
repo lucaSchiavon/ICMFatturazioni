@@ -1,3 +1,4 @@
+using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories.Interfaces;
@@ -20,11 +21,16 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     // Anagrafica le sole FK sono FK_Anagrafica_Paesi e FK_Anagrafica_Province.
     private const int SqlErrorConstraintViolation = 547;
 
-    private readonly IAnagraficaRepository _repository;
+    // EntityType usato nelle righe di audit per questa entità.
+    private const string EntityType = nameof(Anagrafica);
 
-    public AnagraficaManager(IAnagraficaRepository repository)
+    private readonly IAnagraficaRepository _repository;
+    private readonly IAuditManager _audit;
+
+    public AnagraficaManager(IAnagraficaRepository repository, IAuditManager audit)
     {
         _repository = repository;
+        _audit = audit;
     }
 
     // ---------------------------------------------------------------------
@@ -52,6 +58,10 @@ internal sealed class AnagraficaManager : IAnagraficaManager
         try
         {
             await _repository.InsertAsync(anagrafica, cancellationToken);
+            // Snapshot completo del nuovo record (la sanitizzazione dei segreti
+            // è in AuditDettaglio; l'Anagrafica comunque non ne contiene).
+            await _audit.RegistraCreazioneAsync(EntityType, anagrafica.IdAnagrafica,
+                anagrafica.RagioneSociale, AuditDettaglio.Snapshot(anagrafica), cancellationToken);
             return anagrafica.IdAnagrafica;
         }
         catch (SqlException ex) when (ex.Number == SqlErrorConstraintViolation)
@@ -67,9 +77,18 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     public async Task AggiornaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
     {
         ValidaCampiObbligatori(anagrafica);
+
+        // Stato precedente per il diff dell'audit (cosa è cambiato). Letto prima
+        // dell'update; se non trovato si ripiega sullo snapshot del nuovo stato.
+        var precedente = await _repository.GetByIdAsync(anagrafica.IdAnagrafica, cancellationToken);
         try
         {
             await _repository.UpdateAsync(anagrafica, cancellationToken);
+            var dati = precedente is null
+                ? AuditDettaglio.Snapshot(anagrafica)
+                : AuditDettaglio.Diff(precedente, anagrafica);
+            await _audit.RegistraModificaAsync(EntityType, anagrafica.IdAnagrafica,
+                anagrafica.RagioneSociale, dati, cancellationToken);
         }
         catch (SqlException ex) when (ex.Number == SqlErrorConstraintViolation)
         {
@@ -94,7 +113,14 @@ internal sealed class AnagraficaManager : IAnagraficaManager
             throw new AnagraficaConDipendenzeException(idAnagrafica);
         }
 
+        // Cattura la ragione sociale prima della disattivazione, per una riga di
+        // audit leggibile (l'id da solo non racconta "cosa" è stato eliminato).
+        var anagrafica = await _repository.GetByIdAsync(idAnagrafica, cancellationToken);
+
         await _repository.DisattivaAsync(idAnagrafica, cancellationToken);
+        // Snapshot del record eliminato (così resta traccia di cosa è sparito).
+        var dati = anagrafica is null ? null : AuditDettaglio.Snapshot(anagrafica);
+        await _audit.RegistraEliminazioneAsync(EntityType, idAnagrafica, anagrafica?.RagioneSociale, dati, cancellationToken);
     }
 
     public async Task<bool> EEliminabileAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)

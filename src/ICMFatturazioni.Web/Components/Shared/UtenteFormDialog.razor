@@ -14,7 +14,7 @@
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
 @inject IUtenteManager UtenteManager
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <MudDialog>
     <DialogContent>
@@ -175,7 +175,8 @@
         catch (Exception ex)
         {
             _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
-            await ErrorLogger.LogAsync(ex, contesto: "UtenteFormDialog.Salva");
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio dell'utente fallito per un errore imprevisto.", "UtenteFormDialog.Salva");
         }
         finally
         {

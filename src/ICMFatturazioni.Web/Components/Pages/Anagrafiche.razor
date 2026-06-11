@@ -21,7 +21,7 @@
 @inject IAnagraficaManager AnagraficaManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Anagrafiche · ICM Fatturazioni</PageTitle>
 
@@ -167,7 +167,8 @@
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "Anagrafiche.RicaricaAsync");
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco anagrafiche fallito.", "Anagrafiche.RicaricaAsync");
             Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
         }
         finally
@@ -315,7 +316,8 @@
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "Anagrafiche.ConfermaEdElimina");
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione/disattivazione dell'anagrafica fallita.", "Anagrafiche.ConfermaEdElimina");
             Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
         }
     }

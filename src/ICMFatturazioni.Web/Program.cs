@@ -2,9 +2,9 @@ using System.Security.Claims;
 using ICMFatturazioni.Web.Authentication;
 using ICMFatturazioni.Web.Components;
 using ICMFatturazioni.Web.Data;
-using ICMFatturazioni.Web.Diagnostics;
 using ICMFatturazioni.Web.Email;
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Logging;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories;
@@ -12,7 +12,6 @@ using ICMFatturazioni.Web.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MudBlazor.Services;
@@ -89,13 +88,6 @@ builder.Services.AddScoped<IAnagraficaRepository, AnagraficaRepository>();
 // SqlConnectionFactory; alimenta dropdown su più maschere.
 builder.Services.AddSingleton<ILookupRepository, LookupRepository>();
 
-// ErrorLogRepository singleton: non ha stato, dipende solo dalla
-// ISqlConnectionFactory (anch'essa singleton) e crea una connessione
-// nuova ad ogni Insert. Deve essere singleton perché viene iniettato
-// in IErrorLogger, che è singleton (e Microsoft.Extensions.DI vieta a
-// un singleton di consumare uno scoped).
-builder.Services.AddSingleton<IErrorLogRepository, ErrorLogRepository>();
-
 // === Manager ===
 builder.Services.AddScoped<IUtenteManager, UtenteManager>();
 builder.Services.AddScoped<IRuoloManager, RuoloManager>();
@@ -160,35 +152,77 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
-// === Diagnostica / logging errori (Regola 6) ===
-// IErrorLogger singleton: è il canale "infallibile" usato da middleware,
-// circuit handler, ErrorBoundary e dai Manager.
-builder.Services.AddSingleton<IErrorLogger, ErrorLogger>();
-builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+// === Diagnostica / logging errori + audit (Regola 6, mirror ICMVerbali) ===
+// Pipeline di logging disaccoppiata: il DbLoggerProvider accoda i Warning+ del
+// framework (eccezioni non gestite incluse) su una coda in-memory; un
+// BackgroundService la drena e scrive a batch su fatt.Log. Repository, coda e
+// fallback sono Singleton (vivono fuori dallo scope di richiesta, usati dal
+// provider e dal BackgroundService); il LogManager resta Scoped come gli altri.
+builder.Services.AddSingleton<ILogRepository, LogRepository>();
+builder.Services.AddSingleton<ILogQueue, LogQueue>();
+builder.Services.AddSingleton<ILogFallbackWriter, LogFallbackWriter>();
+builder.Services.AddScoped<ILogManager, LogManager>();
+builder.Services.AddHostedService<LogWriterService>();
+
+// Provider di logging che persiste i Warning+ della pipeline standard. È il modo
+// supportato per registrare un provider che ha bisogno di DI. Il filtro forza i
+// Warning+ a prescindere dai LogLevel di appsettings.
+builder.Services.AddSingleton<ILoggerProvider, DbLoggerProvider>();
+builder.Logging.AddFilter<DbLoggerProvider>(null, LogLevel.Warning);
+
+// ProblemDetails per la risposta di errore in produzione (il logging avviene
+// ora automaticamente via DbLoggerProvider: niente IExceptionHandler custom).
 builder.Services.AddProblemDetails();
 
-// CircuitHandler scoped: una istanza per circuit Blazor. Si occupa di
-// sottoscrivere UnobservedTaskException la prima volta che viene aperto
-// un circuit.
-builder.Services.AddScoped<CircuitHandler, IcmCircuitHandler>();
+// Audit "chi-ha-fatto-cosa" sul CRUD dei dati master. Scoped come gli altri
+// Manager/Repository; l'utente corrente è risolto via AuthenticationStateProvider.
+builder.Services.AddScoped<IAuditRepository, AuditRepository>();
+builder.Services.AddScoped<IAuditManager, AuditManager>();
+builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
 
 var app = builder.Build();
+
+// ============================================================================
+// Rete globale di logging (mirror ICMVerbali): eccezioni FUORI dal ciclo di
+// richiesta — thread di background, Task non osservate. Quelle dentro le
+// richieste HTTP e i circuiti Blazor sono già loggate a livello Error dal
+// framework e quindi catturate dal DbLoggerProvider. Qui si accoda (non
+// bloccante) sulla stessa coda del provider.
+// ============================================================================
+var logQueue = app.Services.GetRequiredService<ILogQueue>();
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is Exception ex)
+    {
+        logQueue.TryEnqueue(CreaLogNonGestito(ex, "AppDomain.UnhandledException",
+            "Eccezione non gestita su un thread di background: il processo potrebbe " +
+            "terminare. Causa nel dettaglio dell'eccezione."));
+    }
+};
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    logQueue.TryEnqueue(CreaLogNonGestito(e.Exception, "TaskScheduler.UnobservedTaskException",
+        "Eccezione di una Task non osservata (manca un await): potenziale bug di " +
+        "concorrenza. Causa nel dettaglio dell'eccezione."));
+    e.SetObserved();
+};
 
 // ============================================================================
 // Pipeline HTTP
 // ============================================================================
 
-// L'exception handler globale richiede UseExceptionHandler ANCHE in
-// development per attivare la pipeline e invocare GlobalExceptionHandler.
-// In dev la dev page rimane: GlobalExceptionHandler ritorna false e
-// passa la palla alla pagina di errore di default.
-app.UseExceptionHandler();
-
 if (!app.Environment.IsDevelopment())
 {
+    // In produzione: risposta di errore via ProblemDetails. Il LOGGING delle
+    // eccezioni non gestite non è più affidato a un IExceptionHandler custom:
+    // il middleware logga l'errore a livello Error e il DbLoggerProvider lo
+    // cattura e persiste su fatt.Log automaticamente.
+    app.UseExceptionHandler();
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
+// In sviluppo resta la developer exception page automatica di WebApplication
+// (più ricca per il debug); anch'essa logga a Error → catturata dal provider.
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
@@ -417,3 +451,18 @@ static string? ValidaNuovaPassword(string? password, string? confirm)
 // d'errore in querystring (la pagina lo mostra sopra il form).
 static string BuildTokenRedirect(string basePath, string token, string errore)
     => $"{basePath}/{Uri.EscapeDataString(token)}?Error={Uri.EscapeDataString(errore)}";
+
+// Costruisce la riga di log per un'eccezione non gestita fuori richiesta
+// (rete globale). Livello Critical: è il tipo di errore che può abbattere il
+// processo. Messaggio e stack sanitizzati come ovunque (Regola 6).
+static ICMFatturazioni.Web.Entities.Log CreaLogNonGestito(Exception ex, string sorgente, string spiegazione) => new()
+{
+    Id = Guid.CreateVersion7(),
+    TimestampUtc = DateTime.UtcNow,
+    Livello = ICMFatturazioni.Web.Entities.LogLivello.Critical,
+    Sorgente = sorgente,
+    Messaggio = LogSanitizer.Sanitize(ex.Message) ?? string.Empty,
+    EccezioneTipo = ex.GetType().FullName,
+    StackTrace = LogSanitizer.Sanitize(ex.ToString()),
+    SpiegazioneUtente = spiegazione,
+};

@@ -21,7 +21,7 @@
 @inject NavigationManager Nav
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject ICMFatturazioni.Web.Diagnostics.IErrorLogger ErrorLogger
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Gestione utenti · ICM Fatturazioni</PageTitle>
 
@@ -128,7 +128,8 @@
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "GestioneUtenti.RicaricaAsync");
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco utenti/ruoli fallito.", "GestioneUtenti.RicaricaAsync");
             Snackbar.Add("Errore nel caricamento degli utenti.", MudBlazor.Severity.Error);
         }
         finally
@@ -244,7 +245,10 @@
         }
         catch (Exception ex)
         {
-            await ErrorLogger.LogAsync(ex, contesto: "GestioneUtenti.InviaLinkAsync");
+            await LogManager.LogErroreAsync(ex,
+                "Invio del magic-link (attivazione/reset) all'utente fallito. Verificare la " +
+                "configurazione SMTP (Smtp:Host/User/Password) e il mittente sul provider.",
+                "GestioneUtenti.InviaLinkAsync", utenteId: u.IdUtente, entityType: "Utente", entityId: u.IdUtente);
             Snackbar.Add("Errore nell'invio del link.", MudBlazor.Severity.Error);
         }
     }
