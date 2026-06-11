@@ -1,0 +1,260 @@
+@*
+    Dialog Codice IVA — usato sia per "Aggiungi" che per "Modifica".
+
+    Decisioni di design (coerenti con AnagraficaFormDialog):
+    - Un solo componente per i due flussi: il parametro Iniziale discrimina
+      (null → create, valorizzato → edit). Lavora su una copia locale per non
+      sporcare il record originale in caso di Annulla.
+    - Regola condizionale (dispensa §6.2): la Natura IVA è abilitata e
+      obbligatoria SOLO se l'Aliquota è 0; per aliquote imponibili il campo è
+      disabilitato e azzerato. È la metà UX della "doppia difesa" (l'altra è il
+      CHECK a DB + le validazioni del manager).
+    - L'ObbligoBollo è una scelta libera, NON legata all'aliquota.
+    - Salva è abilitato solo se il form è valido.
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Repositories.Interfaces
+@inject ICodiceIVAManager CodiceIVAManager
+@inject ILookupRepository LookupRepository
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            <MudGrid Spacing="3">
+                <MudItem xs="6" sm="4">
+                    <MudTextField @bind-Value="_model.Codice"
+                                  Label="Codice *"
+                                  Required="true"
+                                  RequiredError="Il codice è obbligatorio"
+                                  MaxLength="10"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Class="campo-obbligatorio"
+                                  HelperText="Sigla, di norma = aliquota (es. 22)" />
+                </MudItem>
+
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_model.Descrizione"
+                                  Label="Descrizione *"
+                                  Required="true"
+                                  RequiredError="La descrizione è obbligatoria"
+                                  MaxLength="50"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Class="campo-obbligatorio"
+                                  HelperText="Appare in fattura (es. IVA 22%)" />
+                </MudItem>
+
+                <MudItem xs="6" sm="4">
+                    <MudNumericField T="decimal"
+                                     Value="_model.Aliquota"
+                                     ValueChanged="OnAliquotaChanged"
+                                     Label="Aliquota % *"
+                                     Required="true"
+                                     Min="0"
+                                     Max="100"
+                                     Step="1"
+                                     Variant="Variant.Outlined"
+                                     Margin="Margin.Dense"
+                                     Class="campo-obbligatorio" />
+                </MudItem>
+
+                <MudItem xs="6" sm="4">
+                    <MudSelect T="string"
+                               Label="@(AliquotaEsente ? "Natura IVA *" : "Natura IVA")"
+                               @bind-Value="_model.Natura"
+                               Disabled="@(!AliquotaEsente)"
+                               Required="@AliquotaEsente"
+                               RequiredError="La Natura è obbligatoria per aliquota 0"
+                               Clearable="true"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Class="@(AliquotaEsente ? "campo-obbligatorio" : null)"
+                               HelperText="@(AliquotaEsente ? "Operazione non imponibile" : "Solo per aliquota 0")">
+                        @foreach (var n in _nature)
+                        {
+                            <MudSelectItem Value="@n.Codice">@n.Codice — @n.Descrizione</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <MudItem xs="6" sm="4">
+                    @* L'obbligo bollo è pertinente solo alle operazioni non
+                       imponibili (aliquota 0): la marca da bollo si applica alle
+                       fatture esenti/fuori campo IVA, non a quelle con imposta.
+                       Per l'aliquota 0 la scelta è OBBLIGATORIA e binaria (Sì/No);
+                       per le aliquote imponibili il campo è disabilitato e resta
+                       null (non impostato). *@
+                    <MudSelect T="bool?"
+                               Label="@(AliquotaEsente ? "Obbligo bollo *" : "Obbligo bollo")"
+                               @bind-Value="_model.ObbligoBollo"
+                               Disabled="@(!AliquotaEsente)"
+                               Required="@AliquotaEsente"
+                               RequiredError="Indicare se il bollo è dovuto"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Class="@(AliquotaEsente ? "campo-obbligatorio" : null)"
+                               HelperText="@(AliquotaEsente ? "Scegliere Sì o No" : "Solo per aliquota 0")">
+                        <MudSelectItem T="bool?" Value="@((bool?)true)">Sì</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="@((bool?)false)">No</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_erroreServer))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">
+                    @_erroreServer
+                </MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text"
+                   OnClick="Annulla"
+                   Ripple="false">
+            Annulla
+        </MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="Salva"
+                   Disabled="@(!_isValid || _salvataggio)"
+                   Ripple="false">
+            @if (_salvataggio)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
+            }
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>
+    /// Codice IVA iniziale: null = modalità Aggiungi, valorizzato = Modifica.
+    /// </summary>
+    [Parameter] public CodiceIVA? Iniziale { get; set; }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _erroreServer;
+
+    private IReadOnlyList<LookupItem> _nature = Array.Empty<LookupItem>();
+
+    private bool IsModifica => Iniziale is not null;
+
+    // Aliquota a 0 = operazione non imponibile/esente. Governa l'abilitazione
+    // sia della Natura IVA (dispensa §6.2) sia dell'Obbligo bollo (la marca da
+    // bollo si applica alle operazioni senza IVA).
+    private bool AliquotaEsente => _model.Aliquota == 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _nature = await LookupRepository.GetNatureIVAAsync();
+
+        if (Iniziale is not null)
+        {
+            _model = FormModel.FromEntity(Iniziale);
+        }
+    }
+
+    // Alla modifica dell'aliquota: se diventa imponibile (> 0), Natura e Obbligo
+    // bollo non sono più pertinenti → li azzeriamo subito così il form resta
+    // coerente con la regola.
+    private void OnAliquotaChanged(decimal valore)
+    {
+        _model.Aliquota = valore;
+        if (valore != 0)
+        {
+            _model.Natura = null;
+            _model.ObbligoBollo = null;
+        }
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        _erroreServer = null;
+        await _form.ValidateAsync();
+        if (!_isValid)
+        {
+            return;
+        }
+
+        _salvataggio = true;
+        try
+        {
+            var entity = _model.ToEntity(Iniziale?.IdCodiceIVA ?? Guid.Empty);
+            if (IsModifica)
+            {
+                await CodiceIVAManager.AggiornaAsync(entity);
+            }
+            else
+            {
+                await CodiceIVAManager.CreaAsync(entity);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (CodiceIVAInvalidaException ex)
+        {
+            // Eccezione tipizzata di validazione → messaggio già pronto. NON si
+            // logga: è flusso previsto, non un errore (Regola 6).
+            _erroreServer = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio del codice IVA fallito per un errore imprevisto.",
+                "CodiceIVAFormDialog.Salva");
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    /// <summary>
+    /// View-model del form: campi mutabili (richiesti da @bind-Value), mentre
+    /// l'Entity è immutabile. Conversioni esplicite alle estremità.
+    /// </summary>
+    private sealed class FormModel
+    {
+        public string Codice { get; set; } = string.Empty;
+        public string Descrizione { get; set; } = string.Empty;
+        public decimal Aliquota { get; set; }
+        public string? Natura { get; set; }
+        public bool? ObbligoBollo { get; set; }
+
+        public static FormModel FromEntity(CodiceIVA c) => new()
+        {
+            Codice       = c.Codice,
+            Descrizione  = c.Descrizione,
+            Aliquota     = c.Aliquota,
+            Natura       = c.Natura,
+            ObbligoBollo = c.ObbligoBollo,
+        };
+
+        public CodiceIVA ToEntity(Guid idCodiceIVA) => new()
+        {
+            IdCodiceIVA  = idCodiceIVA,
+            Codice       = Codice,
+            Descrizione  = Descrizione,
+            Aliquota     = Aliquota,
+            // Se l'aliquota è imponibile, Natura e Obbligo bollo vanno ignorati:
+            // il manager normalizza comunque, ma azzeriamo qui per coerenza del
+            // payload (entrambi pertinenti solo alle operazioni a 0).
+            Natura       = Aliquota == 0 ? Natura : null,
+            ObbligoBollo = Aliquota == 0 ? ObbligoBollo : null,
+        };
+    }
+}

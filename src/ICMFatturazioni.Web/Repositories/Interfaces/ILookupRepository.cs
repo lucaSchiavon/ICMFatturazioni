@@ -20,4 +20,11 @@ public interface ILookupRepository
 
     /// <summary>Tutte le province italiane.</summary>
     Task<IReadOnlyList<LookupItem>> GetProvinceAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Le nature IVA Agenzia Entrate (codice <c>N1..N7</c> + descrizione).
+    /// Alimenta il dropdown "Natura" della maschera Codici IVA, abilitato solo
+    /// per le aliquote a 0.
+    /// </summary>
+    Task<IReadOnlyList<LookupItem>> GetNatureIVAAsync(CancellationToken cancellationToken = default);
 }

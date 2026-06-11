@@ -50,4 +50,19 @@ internal sealed class LookupRepository : ILookupRepository
         var rows = await connection.QueryAsync<LookupItem>(cmd);
         return rows.ToList();
     }
+
+    // Codice naturale (N1..N7) come valore di persistenza, ordinato per codice.
+    private const string SqlNatureIVA = """
+        SELECT Natura AS Codice, DescrizioneNatura AS Descrizione
+        FROM fatt.NatureIVA
+        ORDER BY Natura;
+        """;
+
+    public async Task<IReadOnlyList<LookupItem>> GetNatureIVAAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlNatureIVA, cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<LookupItem>(cmd);
+        return rows.ToList();
+    }
 }

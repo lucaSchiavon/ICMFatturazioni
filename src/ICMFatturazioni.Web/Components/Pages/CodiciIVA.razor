@@ -1,0 +1,290 @@
+@*
+    Pagina /codici-iva — catalogo dei codici IVA usati in fattura.
+
+    Replica il pattern di Anagrafiche.razor:
+    - MudDataGrid con virtualization e filtro testo libero.
+    - Toolbar con "Aggiungi" sempre attivo; "Modifica"/"Elimina" visibili solo
+      con una riga selezionata (pattern visibility-driven).
+    - Prima colonna (Codice, "chiave umana") sticky a sinistra.
+    - Aggiungi/Modifica aprono lo stesso dialog (CodiceIVAFormDialog).
+    - Elimina (soft-delete) chiede conferma.
+*@
+
+@page "/codici-iva"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Repositories.Interfaces
+@inject ICodiceIVAManager CodiceIVAManager
+@inject ILookupRepository LookupRepository
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Codici IVA · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Codici IVA</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per codice, descrizione, natura…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="200"
+                      Style="min-width: 280px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+
+            @if (_selezionatoEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           Ripple="false"
+                           OnClick="@(() => ConfermaEdElimina(_selezionato))">
+                    Elimina
+                </MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="CodiceIVA"
+             Items="@CodiciFiltrati"
+             Dense="true"
+             Hover="true"
+             Striped="false"
+             Bordered="false"
+             FixedHeader="true"
+             Height="calc(100vh - 280px)"
+             Virtualize="true"
+             ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="OnSelezionatoChanged"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Codice"
+                        Title="Codice"
+                        StickyLeft="true" />
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" />
+        <TemplateColumn Title="Aliquota">
+            <CellTemplate>
+                @context.Item.Aliquota.ToString("0.##")%
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Natura">
+            <CellTemplate>
+                @DescriviNatura(context.Item.Natura)
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Bollo" Sortable="false">
+            <CellTemplate>
+                @* Tre stati: Sì / No / non impostato (cella vuota). *@
+                @if (context.Item.ObbligoBollo == true)
+                {
+                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text">Sì</MudChip>
+                }
+                else if (context.Item.ObbligoBollo == false)
+                {
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text">No</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent>
+        <MudText>Nessun codice IVA trovato.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Caricamento in corso…</MudText>
+    </LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<CodiceIVA> _codici = Array.Empty<CodiceIVA>();
+    private CodiceIVA? _selezionato;
+    private bool _selezionatoEliminabile;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    // Mappa codice Natura → descrizione (es. "N3" → "Non imponibili"), per
+    // mostrare in griglia la natura per esteso. Caricata una volta all'avvio.
+    private IReadOnlyDictionary<string, string> _natureDesc =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var nature = await LookupRepository.GetNatureIVAAsync();
+        _natureDesc = nature.ToDictionary(n => n.Codice, n => n.Descrizione, StringComparer.OrdinalIgnoreCase);
+        await RicaricaAsync();
+    }
+
+    // "N3" → "N3 — Non imponibili" (fallback al solo codice se la descrizione
+    // non è in mappa). Stringa vuota se la natura non è valorizzata.
+    private string DescriviNatura(string? natura)
+    {
+        if (string.IsNullOrEmpty(natura))
+        {
+            return string.Empty;
+        }
+        return _natureDesc.TryGetValue(natura, out var descr) ? $"{natura} — {descr}" : natura;
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _codici = await CodiceIVAManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco codici IVA fallito.", "CodiciIVA.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private IEnumerable<CodiceIVA> CodiciFiltrati
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_filtro))
+            {
+                return _codici;
+            }
+            var f = _filtro.Trim();
+            return _codici.Where(c =>
+                c.Codice.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || c.Descrizione.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || (c.Natura?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private async Task OnSelezionatoChanged(CodiceIVA? c)
+    {
+        _selezionato = c;
+        _selezionatoEliminabile = c is not null && await CodiceIVAManager.EEliminabileAsync(c.IdCodiceIVA);
+    }
+
+    private string RigaClass(CodiceIVA c, int _) =>
+        _selezionato is not null && _selezionato.IdCodiceIVA == c.IdCodiceIVA
+            ? "anagrafica-riga-selezionata"
+            : string.Empty;
+
+    // Doppio click (Detail >= 2) → apre il dettaglio in modifica.
+    private async Task OnRowClick(DataGridRowClickEventArgs<CodiceIVA> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2)
+        {
+            await ApriDialogModifica(args.Item);
+        }
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var parameters = new DialogParameters<CodiceIVAFormDialog>
+        {
+            { x => x.Iniziale, null },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<CodiceIVAFormDialog>("Aggiungi codice IVA", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Codice IVA creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(CodiceIVA? c)
+    {
+        if (c is null) return;
+        var parameters = new DialogParameters<CodiceIVAFormDialog>
+        {
+            { x => x.Iniziale, c },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<CodiceIVAFormDialog>("Modifica codice IVA", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Codice IVA aggiornato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(CodiceIVA? c)
+    {
+        if (c is null) return;
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare codice IVA?" },
+            { x => x.NomeElemento, $"{c.Codice} — {c.Descrizione}" },
+            { x => x.Messaggio, "Verrà disattivato e non comparirà più nell'elenco. L'operazione è reversibile dall'amministratore." },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var risultato = await dialog.Result;
+        if (risultato is not { Canceled: false }) return;
+
+        try
+        {
+            await CodiceIVAManager.EliminaAsync(c.IdCodiceIVA);
+            Snackbar.Add("Codice IVA eliminato.", MudBlazor.Severity.Success);
+            if (_selezionato is not null && _selezionato.IdCodiceIVA == c.IdCodiceIVA)
+            {
+                _selezionato = null;
+            }
+            await RicaricaAsync();
+        }
+        catch (CodiceIVAConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: il codice IVA è usato da una o più anagrafiche.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione/disattivazione del codice IVA fallita.", "CodiciIVA.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}
