@@ -1,0 +1,317 @@
+@*
+    Pagina /banche-appoggio — catalogo delle banche di appoggio (modello
+    normalizzato: banca/agenzia risolte via JOIN nel modello BancaAppoggioRiga).
+    - Filtro per natura (Tutte / Azienda / Clienti) + filtro testo.
+    - MudDataGrid con prima colonna (Intestatario) sticky.
+    - Aggiungi/Modifica aprono BancaAppoggioFormDialog; Elimina (soft-delete) con conferma.
+*@
+
+@page "/banche-appoggio"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@inject IBancaAppoggioManager BancaManager
+@inject IAnagraficaManager AnagraficaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Banche di appoggio · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Banche di appoggio</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+
+        <MudStack Row="true" Spacing="1">
+            <MudButton Variant="@VarianteFiltro(FiltroTipo.Tutte)"
+                       Color="@ColoreFiltro(FiltroTipo.Tutte)"
+                       Ripple="false"
+                       OnClick="@(() => ImpostaFiltro(FiltroTipo.Tutte))">
+                Tutte
+            </MudButton>
+            <MudButton Variant="@VarianteFiltro(FiltroTipo.Azienda)"
+                       Color="@ColoreFiltro(FiltroTipo.Azienda)"
+                       StartIcon="@Icons.Material.Filled.Business"
+                       Ripple="false"
+                       OnClick="@(() => ImpostaFiltro(FiltroTipo.Azienda))">
+                Azienda
+            </MudButton>
+            <MudButton Variant="@VarianteFiltro(FiltroTipo.Clienti)"
+                       Color="@ColoreFiltro(FiltroTipo.Clienti)"
+                       StartIcon="@Icons.Material.Filled.Person"
+                       Ripple="false"
+                       OnClick="@(() => ImpostaFiltro(FiltroTipo.Clienti))">
+                Clienti
+            </MudButton>
+        </MudStack>
+
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per banca, intestatario, IBAN…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="200"
+                      Style="min-width: 260px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionata is not null)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionata))">
+                Modifica
+            </MudButton>
+
+            @if (_selezionataEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           Ripple="false"
+                           OnClick="@(() => ConfermaEdElimina(_selezionata))">
+                    Elimina
+                </MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="BancaAppoggioRiga"
+             Items="@BancheFiltrate"
+             Dense="true"
+             Hover="true"
+             Striped="false"
+             Bordered="false"
+             FixedHeader="true"
+             Height="calc(100vh - 280px)"
+             Virtualize="true"
+             ItemSize="40"
+             SelectedItem="_selezionata"
+             SelectedItemChanged="OnSelezionataChanged"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <TemplateColumn Title="Intestatario" StickyLeft="true">
+            <CellTemplate>
+                @if (context.Item.IsBancaAzienda)
+                {
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Text">Azienda</MudChip>
+                }
+                else
+                {
+                    @NomeCliente(context.Item.IdCliente)
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.BancaNome" Title="Banca" />
+        <PropertyColumn Property="x => x.ABI" Title="ABI" />
+        <PropertyColumn Property="x => x.AgenziaNome" Title="Agenzia" />
+        <PropertyColumn Property="x => x.CAB" Title="CAB" />
+        <PropertyColumn Property="x => x.IBAN" Title="IBAN" />
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent>
+        <MudText>Nessuna banca trovata.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Caricamento in corso…</MudText>
+    </LoadingContent>
+</MudDataGrid>
+
+@code {
+    private enum FiltroTipo { Tutte, Azienda, Clienti }
+
+    private IReadOnlyList<BancaAppoggioRiga> _banche = Array.Empty<BancaAppoggioRiga>();
+    private BancaAppoggioRiga? _selezionata;
+    private bool _selezionataEliminabile;
+    private string _filtro = string.Empty;
+    private FiltroTipo _filtroTipo = FiltroTipo.Tutte;
+    private bool _caricamento = true;
+
+    private IReadOnlyDictionary<Guid, string> _clientiDesc = new Dictionary<Guid, string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var clienti = await AnagraficaManager.ElencoAsync();
+        _clientiDesc = clienti.ToDictionary(a => a.IdAnagrafica, a => a.RagioneSociale);
+        await RicaricaAsync();
+    }
+
+    private string NomeCliente(Guid? idCliente)
+    {
+        if (idCliente is null) return string.Empty;
+        return _clientiDesc.TryGetValue(idCliente.Value, out var nome) ? nome : "(cliente rimosso)";
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _banche = await BancaManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco banche di appoggio fallito.", "BancheAppoggio.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private IEnumerable<BancaAppoggioRiga> BancheFiltrate
+    {
+        get
+        {
+            IEnumerable<BancaAppoggioRiga> q = _banche;
+
+            q = _filtroTipo switch
+            {
+                FiltroTipo.Azienda => q.Where(b => b.IsBancaAzienda),
+                FiltroTipo.Clienti => q.Where(b => !b.IsBancaAzienda),
+                _ => q,
+            };
+
+            if (!string.IsNullOrWhiteSpace(_filtro))
+            {
+                var f = _filtro.Trim();
+                q = q.Where(b =>
+                    b.BancaNome.Contains(f, StringComparison.OrdinalIgnoreCase)
+                    || (b.AgenziaNome?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (b.IBAN?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (b.ABI?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (b.CAB?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || NomeCliente(b.IdCliente).Contains(f, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return q;
+        }
+    }
+
+    private void ImpostaFiltro(FiltroTipo tipo) => _filtroTipo = tipo;
+
+    private Variant VarianteFiltro(FiltroTipo tipo)
+        => _filtroTipo == tipo ? Variant.Filled : Variant.Outlined;
+
+    private Color ColoreFiltro(FiltroTipo tipo)
+        => _filtroTipo == tipo ? Color.Primary : Color.Default;
+
+    private async Task OnSelezionataChanged(BancaAppoggioRiga? b)
+    {
+        _selezionata = b;
+        _selezionataEliminabile = b is not null && await BancaManager.EEliminabileAsync(b.IdBancaAppoggio);
+    }
+
+    private string RigaClass(BancaAppoggioRiga b, int _) =>
+        _selezionata is not null && _selezionata.IdBancaAppoggio == b.IdBancaAppoggio
+            ? "anagrafica-riga-selezionata"
+            : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<BancaAppoggioRiga> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2)
+        {
+            await ApriDialogModifica(args.Item);
+        }
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var parameters = new DialogParameters<BancaAppoggioFormDialog>
+        {
+            { x => x.Iniziale, null },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<BancaAppoggioFormDialog>("Aggiungi banca di appoggio", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Banca creata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(BancaAppoggioRiga? b)
+    {
+        if (b is null) return;
+        var parameters = new DialogParameters<BancaAppoggioFormDialog>
+        {
+            { x => x.Iniziale, b },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<BancaAppoggioFormDialog>("Modifica banca di appoggio", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Banca aggiornata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(BancaAppoggioRiga? b)
+    {
+        if (b is null) return;
+        var intestatario = b.IsBancaAzienda ? "Azienda" : NomeCliente(b.IdCliente);
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare banca?" },
+            { x => x.NomeElemento, $"{b.BancaNome} — {intestatario}" },
+            { x => x.Messaggio, "Verrà disattivata e non comparirà più nell'elenco. L'operazione è reversibile dall'amministratore." },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var risultato = await dialog.Result;
+        if (risultato is not { Canceled: false }) return;
+
+        try
+        {
+            await BancaManager.EliminaAsync(b.IdBancaAppoggio);
+            Snackbar.Add("Banca eliminata.", MudBlazor.Severity.Success);
+            if (_selezionata is not null && _selezionata.IdBancaAppoggio == b.IdBancaAppoggio)
+            {
+                _selezionata = null;
+            }
+            await RicaricaAsync();
+        }
+        catch (BancaAppoggioConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: la banca è usata da una o più anagrafiche.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione/disattivazione della banca fallita.", "BancheAppoggio.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

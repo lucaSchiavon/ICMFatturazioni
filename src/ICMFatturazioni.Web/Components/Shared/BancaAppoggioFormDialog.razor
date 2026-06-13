@@ -1,0 +1,348 @@
+@*
+    Dialog Banca di appoggio — usato sia per "Aggiungi" che per "Modifica".
+
+    Modello normalizzato (decisione 2026-06-13):
+    - Banca e Agenzia sono anagrafiche vere (fatt.Banche / fatt.Agenzie). Le combo
+      (MudAutocomplete) elencano gli istituti/filiali esistenti e permettono di
+      digitarne di nuovi. L'agenzia è filtrata per la banca scelta.
+    - ABI appartiene alla banca, CAB all'agenzia: scegliendo una banca esistente
+      l'ABI si auto-compila; scegliendo un'agenzia esistente il CAB si
+      auto-compila. Modificandoli si AGGIORNA la banca/agenzia (niente doppioni).
+    - Toggle Azienda / Cliente solo in creazione (schede indipendenti). In
+      modifica la natura è fissa: si vede solo la scheda pertinente.
+    - IBAN solo per la banca azienda. Validazioni di formato/checksum/coerenza
+      sono nel manager (mostrate come errore server).
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@inject IBancaAppoggioManager BancaAppoggioManager
+@inject IBancaManager BancaManager
+@inject IAgenziaManager AgenziaManager
+@inject IAnagraficaManager AnagraficaManager
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+
+            @* Natura: toggle in creazione, intestazione fissa in modifica. *@
+            <div class="mb-4">
+                @if (!IsModifica)
+                {
+                    <MudText Typo="Typo.caption" Class="mb-1">Tipo di banca</MudText>
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="@(_isAzienda ? Variant.Filled : Variant.Outlined)"
+                                   Color="@(_isAzienda ? Color.Primary : Color.Default)"
+                                   StartIcon="@Icons.Material.Filled.Business"
+                                   Ripple="false"
+                                   OnClick="@(() => ImpostaTipoAsync(true))">
+                            Azienda
+                        </MudButton>
+                        <MudButton Variant="@(!_isAzienda ? Variant.Filled : Variant.Outlined)"
+                                   Color="@(!_isAzienda ? Color.Primary : Color.Default)"
+                                   StartIcon="@Icons.Material.Filled.Person"
+                                   Ripple="false"
+                                   OnClick="@(() => ImpostaTipoAsync(false))">
+                            Cliente
+                        </MudButton>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.subtitle2">
+                        @(_isAzienda ? "Appoggio bancario dell'Azienda" : $"Appoggio bancario del cliente{SuffissoIntestatario()}")
+                    </MudText>
+                }
+            </div>
+
+            <MudGrid Spacing="3">
+                @if (!_isAzienda)
+                {
+                    <MudItem xs="12">
+                        <MudSelect T="Guid?"
+                                   Label="Intestatario (cliente) *"
+                                   @bind-Value="_model.IdCliente"
+                                   Required="true"
+                                   RequiredError="Selezionare il cliente intestatario"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Class="campo-obbligatorio"
+                                   Clearable="true">
+                            @foreach (var a in _clienti)
+                            {
+                                <MudSelectItem T="Guid?" Value="@a.IdAnagrafica">@a.RagioneSociale</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                }
+
+                @* Banca (combo anagrafica) + ABI (auto dalla banca). *@
+                <MudItem xs="12" sm="8">
+                    <MudAutocomplete T="string"
+                                     Label="Banca *"
+                                     Value="_model.BancaNome"
+                                     ValueChanged="OnBancaChangedAsync"
+                                     SearchFunc="CercaBanche"
+                                     CoerceValue="true"
+                                     ResetValueOnEmptyText="false"
+                                     Clearable="true"
+                                     MaxItems="20"
+                                     Required="true"
+                                     RequiredError="Il nome della banca è obbligatorio"
+                                     MaxLength="50"
+                                     Variant="Variant.Outlined"
+                                     Margin="Margin.Dense"
+                                     Class="campo-obbligatorio"
+                                     HelperText="Scegli una banca o digitane una nuova" />
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudTextField @bind-Value="_model.ABI"
+                                  Label="ABI"
+                                  MaxLength="5"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  HelperText="5 cifre · codice istituto" />
+                </MudItem>
+
+                @* Agenzia (combo anagrafica, filtrata per banca) + CAB (auto dall'agenzia). *@
+                <MudItem xs="12" sm="8">
+                    <MudAutocomplete T="string"
+                                     Label="Agenzia / Filiale"
+                                     Value="_model.AgenziaNome"
+                                     ValueChanged="OnAgenziaChanged"
+                                     SearchFunc="CercaAgenzie"
+                                     CoerceValue="true"
+                                     ResetValueOnEmptyText="false"
+                                     Clearable="true"
+                                     MaxItems="20"
+                                     MaxLength="50"
+                                     Disabled="@string.IsNullOrWhiteSpace(_model.BancaNome)"
+                                     Variant="Variant.Outlined"
+                                     Margin="Margin.Dense"
+                                     HelperText="@(string.IsNullOrWhiteSpace(_model.BancaNome) ? "Scegli prima la banca" : "Scegli un'agenzia o digitane una nuova")" />
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudTextField @bind-Value="_model.CAB"
+                                  Label="CAB"
+                                  MaxLength="5"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  HelperText="5 cifre · codice filiale" />
+                </MudItem>
+
+                @* IBAN: solo banca azienda. *@
+                @if (_isAzienda)
+                {
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_model.IBAN"
+                                      Label="IBAN"
+                                      MaxLength="34"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      HelperText="Conto su cui i clienti versano i bonifici (ABI/CAB sono contenuti nell'IBAN)" />
+                    </MudItem>
+                }
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_erroreServer))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">
+                    @_erroreServer
+                </MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Annulla" Ripple="false">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="Salva"
+                   Disabled="@(!_isValid || _salvataggio)"
+                   Ripple="false">
+            @if (_salvataggio)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
+            }
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>Riga iniziale: null = Aggiungi, valorizzata = Modifica.</summary>
+    [Parameter] public BancaAppoggioRiga? Iniziale { get; set; }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private FormModel _stash = new();   // scheda non attiva (indipendenza in creazione)
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _erroreServer;
+
+    private bool _isAzienda = true;
+
+    private IReadOnlyList<Anagrafica> _clienti = Array.Empty<Anagrafica>();
+    private IReadOnlyList<Banca> _banche = Array.Empty<Banca>();
+    private IReadOnlyList<Agenzia> _agenzieDellaBanca = Array.Empty<Agenzia>();
+
+    private bool IsModifica => Iniziale is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _clienti = await AnagraficaManager.ElencoAsync();
+        _banche = await BancaManager.ElencoAttiveAsync();
+
+        if (Iniziale is not null)
+        {
+            _model = FormModel.FromRiga(Iniziale);
+            _isAzienda = Iniziale.IsBancaAzienda;
+            await RicaricaAgenzieAsync(_model.BancaNome);
+        }
+    }
+
+    // ---- Toggle natura (solo creazione, schede indipendenti) ----
+    private async Task ImpostaTipoAsync(bool azienda)
+    {
+        if (IsModifica || _isAzienda == azienda) return;
+        (_model, _stash) = (_stash, _model);
+        _isAzienda = azienda;
+        _isValid = false;
+        await RicaricaAgenzieAsync(_model.BancaNome);
+    }
+
+    private string SuffissoIntestatario()
+    {
+        if (_model.IdCliente is null) return string.Empty;
+        var c = _clienti.FirstOrDefault(a => a.IdAnagrafica == _model.IdCliente);
+        return c is null ? string.Empty : $": {c.RagioneSociale}";
+    }
+
+    // ---- Combo Banca ----
+    private Task<IEnumerable<string>> CercaBanche(string? value, CancellationToken token)
+    {
+        var nomi = _banche.Select(b => b.Nome);
+        IEnumerable<string> res = string.IsNullOrWhiteSpace(value)
+            ? nomi
+            : nomi.Where(n => n.Contains(value, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(res.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).AsEnumerable());
+    }
+
+    private async Task OnBancaChangedAsync(string? value)
+    {
+        var cambiata = !string.Equals(value, _model.BancaNome, StringComparison.OrdinalIgnoreCase);
+        _model.BancaNome = value ?? string.Empty;
+        if (!cambiata) return;
+
+        // Cambiando banca: ricalcola ABI dalla banca scelta e azzera agenzia+CAB
+        // (la filiale appartiene alla banca).
+        var banca = _banche.FirstOrDefault(b => string.Equals(b.Nome, value, StringComparison.OrdinalIgnoreCase));
+        _model.ABI = banca?.ABI;            // banca nuova → null, l'utente digita
+        _model.AgenziaNome = null;
+        _model.CAB = null;
+        await RicaricaAgenzieAsync(_model.BancaNome);
+    }
+
+    // ---- Combo Agenzia (filtrata per banca) ----
+    private Task<IEnumerable<string>> CercaAgenzie(string? value, CancellationToken token)
+    {
+        var nomi = _agenzieDellaBanca.Select(a => a.Nome);
+        IEnumerable<string> res = string.IsNullOrWhiteSpace(value)
+            ? nomi
+            : nomi.Where(n => n.Contains(value, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(res.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).AsEnumerable());
+    }
+
+    private void OnAgenziaChanged(string? value)
+    {
+        var cambiata = !string.Equals(value, _model.AgenziaNome, StringComparison.OrdinalIgnoreCase);
+        _model.AgenziaNome = value;
+        if (!cambiata) return;
+
+        var agenzia = _agenzieDellaBanca.FirstOrDefault(a => string.Equals(a.Nome, value, StringComparison.OrdinalIgnoreCase));
+        _model.CAB = agenzia?.CAB;          // agenzia nuova → null, l'utente digita
+    }
+
+    // Carica le agenzie della banca indicata (se esistente in anagrafica).
+    private async Task RicaricaAgenzieAsync(string? bancaNome)
+    {
+        var banca = _banche.FirstOrDefault(b => string.Equals(b.Nome, bancaNome, StringComparison.OrdinalIgnoreCase));
+        _agenzieDellaBanca = banca is null
+            ? Array.Empty<Agenzia>()
+            : await AgenziaManager.GetByBancaAsync(banca.IdBanca);
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        _erroreServer = null;
+        await _form.ValidateAsync();
+        if (!_isValid) return;
+
+        _salvataggio = true;
+        try
+        {
+            var input = new BancaAppoggioInput(
+                IdBancaAppoggio: Iniziale?.IdBancaAppoggio ?? Guid.Empty,
+                IdCliente: _isAzienda ? null : _model.IdCliente,
+                BancaNome: _model.BancaNome,
+                ABI: _model.ABI,
+                AgenziaNome: _model.AgenziaNome,
+                CAB: _model.CAB,
+                IBAN: _isAzienda ? _model.IBAN : null);
+
+            if (IsModifica)
+            {
+                await BancaAppoggioManager.AggiornaAsync(input);
+            }
+            else
+            {
+                await BancaAppoggioManager.CreaAsync(input);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (BancaAppoggioInvalidaException ex)
+        {
+            // Validazione tipizzata → messaggio pronto, non si logga (Regola 6).
+            _erroreServer = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio della banca di appoggio fallito per un errore imprevisto.",
+                "BancaAppoggioFormDialog.Salva");
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    /// <summary>View-model del form (campi mutabili per @bind-Value).</summary>
+    private sealed class FormModel
+    {
+        public Guid? IdCliente { get; set; }
+        public string BancaNome { get; set; } = string.Empty;
+        public string? ABI { get; set; }
+        public string? AgenziaNome { get; set; }
+        public string? CAB { get; set; }
+        public string? IBAN { get; set; }
+
+        public static FormModel FromRiga(BancaAppoggioRiga r) => new()
+        {
+            IdCliente = r.IdCliente,
+            BancaNome = r.BancaNome,
+            ABI = r.ABI,
+            AgenziaNome = r.AgenziaNome,
+            CAB = r.CAB,
+            IBAN = r.IBAN,
+        };
+    }
+}

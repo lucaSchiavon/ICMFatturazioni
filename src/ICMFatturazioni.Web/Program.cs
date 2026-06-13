@@ -84,6 +84,9 @@ builder.Services.AddScoped<IRuoloRepository, RuoloRepository>();
 builder.Services.AddScoped<IMenuRepository, MenuRepository>();
 builder.Services.AddScoped<IAnagraficaRepository, AnagraficaRepository>();
 builder.Services.AddScoped<ICodiceIVARepository, CodiceIVARepository>();
+builder.Services.AddScoped<IBancaRepository, BancaRepository>();
+builder.Services.AddScoped<IAgenziaRepository, AgenziaRepository>();
+builder.Services.AddScoped<IBancaAppoggioRepository, BancaAppoggioRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -94,6 +97,9 @@ builder.Services.AddScoped<IUtenteManager, UtenteManager>();
 builder.Services.AddScoped<IRuoloManager, RuoloManager>();
 builder.Services.AddScoped<IAnagraficaManager, AnagraficaManager>();
 builder.Services.AddScoped<ICodiceIVAManager, CodiceIVAManager>();
+builder.Services.AddScoped<IBancaManager, BancaManager>();
+builder.Services.AddScoped<IAgenziaManager, AgenziaManager>();
+builder.Services.AddScoped<IBancaAppoggioManager, BancaAppoggioManager>();
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le
