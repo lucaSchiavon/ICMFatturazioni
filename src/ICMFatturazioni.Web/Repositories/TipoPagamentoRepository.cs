@@ -141,13 +141,18 @@ internal sealed class TipoPagamentoRepository : ITipoPagamentoRepository
         await connection.ExecuteAsync(cmd);
     }
 
-    public Task<bool> HasDipendenzeAsync(Guid idTipoPagamento, CancellationToken cancellationToken = default)
+    private const string SqlHasDipendenze = """
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM fatt.CodiciPagamento
+            WHERE IdTipoPagamento = @IdTipoPagamento AND IsAttivo = 1
+        ) THEN 1 ELSE 0 END;
+        """;
+
+    public async Task<bool> HasDipendenzeAsync(Guid idTipoPagamento, CancellationToken cancellationToken = default)
     {
-        // I figli (fatt.CodiciPagamento) arrivano con la migration 022 (secondo
-        // commit dello step): finché la tabella non esiste, un tipo non ha
-        // dipendenze. Da sostituire con la query reale verso fatt.CodiciPagamento
-        // quando la verticale Codici di pagamento sarà in piedi.
-        return Task.FromResult(false);
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlHasDipendenze, new { IdTipoPagamento = idTipoPagamento }, cancellationToken: cancellationToken);
+        return await connection.ExecuteScalarAsync<bool>(cmd);
     }
 
     private static DynamicParameters ToParameters(TipoPagamento t)

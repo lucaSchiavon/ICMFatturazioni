@@ -1,0 +1,313 @@
+@*
+    Dialog Codice di pagamento — Aggiungi/Modifica. IdIniziale null = create.
+    Maschera "Creazione Pagamento" (dispensa Fig. 4): descrizione, tipo, numero
+    scadenze, giorni per rata, fine mese, giorni aggiuntivi (solo se fine mese),
+    condizione/modalità FE. In più l'utility "Test Date Scadenza" che, data una
+    data fattura, mostra le scadenze calcolate da IScadenzaCalculator.
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Repositories.Interfaces
+@using ICMFatturazioni.Web.Services
+@inject ICodicePagamentoManager CodicePagamentoManager
+@inject ITipoPagamentoManager TipoPagamentoManager
+@inject ILookupRepository LookupRepository
+@inject IScadenzaCalculator ScadenzaCalculator
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            @* Riga 1: descrizione + tipo. *@
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="7">
+                    <MudTextField @bind-Value="_model.DescrPag"
+                                  Label="Descrizione *" Required="true"
+                                  RequiredError="La descrizione è obbligatoria"
+                                  MaxLength="70" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Class="campo-obbligatorio" HelperText="Es. BONIFICO 60 GG F.M." />
+                </MudItem>
+                <MudItem xs="12" sm="5">
+                    <MudSelect T="Guid?" Label="Tipo di pagamento *"
+                               @bind-Value="_model.IdTipoPagamento" Required="true"
+                               RequiredError="Selezionare il tipo"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio">
+                        @foreach (var t in _tipi)
+                        {
+                            <MudSelectItem T="Guid?" Value="@t.IdTipoPagamento">@t.Descrizione (@(t.FlagBanca == FlagBanca.Azienda ? "Azienda" : "Cliente"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            @* Riga 2: numero scadenze + giorni per rata. *@
+            <MudGrid Spacing="3" Class="mt-0">
+                <MudItem xs="6" sm="3">
+                    <MudSelect T="int" Label="N. scadenze *" Value="_model.NumScadenze"
+                               ValueChanged="OnNumScadenzeChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio">
+                        <MudSelectItem T="int" Value="1">1</MudSelectItem>
+                        <MudSelectItem T="int" Value="2">2</MudSelectItem>
+                        <MudSelectItem T="int" Value="3">3</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField T="int" @bind-Value="_model.GGScad1" Label="Giorni 1ª *"
+                                     Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio" />
+                </MudItem>
+                @if (_model.NumScadenze >= 2)
+                {
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="int?" @bind-Value="_model.GGScad2" Label="Giorni 2ª *"
+                                         Min="0" Required="true" RequiredError="Obbligatorio"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio" />
+                    </MudItem>
+                }
+                @if (_model.NumScadenze >= 3)
+                {
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField T="int?" @bind-Value="_model.GGScad3" Label="Giorni 3ª *"
+                                         Min="0" Required="true" RequiredError="Obbligatorio"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio" />
+                    </MudItem>
+                }
+            </MudGrid>
+
+            @* Riga 3: fine mese + giorni aggiuntivi (affiancati: toggle stretto
+               così la casella resta vicina, senza vuoto in mezzo). *@
+            <MudGrid Spacing="3" Class="mt-0">
+                <MudItem xs="6" sm="3" Class="d-flex align-center">
+                    <MudSwitch T="bool" Value="_model.FineMese" ValueChanged="OnFineMeseChanged"
+                               Color="Color.Primary" Label="Fine mese" />
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudNumericField T="int?" @bind-Value="_model.GGpiu" Label="Giorni aggiuntivi"
+                                     Min="0" Disabled="@(!_model.FineMese)"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     HelperText="@(_model.FineMese ? "Dopo il fine mese" : "Solo con fine mese")" />
+                </MudItem>
+            </MudGrid>
+
+            @* Riga 4: condizione FE + modalità FE (sulla riga sotto). *@
+            <MudGrid Spacing="3" Class="mt-0">
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" Label="Condizione (FE)" @bind-Value="_model.CondizionePagamento"
+                               Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var c in _condizioni)
+                        {
+                            <MudSelectItem T="string" Value="@c.Codice">@c.Codice — @c.Descrizione</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" Label="Modalità (FE)" @bind-Value="_model.ModalitaPagamento"
+                               Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var m in _modalita)
+                        {
+                            <MudSelectItem T="string" Value="@m.Codice">@m.Codice — @m.Descrizione</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_erroreServer))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">@_erroreServer</MudAlert>
+            }
+
+            @* Utility "Test Date Scadenza": calcola le scadenze sui parametri correnti. *@
+            <MudExpansionPanels Class="mt-4" Elevation="0">
+                <MudExpansionPanel Text="Test date scadenza">
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                        <MudDatePicker @bind-Date="_testData" Label="Data fattura"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 160px;" />
+                        <MudNumericField T="decimal" @bind-Value="_testImporto" Label="Importo"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 120px;" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Ripple="false"
+                                   OnClick="CalcolaTest">Calcola</MudButton>
+                    </MudStack>
+                    @if (_testRate is not null)
+                    {
+                        <MudSimpleTable Dense="true" Class="mt-2" Style="max-width: 360px;">
+                            <thead><tr><th>Rata</th><th>Scadenza</th><th>Importo</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _testRate)
+                                {
+                                    <tr>
+                                        <td>@r.Numero</td>
+                                        <td>@r.DataScadenza.ToString("dd/MM/yyyy")</td>
+                                        <td>@r.Importo.ToString("0.00")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    @if (!string.IsNullOrEmpty(_testErrore))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-1">@_testErrore</MudText>
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Annulla" Ripple="false">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Salva"
+                   Disabled="@(!_isValid || _salvataggio)" Ripple="false">
+            @if (_salvataggio)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
+            }
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public Guid? IdIniziale { get; set; }
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _erroreServer;
+
+    private IReadOnlyList<TipoPagamento> _tipi = Array.Empty<TipoPagamento>();
+    private IReadOnlyList<LookupItem> _condizioni = Array.Empty<LookupItem>();
+    private IReadOnlyList<LookupItem> _modalita = Array.Empty<LookupItem>();
+
+    // Utility test scadenze.
+    private DateTime? _testData = DateTime.Today;
+    private decimal _testImporto = 1000m;
+    private IReadOnlyList<RataScadenza>? _testRate;
+    private string? _testErrore;
+
+    private bool IsModifica => IdIniziale is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tipi = await TipoPagamentoManager.ElencoAsync();
+        _condizioni = await LookupRepository.GetCondizioniPagamentoAsync();
+        _modalita = await LookupRepository.GetModalitaPagamentoAsync();
+
+        if (IdIniziale is not null)
+        {
+            var c = await CodicePagamentoManager.GetByIdAsync(IdIniziale.Value);
+            if (c is not null) _model = FormModel.FromEntity(c);
+        }
+    }
+
+    private void OnNumScadenzeChanged(int valore)
+    {
+        _model.NumScadenze = valore;
+        if (valore < 2) _model.GGScad2 = null;
+        if (valore < 3) _model.GGScad3 = null;
+    }
+
+    private void OnFineMeseChanged(bool valore)
+    {
+        _model.FineMese = valore;
+        if (!valore) _model.GGpiu = null;  // i giorni aggiuntivi presuppongono il fine mese
+    }
+
+    private void CalcolaTest()
+    {
+        _testErrore = null;
+        _testRate = null;
+        if (_testData is null)
+        {
+            _testErrore = "Indicare la data fattura.";
+            return;
+        }
+        try
+        {
+            var giorni = new[] { _model.GGScad1, _model.GGScad2 ?? 0, _model.GGScad3 ?? 0 };
+            _testRate = ScadenzaCalculator.Calcola(
+                DateOnly.FromDateTime(_testData.Value), _model.NumScadenze, giorni,
+                _model.FineMese, _model.GGpiu, _testImporto);
+        }
+        catch (Exception ex)
+        {
+            _testErrore = "Parametri non validi per il calcolo: " + ex.Message;
+        }
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        _erroreServer = null;
+        await _form.ValidateAsync();
+        if (!_isValid) return;
+
+        _salvataggio = true;
+        try
+        {
+            var entity = _model.ToEntity(IdIniziale ?? Guid.Empty);
+            if (IsModifica) await CodicePagamentoManager.AggiornaAsync(entity);
+            else await CodicePagamentoManager.CreaAsync(entity);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (CodicePagamentoInvalidaException ex)
+        {
+            _erroreServer = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio del codice di pagamento fallito per un errore imprevisto.",
+                "CodicePagamentoFormDialog.Salva");
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    private sealed class FormModel
+    {
+        public string DescrPag { get; set; } = string.Empty;
+        public Guid? IdTipoPagamento { get; set; }
+        public int NumScadenze { get; set; } = 1;
+        public int GGScad1 { get; set; }
+        public int? GGScad2 { get; set; }
+        public int? GGScad3 { get; set; }
+        public int? GGpiu { get; set; }
+        public bool FineMese { get; set; }
+        public string? CondizionePagamento { get; set; }
+        public string? ModalitaPagamento { get; set; }
+
+        public static FormModel FromEntity(CodicePagamento c) => new()
+        {
+            DescrPag = c.DescrPag,
+            IdTipoPagamento = c.IdTipoPagamento,
+            NumScadenze = c.NumScadenze,
+            GGScad1 = c.GGScad1,
+            GGScad2 = c.GGScad2,
+            GGScad3 = c.GGScad3,
+            GGpiu = c.GGpiu,
+            FineMese = c.FineMese,
+            CondizionePagamento = c.CondizionePagamento,
+            ModalitaPagamento = c.ModalitaPagamento,
+        };
+
+        public CodicePagamento ToEntity(Guid id) => new()
+        {
+            IdCodicePagamento = id,
+            IdTipoPagamento = IdTipoPagamento ?? Guid.Empty,
+            DescrPag = DescrPag,
+            NumScadenze = NumScadenze,
+            GGScad1 = GGScad1,
+            GGScad2 = GGScad2,
+            GGScad3 = GGScad3,
+            GGpiu = GGpiu,
+            FineMese = FineMese,
+            CondizionePagamento = CondizionePagamento,
+            ModalitaPagamento = ModalitaPagamento,
+        };
+    }
+}

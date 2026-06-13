@@ -65,4 +65,34 @@ internal sealed class LookupRepository : ILookupRepository
         var rows = await connection.QueryAsync<LookupItem>(cmd);
         return rows.ToList();
     }
+
+    // NCHAR(4): si normalizza il codice con TRIM così il valore di persistenza
+    // (TP01.., MP01..) non porta padding nel dropdown.
+    private const string SqlCondizioniPagamento = """
+        SELECT RTRIM(Codice) AS Codice, Descrizione
+        FROM fatt.CondizioniPagamento
+        ORDER BY Codice;
+        """;
+
+    public async Task<IReadOnlyList<LookupItem>> GetCondizioniPagamentoAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlCondizioniPagamento, cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<LookupItem>(cmd);
+        return rows.ToList();
+    }
+
+    private const string SqlModalitaPagamento = """
+        SELECT RTRIM(Codice) AS Codice, Descrizione
+        FROM fatt.ModalitaPagamento
+        ORDER BY Codice;
+        """;
+
+    public async Task<IReadOnlyList<LookupItem>> GetModalitaPagamentoAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlModalitaPagamento, cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<LookupItem>(cmd);
+        return rows.ToList();
+    }
 }

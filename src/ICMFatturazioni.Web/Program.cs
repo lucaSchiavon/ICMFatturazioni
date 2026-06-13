@@ -9,6 +9,7 @@ using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories;
 using ICMFatturazioni.Web.Repositories.Interfaces;
+using ICMFatturazioni.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -88,6 +89,7 @@ builder.Services.AddScoped<IBancaRepository, BancaRepository>();
 builder.Services.AddScoped<IAgenziaRepository, AgenziaRepository>();
 builder.Services.AddScoped<IBancaAppoggioRepository, BancaAppoggioRepository>();
 builder.Services.AddScoped<ITipoPagamentoRepository, TipoPagamentoRepository>();
+builder.Services.AddScoped<ICodicePagamentoRepository, CodicePagamentoRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -102,6 +104,10 @@ builder.Services.AddScoped<IBancaManager, BancaManager>();
 builder.Services.AddScoped<IAgenziaManager, AgenziaManager>();
 builder.Services.AddScoped<IBancaAppoggioManager, BancaAppoggioManager>();
 builder.Services.AddScoped<ITipoPagamentoManager, TipoPagamentoManager>();
+builder.Services.AddScoped<ICodicePagamentoManager, CodicePagamentoManager>();
+
+// Servizio puro di calcolo scadenze (stateless) → singleton.
+builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le

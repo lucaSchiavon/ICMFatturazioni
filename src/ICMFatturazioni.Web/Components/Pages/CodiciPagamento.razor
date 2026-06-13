@@ -1,0 +1,210 @@
+@*
+    Pagina /codici-pagamento — catalogo dei codici di pagamento (livello figlio).
+    Mostra la regola di scadenza (rate, giorni, fine mese) e il tipo di
+    appartenenza. CRUD via CodicePagamentoFormDialog.
+*@
+
+@page "/codici-pagamento"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@inject ICodicePagamentoManager CodicePagamentoManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Codici di pagamento · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Codici di pagamento</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per descrizione o tipo…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" DebounceInterval="200"
+                      Style="min-width: 280px; flex: 1;" />
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Ripple="false"
+                   OnClick="ApriDialogAggiungi">Aggiungi</MudButton>
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit" Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">Modifica</MudButton>
+            @if (_selezionatoEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete" Ripple="false"
+                           OnClick="@(() => ConfermaEdElimina(_selezionato))">Elimina</MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="CodicePagamentoRiga"
+             Items="@CodiciFiltrati"
+             Dense="true" Hover="true" Striped="false" Bordered="false"
+             FixedHeader="true" Height="calc(100vh - 280px)"
+             Virtualize="true" ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="OnSelezionatoChanged"
+             RowClick="@OnRowClick" RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.DescrPag" Title="Descrizione" StickyLeft="true" />
+        <PropertyColumn Property="x => x.TipoDescrizione" Title="Tipo" />
+        <TemplateColumn Title="Flag" Sortable="false">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                         Color="@(context.Item.FlagBanca == FlagBanca.Azienda ? Color.Primary : Color.Secondary)">
+                    @(context.Item.FlagBanca == FlagBanca.Azienda ? "Azienda" : "Cliente")
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.NumScadenze" Title="Rate" />
+        <TemplateColumn Title="Giorni" Sortable="false">
+            <CellTemplate>@DescriviGiorni(context.Item)</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Fine mese" Sortable="false">
+            <CellTemplate>@(context.Item.FineMese ? "Sì" : "No")@(context.Item.GGpiu is > 0 ? $" +{context.Item.GGpiu}gg" : "")</CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.ModalitaDescrizione" Title="Modalità FE" />
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   Size="Size.Small" Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessun codice di pagamento trovato.</MudText></NoRecordsContent>
+    <LoadingContent><MudText>Caricamento in corso…</MudText></LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<CodicePagamentoRiga> _codici = Array.Empty<CodicePagamentoRiga>();
+    private CodicePagamentoRiga? _selezionato;
+    private bool _selezionatoEliminabile;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync() => await RicaricaAsync();
+
+    private static string DescriviGiorni(CodicePagamentoRiga c)
+    {
+        var gg = new List<int> { c.GGScad1 };
+        if (c.GGScad2 is not null) gg.Add(c.GGScad2.Value);
+        if (c.GGScad3 is not null) gg.Add(c.GGScad3.Value);
+        return string.Join("/", gg);
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _codici = await CodicePagamentoManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco codici di pagamento fallito.", "CodiciPagamento.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private IEnumerable<CodicePagamentoRiga> CodiciFiltrati
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_filtro)) return _codici;
+            var f = _filtro.Trim();
+            return _codici.Where(c =>
+                c.DescrPag.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || c.TipoDescrizione.Contains(f, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task OnSelezionatoChanged(CodicePagamentoRiga? c)
+    {
+        _selezionato = c;
+        _selezionatoEliminabile = c is not null && await CodicePagamentoManager.EEliminabileAsync(c.IdCodicePagamento);
+    }
+
+    private string RigaClass(CodicePagamentoRiga c, int _) =>
+        _selezionato is not null && _selezionato.IdCodicePagamento == c.IdCodicePagamento
+            ? "anagrafica-riga-selezionata" : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<CodicePagamentoRiga> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2) await ApriDialogModifica(args.Item);
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var parameters = new DialogParameters<CodicePagamentoFormDialog> { { x => x.IdIniziale, (Guid?)null } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<CodicePagamentoFormDialog>("Aggiungi codice di pagamento", parameters, options);
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Codice di pagamento creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(CodicePagamentoRiga? c)
+    {
+        if (c is null) return;
+        var parameters = new DialogParameters<CodicePagamentoFormDialog> { { x => x.IdIniziale, (Guid?)c.IdCodicePagamento } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<CodicePagamentoFormDialog>("Modifica codice di pagamento", parameters, options);
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Codice di pagamento aggiornato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(CodicePagamentoRiga? c)
+    {
+        if (c is null) return;
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare codice di pagamento?" },
+            { x => x.NomeElemento, c.DescrPag },
+            { x => x.Messaggio, "Verrà disattivato e non comparirà più nell'elenco. L'operazione è reversibile dall'amministratore." },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await CodicePagamentoManager.EliminaAsync(c.IdCodicePagamento);
+            Snackbar.Add("Codice di pagamento eliminato.", MudBlazor.Severity.Success);
+            if (_selezionato is not null && _selezionato.IdCodicePagamento == c.IdCodicePagamento) _selezionato = null;
+            await RicaricaAsync();
+        }
+        catch (CodicePagamentoConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: il codice è usato da una o più anagrafiche.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione del codice di pagamento fallita.", "CodiciPagamento.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

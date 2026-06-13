@@ -27,4 +27,16 @@ public interface ILookupRepository
     /// per le aliquote a 0.
     /// </summary>
     Task<IReadOnlyList<LookupItem>> GetNatureIVAAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Le condizioni di pagamento Agenzia Entrate (codice <c>TP01..</c> +
+    /// descrizione). Dropdown della maschera Codici di pagamento.
+    /// </summary>
+    Task<IReadOnlyList<LookupItem>> GetCondizioniPagamentoAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Le modalità di pagamento Agenzia Entrate (codice <c>MP01..</c> +
+    /// descrizione). Dropdown della maschera Codici di pagamento.
+    /// </summary>
+    Task<IReadOnlyList<LookupItem>> GetModalitaPagamentoAsync(CancellationToken cancellationToken = default);
 }
