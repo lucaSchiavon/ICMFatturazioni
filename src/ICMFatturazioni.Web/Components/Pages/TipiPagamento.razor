@@ -1,0 +1,217 @@
+@*
+    Pagina /tipi-pagamento — catalogo dei tipi di pagamento (livello padre).
+    Replica il pattern di CodiciIVA.razor. La colonna "Flag banca" spiega di chi
+    sono i dati bancari in fattura (Azienda/Cliente).
+*@
+
+@page "/tipi-pagamento"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ITipoPagamentoManager TipoPagamentoManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Tipi di pagamento · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Tipi di pagamento</MudText>
+
+<MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+    Il <b>flag banca</b> decide di chi sono i dati bancari mostrati in fattura:
+    <b>Azienda</b> (bonifico, il cliente versa sul nostro IBAN) o <b>Cliente</b>
+    (ricevuta bancaria, con ABI/CAB del cliente).
+</MudAlert>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per descrizione o sigla…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="200"
+                      Style="min-width: 280px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit" Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+
+            @if (_selezionatoEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete" Ripple="false"
+                           OnClick="@(() => ConfermaEdElimina(_selezionato))">
+                    Elimina
+                </MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="TipoPagamento"
+             Items="@TipiFiltrati"
+             Dense="true" Hover="true" Striped="false" Bordered="false"
+             FixedHeader="true" Height="calc(100vh - 340px)"
+             Virtualize="true" ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="OnSelezionatoChanged"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" StickyLeft="true" />
+        <PropertyColumn Property="x => x.SiglaPag" Title="Sigla" />
+        <TemplateColumn Title="Flag banca" Sortable="false">
+            <CellTemplate>
+                @if (context.Item.FlagBanca == FlagBanca.Azienda)
+                {
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Text">Azienda</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text">Cliente</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   Size="Size.Small" Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessun tipo di pagamento trovato.</MudText></NoRecordsContent>
+    <LoadingContent><MudText>Caricamento in corso…</MudText></LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<TipoPagamento> _tipi = Array.Empty<TipoPagamento>();
+    private TipoPagamento? _selezionato;
+    private bool _selezionatoEliminabile;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync() => await RicaricaAsync();
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _tipi = await TipoPagamentoManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco tipi di pagamento fallito.", "TipiPagamento.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private IEnumerable<TipoPagamento> TipiFiltrati
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_filtro)) return _tipi;
+            var f = _filtro.Trim();
+            return _tipi.Where(t =>
+                t.Descrizione.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || (t.SiglaPag?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private async Task OnSelezionatoChanged(TipoPagamento? t)
+    {
+        _selezionato = t;
+        _selezionatoEliminabile = t is not null && await TipoPagamentoManager.EEliminabileAsync(t.IdTipoPagamento);
+    }
+
+    private string RigaClass(TipoPagamento t, int _) =>
+        _selezionato is not null && _selezionato.IdTipoPagamento == t.IdTipoPagamento
+            ? "anagrafica-riga-selezionata" : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<TipoPagamento> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2) await ApriDialogModifica(args.Item);
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var parameters = new DialogParameters<TipoPagamentoFormDialog> { { x => x.Iniziale, null } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<TipoPagamentoFormDialog>("Aggiungi tipo di pagamento", parameters, options);
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Tipo di pagamento creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(TipoPagamento? t)
+    {
+        if (t is null) return;
+        var parameters = new DialogParameters<TipoPagamentoFormDialog> { { x => x.Iniziale, t } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<TipoPagamentoFormDialog>("Modifica tipo di pagamento", parameters, options);
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Tipo di pagamento aggiornato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(TipoPagamento? t)
+    {
+        if (t is null) return;
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare tipo di pagamento?" },
+            { x => x.NomeElemento, t.Descrizione },
+            { x => x.Messaggio, "Verrà disattivato e non comparirà più nell'elenco. L'operazione è reversibile dall'amministratore." },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await TipoPagamentoManager.EliminaAsync(t.IdTipoPagamento);
+            Snackbar.Add("Tipo di pagamento eliminato.", MudBlazor.Severity.Success);
+            if (_selezionato is not null && _selezionato.IdTipoPagamento == t.IdTipoPagamento) _selezionato = null;
+            await RicaricaAsync();
+        }
+        catch (TipoPagamentoConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: il tipo è usato da uno o più codici di pagamento.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione del tipo di pagamento fallita.", "TipiPagamento.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

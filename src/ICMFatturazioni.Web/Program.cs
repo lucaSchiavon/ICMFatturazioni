@@ -87,6 +87,7 @@ builder.Services.AddScoped<ICodiceIVARepository, CodiceIVARepository>();
 builder.Services.AddScoped<IBancaRepository, BancaRepository>();
 builder.Services.AddScoped<IAgenziaRepository, AgenziaRepository>();
 builder.Services.AddScoped<IBancaAppoggioRepository, BancaAppoggioRepository>();
+builder.Services.AddScoped<ITipoPagamentoRepository, TipoPagamentoRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -100,6 +101,7 @@ builder.Services.AddScoped<ICodiceIVAManager, CodiceIVAManager>();
 builder.Services.AddScoped<IBancaManager, BancaManager>();
 builder.Services.AddScoped<IAgenziaManager, AgenziaManager>();
 builder.Services.AddScoped<IBancaAppoggioManager, BancaAppoggioManager>();
+builder.Services.AddScoped<ITipoPagamentoManager, TipoPagamentoManager>();
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le

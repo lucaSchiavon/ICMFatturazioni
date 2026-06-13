@@ -1,0 +1,138 @@
+@*
+    Dialog Tipo di pagamento — Aggiungi/Modifica. Iniziale null = create.
+    Campi: Descrizione (obbligatoria), Sigla (facoltativa), Flag banca
+    (Azienda/Cliente, obbligatorio) con spiegazione.
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ITipoPagamentoManager TipoPagamentoManager
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_model.Descrizione"
+                                  Label="Descrizione *"
+                                  Required="true"
+                                  RequiredError="La descrizione è obbligatoria"
+                                  MaxLength="50"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Class="campo-obbligatorio"
+                                  HelperText="Es. Bonifico, Ricevute bancarie" />
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudTextField @bind-Value="_model.SiglaPag"
+                                  Label="Sigla"
+                                  MaxLength="2"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  HelperText="2 caratteri (es. BO)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="FlagBanca"
+                               Label="Flag banca *"
+                               @bind-Value="_model.FlagBanca"
+                               Required="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               Class="campo-obbligatorio"
+                               HelperText="@_model.FlagBanca.Descrizione()">
+                        <MudSelectItem T="FlagBanca" Value="FlagBanca.Azienda">Azienda (bonifico)</MudSelectItem>
+                        <MudSelectItem T="FlagBanca" Value="FlagBanca.Cliente">Cliente (ricevuta bancaria)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_erroreServer))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Class="mt-3" Variant="Variant.Outlined">@_erroreServer</MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Annulla" Ripple="false">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Salva"
+                   Disabled="@(!_isValid || _salvataggio)" Ripple="false">
+            @if (_salvataggio)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
+            }
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public TipoPagamento? Iniziale { get; set; }
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private MudForm _form = default!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string? _erroreServer;
+
+    private bool IsModifica => Iniziale is not null;
+
+    protected override void OnInitialized()
+    {
+        if (Iniziale is not null) _model = FormModel.FromEntity(Iniziale);
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        _erroreServer = null;
+        await _form.ValidateAsync();
+        if (!_isValid) return;
+
+        _salvataggio = true;
+        try
+        {
+            var entity = _model.ToEntity(Iniziale?.IdTipoPagamento ?? Guid.Empty);
+            if (IsModifica) await TipoPagamentoManager.AggiornaAsync(entity);
+            else await TipoPagamentoManager.CreaAsync(entity);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (TipoPagamentoInvalidaException ex)
+        {
+            _erroreServer = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _erroreServer = "Errore durante il salvataggio. Riprovare o contattare l'amministratore.";
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio del tipo di pagamento fallito per un errore imprevisto.",
+                "TipoPagamentoFormDialog.Salva");
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    private sealed class FormModel
+    {
+        public string Descrizione { get; set; } = string.Empty;
+        public string? SiglaPag { get; set; }
+        public FlagBanca FlagBanca { get; set; } = FlagBanca.Azienda;
+
+        public static FormModel FromEntity(TipoPagamento t) => new()
+        {
+            Descrizione = t.Descrizione,
+            SiglaPag = t.SiglaPag,
+            FlagBanca = t.FlagBanca,
+        };
+
+        public TipoPagamento ToEntity(Guid id) => new()
+        {
+            IdTipoPagamento = id,
+            Descrizione = Descrizione,
+            SiglaPag = SiglaPag,
+            FlagBanca = FlagBanca,
+        };
+    }
+}
