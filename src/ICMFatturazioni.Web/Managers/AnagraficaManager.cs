@@ -1,6 +1,7 @@
 using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 using Microsoft.Data.SqlClient;
 
@@ -26,11 +27,26 @@ internal sealed class AnagraficaManager : IAnagraficaManager
 
     private readonly IAnagraficaRepository _repository;
     private readonly IAuditManager _audit;
+    // Manager dei cataloghi referenziati: servono a validare i puntatori
+    // (esistenza + IsAttivo) e la coerenza FlagBanca↔banca PRIMA di scrivere.
+    // Dipendenza manager→manager già usata altrove (es. BancaAppoggioManager):
+    // nessun ciclo, questi non dipendono a loro volta da AnagraficaManager.
+    private readonly ICodicePagamentoManager _codicePagamento;
+    private readonly IBancaAppoggioManager _bancaAppoggio;
+    private readonly ICodiceIVAManager _codiceIva;
 
-    public AnagraficaManager(IAnagraficaRepository repository, IAuditManager audit)
+    public AnagraficaManager(
+        IAnagraficaRepository repository,
+        IAuditManager audit,
+        ICodicePagamentoManager codicePagamento,
+        IBancaAppoggioManager bancaAppoggio,
+        ICodiceIVAManager codiceIva)
     {
         _repository = repository;
         _audit = audit;
+        _codicePagamento = codicePagamento;
+        _bancaAppoggio = bancaAppoggio;
+        _codiceIva = codiceIva;
     }
 
     // ---------------------------------------------------------------------
@@ -52,8 +68,12 @@ internal sealed class AnagraficaManager : IAnagraficaManager
         ValidaCampiObbligatori(anagrafica);
 
         // Generazione PK app-side (GUID UUIDv7 time-ordered, ADR D22): l'Id è
-        // disponibile prima dell'INSERT, niente IDENTITY/OUTPUT.
+        // disponibile prima dell'INSERT, niente IDENTITY/OUTPUT. La generiamo
+        // PRIMA di validare i riferimenti perché la coerenza del caso "pagamento
+        // di tipo cliente" confronta banca.IdCliente con questo IdAnagrafica.
         anagrafica.IdAnagrafica = Guid.CreateVersion7();
+
+        await ValidaRiferimentiAsync(anagrafica, cancellationToken);
 
         try
         {
@@ -77,6 +97,7 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     public async Task AggiornaAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
     {
         ValidaCampiObbligatori(anagrafica);
+        await ValidaRiferimentiAsync(anagrafica, cancellationToken);
 
         // Stato precedente per il diff dell'audit (cosa è cambiato). Letto prima
         // dell'update; se non trovato si ripiega sullo snapshot del nuovo stato.
@@ -149,6 +170,83 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     }
 
     /// <summary>
+    /// Valida i puntatori amministrativi (Pagamento / Banca / Codice IVA) quando
+    /// valorizzati: esistenza + <c>IsAttivo</c> e, per la coppia pagamento+banca,
+    /// la coerenza col <c>FlagBanca</c> del tipo di pagamento.
+    /// </summary>
+    /// <remarks>
+    /// Pre-check applicativo (UX: messaggio specifico). La correttezza sotto race
+    /// condition è garantita anche dalle FK di migration 023, tradotte da
+    /// <see cref="TraduciViolazioneFk"/> (pattern "doppia difesa"). La sola regola
+    /// senza sentinel a DB è la coerenza FlagBanca↔banca: incrocia due tabelle,
+    /// non è esprimibile come FK, quindi vive unicamente qui.
+    /// </remarks>
+    private async Task ValidaRiferimentiAsync(Anagrafica anagrafica, CancellationToken cancellationToken)
+    {
+        // Pagamento: l'elenco contiene i soli attivi → id assente = inesistente o
+        // disattivato (in entrambi i casi non selezionabile). La Riga porta il
+        // FlagBanca, che serve subito dopo per la coerenza con la banca.
+        CodicePagamentoRiga? pagamento = null;
+        if (anagrafica.IdPag is Guid idPag)
+        {
+            var pagamenti = await _codicePagamento.ElencoAsync(cancellationToken);
+            pagamento = pagamenti.FirstOrDefault(p => p.IdCodicePagamento == idPag);
+            if (pagamento is null)
+            {
+                throw new AnagraficaInvalidaException(
+                    AnagraficaInvalidaMotivo.PagamentoInesistente,
+                    "Il codice di pagamento selezionato non è più disponibile. Sceglierne un altro dall'elenco.");
+            }
+        }
+
+        BancaAppoggioRiga? banca = null;
+        if (anagrafica.IdBancaAppoggio is Guid idBanca)
+        {
+            banca = await _bancaAppoggio.GetByIdAsync(idBanca, cancellationToken);
+            if (banca is null || !banca.IsAttivo)
+            {
+                throw new AnagraficaInvalidaException(
+                    AnagraficaInvalidaMotivo.BancaInesistente,
+                    "La banca di appoggio selezionata non è più disponibile. Sceglierne un'altra dall'elenco.");
+            }
+        }
+
+        // Coerenza FlagBanca↔banca: solo se entrambi valorizzati (una banca senza
+        // pagamento non ha un flag da rispettare).
+        if (pagamento is not null && banca is not null)
+        {
+            var coerente = pagamento.FlagBanca switch
+            {
+                // Pagamento "dati azienda" (es. bonifico): serve una banca aziendale.
+                FlagBanca.Azienda => banca.IsBancaAzienda,
+                // Pagamento "dati cliente" (es. ricevuta bancaria): serve una banca
+                // di QUESTO cliente (non dell'azienda, non di un altro cliente).
+                FlagBanca.Cliente => banca.IdCliente == anagrafica.IdAnagrafica,
+                _ => false,
+            };
+            if (!coerente)
+            {
+                throw new AnagraficaInvalidaException(
+                    AnagraficaInvalidaMotivo.BancaNonCoerenteColPagamento,
+                    pagamento.FlagBanca == FlagBanca.Azienda
+                        ? "Il pagamento scelto usa i dati bancari dell'azienda: selezionare una banca aziendale."
+                        : "Il pagamento scelto usa i dati bancari del cliente: selezionare una banca di questo cliente.");
+            }
+        }
+
+        if (anagrafica.IdCodiciIVA is Guid idIva)
+        {
+            var iva = await _codiceIva.GetByIdAsync(idIva, cancellationToken);
+            if (iva is null || !iva.IsAttivo)
+            {
+                throw new AnagraficaInvalidaException(
+                    AnagraficaInvalidaMotivo.CodiceIVAInesistente,
+                    "Il codice IVA selezionato non è più disponibile. Sceglierne un altro dall'elenco.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Mappa una <see cref="SqlException"/> di constraint violation
     /// (errore 547) sull'eccezione di dominio corretta. Il nome del
     /// vincolo è nel messaggio dell'errore SQL.
@@ -170,6 +268,30 @@ internal sealed class AnagraficaManager : IAnagraficaManager
             return new AnagraficaInvalidaException(
                 AnagraficaInvalidaMotivo.ProvinciaInesistente,
                 "La provincia indicata non è valida. Scegliere una provincia dall'elenco.",
+                ex);
+        }
+        // FK dei cataloghi (migration 023): sentinel della "doppia difesa". Se il
+        // riferimento sparisce tra il pre-check e l'INSERT/UPDATE, la FK scatta
+        // qui e produce lo stesso messaggio del pre-check.
+        if (msg.Contains("FK_Anagrafica_CodicePagamento", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AnagraficaInvalidaException(
+                AnagraficaInvalidaMotivo.PagamentoInesistente,
+                "Il codice di pagamento selezionato non è più disponibile. Sceglierne un altro dall'elenco.",
+                ex);
+        }
+        if (msg.Contains("FK_Anagrafica_BancaAppoggio", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AnagraficaInvalidaException(
+                AnagraficaInvalidaMotivo.BancaInesistente,
+                "La banca di appoggio selezionata non è più disponibile. Sceglierne un'altra dall'elenco.",
+                ex);
+        }
+        if (msg.Contains("FK_Anagrafica_CodiceIVA", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AnagraficaInvalidaException(
+                AnagraficaInvalidaMotivo.CodiceIVAInesistente,
+                "Il codice IVA selezionato non è più disponibile. Sceglierne un altro dall'elenco.",
                 ex);
         }
         // Vincolo inatteso: rilanciamo come PaeseInesistente di fallback,

@@ -20,9 +20,14 @@
 
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Models
 @using ICMFatturazioni.Web.Repositories.Interfaces
 @inject IAnagraficaManager AnagraficaManager
+@inject ICodicePagamentoManager CodicePagamentoManager
+@inject IBancaAppoggioManager BancaAppoggioManager
+@inject ICodiceIVAManager CodiceIVAManager
 @inject ILookupRepository LookupRepository
+@inject IDialogService DialogService
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <MudDialog>
@@ -152,6 +157,106 @@
 
                 <MudItem xs="12">
                     <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Dati amministrativi</MudText>
+                </MudItem>
+
+                @* Pagamento: la sua scelta determina quali banche sono
+                   selezionabili (flag Azienda/Cliente del tipo di pagamento). *@
+                <MudItem xs="12" sm="6">
+                    <div class="d-flex align-center gap-2">
+                        <MudSelect T="Guid?"
+                                   Label="Pagamento"
+                                   Value="_model.IdPag"
+                                   ValueChanged="OnPagamentoChangedAsync"
+                                   Clearable="true"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Class="flex-grow-1">
+                            @foreach (var p in _pagamenti)
+                            {
+                                <MudSelectItem T="Guid?" Value="@p.IdCodicePagamento">@p.DescrPag</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTooltip Text="Nuovo codice di pagamento">
+                            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                           Variant="Variant.Outlined"
+                                           Ripple="false"
+                                           OnClick="AggiungiPagamentoAsync" />
+                        </MudTooltip>
+                    </div>
+                </MudItem>
+
+                @* Codice IVA *@
+                <MudItem xs="12" sm="6">
+                    <div class="d-flex align-center gap-2">
+                        <MudSelect T="Guid?"
+                                   Label="Codice IVA"
+                                   @bind-Value="_model.IdCodiciIVA"
+                                   Clearable="true"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Class="flex-grow-1">
+                            @foreach (var iva in _codiciIva)
+                            {
+                                <MudSelectItem T="Guid?" Value="@iva.IdCodiceIVA">@iva.Descrizione</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTooltip Text="Nuovo codice IVA">
+                            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                           Variant="Variant.Outlined"
+                                           Ripple="false"
+                                           OnClick="AggiungiCodiceIvaAsync" />
+                        </MudTooltip>
+                    </div>
+                </MudItem>
+
+                @* Banca di appoggio: dipende dal pagamento. Disabilitata finché
+                   non si sceglie un pagamento. Per i pagamenti "di tipo cliente"
+                   il pulsante "Inserisci banca del cliente" si attiva solo dopo
+                   il primo salvataggio (serve l'IdAnagrafica per la banca). *@
+                <MudItem xs="12">
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <MudSelect T="Guid?"
+                                   Label="Banca di appoggio"
+                                   @bind-Value="_model.IdBancaAppoggio"
+                                   Clearable="true"
+                                   Disabled="@(!PagamentoSelezionato)"
+                                   HelperText="@HelperBanca()"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Class="flex-grow-1">
+                            @foreach (var b in _banche)
+                            {
+                                <MudSelectItem T="Guid?" Value="@b.IdBancaAppoggio">@DescriviBanca(b)</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudButton Variant="Variant.Outlined"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Ripple="false"
+                                   Disabled="@(!PuoAggiungereBanca)"
+                                   OnClick="AggiungiBancaAsync">
+                            @EtichettaAggiungiBanca()
+                        </MudButton>
+                    </div>
+
+                    @* Avviso ben visibile per il caso "pagamento di tipo cliente"
+                       prima del primo salvataggio: la banca del cliente è
+                       inseribile solo dopo aver creato l'anagrafica. *@
+                    @if (FlagPagamentoCorrente() == FlagBanca.Cliente && _idCorrente is null)
+                    {
+                        <MudAlert Severity="MudBlazor.Severity.Warning"
+                                  Variant="Variant.Filled"
+                                  Icon="@Icons.Material.Filled.Save"
+                                  Class="mt-2">
+                            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">
+                                Salva prima l'anagrafica per inserire la banca del cliente
+                            </MudText>
+                        </MudAlert>
+                    }
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
                     <MudText Typo="Typo.subtitle2" Class="mb-2">Fatturazione elettronica</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="6">
@@ -171,6 +276,13 @@
                                   Margin="Margin.Dense" />
                 </MudItem>
             </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_infoMessaggio))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Info" Class="mt-3" Variant="Variant.Outlined">
+                    @_infoMessaggio
+                </MudAlert>
+            }
 
             @if (!string.IsNullOrEmpty(_erroreServer))
             {
@@ -221,21 +333,42 @@
     private IReadOnlyList<LookupItem> _paesi = Array.Empty<LookupItem>();
     private IReadOnlyList<LookupItem> _province = Array.Empty<LookupItem>();
 
+    // Id dell'anagrafica se già persistita: in modifica = Iniziale.IdAnagrafica;
+    // in creazione resta null finché non avviene il primo salvataggio (dopo il
+    // quale il dialog passa a modalità modifica senza chiudersi — flusso "salva
+    // fluido" per poter agganciare la banca del cliente).
+    private Guid? _idCorrente;
+    private string? _infoMessaggio;
+
+    private IReadOnlyList<CodicePagamentoRiga> _pagamenti = Array.Empty<CodicePagamentoRiga>();
+    private IReadOnlyList<BancaAppoggioRiga> _banche = Array.Empty<BancaAppoggioRiga>();
+    private IReadOnlyList<CodiceIVA> _codiciIva = Array.Empty<CodiceIVA>();
+
     private bool IsModifica => Iniziale is not null;
 
     protected override async Task OnInitializedAsync()
     {
-        // Carica i lookup in parallelo: ridurre il time-to-paint del form.
+        _idCorrente = Iniziale?.IdAnagrafica;
+
+        // Lookup + cataloghi amministrativi in parallelo: riduce il time-to-paint.
         var paesiTask = LookupRepository.GetPaesiAsync();
         var provinceTask = LookupRepository.GetProvinceAsync();
-        await Task.WhenAll(paesiTask, provinceTask);
+        var pagamentiTask = CodicePagamentoManager.ElencoAsync();
+        var ivaTask = CodiceIVAManager.ElencoAsync();
+        await Task.WhenAll(paesiTask, provinceTask, pagamentiTask, ivaTask);
         _paesi = paesiTask.Result;
         _province = provinceTask.Result;
+        _pagamenti = pagamentiTask.Result;
+        _codiciIva = ivaTask.Result;
 
         if (Iniziale is not null)
         {
             _model = FormModel.FromEntity(Iniziale);
         }
+
+        // In modifica, popola le banche coerenti col pagamento già associato
+        // (la combo deve poter mostrare il valore corrente).
+        await RicaricaBancheAsync();
     }
 
     private void Annulla() => MudDialog.Cancel();
@@ -243,6 +376,7 @@
     private async Task Salva()
     {
         _erroreServer = null;
+        _infoMessaggio = null;
         await _form.ValidateAsync();
         if (!_isValid)
         {
@@ -252,16 +386,31 @@
         _salvataggio = true;
         try
         {
-            var entity = _model.ToEntity(Iniziale?.IdAnagrafica ?? Guid.Empty);
-            if (IsModifica)
+            var entity = _model.ToEntity(_idCorrente ?? Guid.Empty);
+            if (_idCorrente is null)
             {
-                await AnagraficaManager.AggiornaAsync(entity);
+                // Primo salvataggio (creazione): l'Id è assegnato dal manager.
+                _idCorrente = await AnagraficaManager.CreaAsync(entity);
+
+                // Flusso "salva fluido" del caso "pagamento di tipo cliente": se
+                // non c'è ancora una banca associata, NON chiudo il dialog — passa
+                // a modalità modifica così si può inserire la banca del cliente
+                // (ora l'IdAnagrafica esiste a DB, niente ciclo FK).
+                if (FlagPagamentoCorrente() == FlagBanca.Cliente && _model.IdBancaAppoggio is null)
+                {
+                    await RicaricaBancheAsync();
+                    _infoMessaggio = "Anagrafica salvata. Ora puoi inserire la banca del cliente "
+                                   + "con il pulsante qui sopra, poi premi di nuovo Salva.";
+                    return; // resta aperto (il finally azzera comunque _salvataggio)
+                }
+
+                MudDialog.Close(DialogResult.Ok(true));
             }
             else
             {
-                await AnagraficaManager.CreaAsync(entity);
+                await AnagraficaManager.AggiornaAsync(entity);
+                MudDialog.Close(DialogResult.Ok(true));
             }
-            MudDialog.Close(DialogResult.Ok(true));
         }
         catch (AnagraficaInvalidaException ex)
         {
@@ -279,6 +428,117 @@
         finally
         {
             _salvataggio = false;
+        }
+    }
+
+    // ---- Dati amministrativi: stato derivato e azioni ----
+
+    /// <summary>Flag banca (Azienda/Cliente) del pagamento selezionato, o null.</summary>
+    private FlagBanca? FlagPagamentoCorrente()
+        => _model.IdPag is Guid id
+            ? _pagamenti.FirstOrDefault(p => p.IdCodicePagamento == id)?.FlagBanca
+            : null;
+
+    private bool PagamentoSelezionato => FlagPagamentoCorrente() is not null;
+
+    /// <summary>
+    /// La banca si può aggiungere "al volo" se: pagamento Azienda (le banche
+    /// aziendali esistono a prescindere dal cliente) oppure pagamento Cliente ma
+    /// solo dopo il primo salvataggio (serve l'IdAnagrafica per la FK).
+    /// </summary>
+    private bool PuoAggiungereBanca
+    {
+        get
+        {
+            var f = FlagPagamentoCorrente();
+            if (f is null) return false;
+            return f == FlagBanca.Azienda || _idCorrente is not null;
+        }
+    }
+
+    private string EtichettaAggiungiBanca()
+        => FlagPagamentoCorrente() == FlagBanca.Cliente ? "Inserisci banca del cliente" : "Nuova banca aziendale";
+
+    private string? HelperBanca()
+        // Il caso "pagamento cliente non ancora salvato" è ora segnalato da un
+        // MudAlert ben visibile sotto la combo: qui resta solo il caso neutro.
+        => FlagPagamentoCorrente() is null ? "Scegli prima il pagamento" : null;
+
+    private static string DescriviBanca(BancaAppoggioRiga b)
+        => string.IsNullOrWhiteSpace(b.AgenziaNome) ? b.BancaNome : $"{b.BancaNome} — {b.AgenziaNome}";
+
+    private async Task OnPagamentoChangedAsync(Guid? value)
+    {
+        _model.IdPag = value;
+        await RicaricaBancheAsync();
+        // Cambiando la natura del pagamento la banca scelta può non essere più
+        // coerente: la azzeriamo se non rientra tra le selezionabili.
+        if (_model.IdBancaAppoggio is Guid idB && !_banche.Any(b => b.IdBancaAppoggio == idB))
+        {
+            _model.IdBancaAppoggio = null;
+        }
+    }
+
+    /// <summary>Ricarica le banche selezionabili in base al flag del pagamento.</summary>
+    private async Task RicaricaBancheAsync()
+    {
+        _banche = FlagPagamentoCorrente() switch
+        {
+            FlagBanca.Azienda => await BancaAppoggioManager.SelezionabiliAsync(null, bancheAzienda: true),
+            FlagBanca.Cliente when _idCorrente is not null
+                => await BancaAppoggioManager.SelezionabiliAsync(_idCorrente, bancheAzienda: false),
+            _ => Array.Empty<BancaAppoggioRiga>(),
+        };
+    }
+
+    private async Task AggiungiPagamentoAsync()
+    {
+        var dialog = await DialogService.ShowAsync<CodicePagamentoFormDialog>("Nuovo codice di pagamento");
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+        {
+            _pagamenti = await CodicePagamentoManager.ElencoAsync();
+        }
+    }
+
+    private async Task AggiungiCodiceIvaAsync()
+    {
+        var dialog = await DialogService.ShowAsync<CodiceIVAFormDialog>("Nuovo codice IVA");
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+        {
+            _codiciIva = await CodiceIVAManager.ElencoAsync();
+        }
+    }
+
+    private async Task AggiungiBancaAsync()
+    {
+        var parametri = new DialogParameters();
+        if (FlagPagamentoCorrente() == FlagBanca.Cliente)
+        {
+            // Apre il dialog banca bloccato sul cliente corrente (già persistito).
+            parametri.Add(nameof(BancaAppoggioFormDialog.ForzaCliente), true);
+            parametri.Add(nameof(BancaAppoggioFormDialog.IdClientePreimpostato), _idCorrente);
+        }
+        else
+        {
+            // Pagamento di tipo azienda: il dialog banca parte bloccato su Azienda.
+            parametri.Add(nameof(BancaAppoggioFormDialog.ForzaAzienda), true);
+        }
+
+        // Memorizza gli id presenti per individuare e preselezionare la nuova banca.
+        var idPrima = _banche.Select(b => b.IdBancaAppoggio).ToHashSet();
+
+        var dialog = await DialogService.ShowAsync<BancaAppoggioFormDialog>("Banca di appoggio", parametri);
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+        {
+            await RicaricaBancheAsync();
+            var nuova = _banche.FirstOrDefault(b => !idPrima.Contains(b.IdBancaAppoggio));
+            if (nuova is not null)
+            {
+                _model.IdBancaAppoggio = nuova.IdBancaAppoggio;
+            }
         }
     }
 
@@ -304,6 +564,12 @@
         public string? CodiceDestinatario { get; set; }
         public string? PECFatturaElettronica { get; set; }
 
+        // Riferimenti amministrativi (Tappa 6). Nullable: l'anagrafica può non
+        // avere ancora pagamento/banca/codice IVA associati.
+        public Guid? IdPag { get; set; }
+        public Guid? IdBancaAppoggio { get; set; }
+        public Guid? IdCodiciIVA { get; set; }
+
         public static FormModel FromEntity(Anagrafica a) => new()
         {
             TipoAnagrafica        = a.TipoAnagrafica,
@@ -321,6 +587,9 @@
             Contatto              = a.Contatto,
             CodiceDestinatario    = a.CodiceDestinatario,
             PECFatturaElettronica = a.PECFatturaElettronica,
+            IdPag                 = a.IdPag,
+            IdBancaAppoggio       = a.IdBancaAppoggio,
+            IdCodiciIVA           = a.IdCodiciIVA,
         };
 
         public Anagrafica ToEntity(Guid idAnagrafica) => new()
@@ -341,6 +610,9 @@
             Contatto              = Contatto,
             CodiceDestinatario    = CodiceDestinatario,
             PECFatturaElettronica = PECFatturaElettronica,
+            IdPag                 = IdPag,
+            IdBancaAppoggio       = IdBancaAppoggio,
+            IdCodiciIVA           = IdCodiciIVA,
         };
     }
 }

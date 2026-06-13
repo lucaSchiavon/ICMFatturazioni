@@ -19,6 +19,9 @@
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers
 @inject IAnagraficaManager AnagraficaManager
+@inject ICodicePagamentoManager CodicePagamentoManager
+@inject IBancaAppoggioManager BancaAppoggioManager
+@inject ICodiceIVAManager CodiceIVAManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
@@ -123,6 +126,17 @@
         <PropertyColumn Property="x => x.SiglaPaese"  Title="Paese" />
         <PropertyColumn Property="x => x.Email"       Title="Email" />
         <PropertyColumn Property="x => x.Telefono"    Title="Telefono" />
+        @* Riferimenti amministrativi risolti (Tappa 6): mostrano la descrizione
+           leggibile invece del GUID. "—" quando non associati. *@
+        <TemplateColumn Title="Pagamento" Sortable="false">
+            <CellTemplate>@RisolviPagamento(context.Item.IdPag)</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Banca" Sortable="false">
+            <CellTemplate>@RisolviBanca(context.Item.IdBancaAppoggio)</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Cod. IVA" Sortable="false">
+            <CellTemplate>@RisolviIva(context.Item.IdCodiciIVA)</CellTemplate>
+        </TemplateColumn>
         @* Azione rapida per riga: elimina (disattiva) la singola anagrafica
            senza doverla prima selezionare in toolbar. *@
         <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
@@ -153,6 +167,13 @@
     private TipoAnagrafica? _filtroTipo;
     private bool _caricamento = true;
 
+    // Mappe Id→descrizione per risolvere i riferimenti amministrativi in griglia.
+    // Ricaricate insieme alle anagrafiche (i cataloghi sono piccoli e possono
+    // cambiare se l'utente ne aggiunge "al volo" dal dialog).
+    private Dictionary<Guid, string> _pagamentoDesc = new();
+    private Dictionary<Guid, string> _bancaDesc = new();
+    private Dictionary<Guid, string> _ivaDesc = new();
+
     protected override async Task OnInitializedAsync()
     {
         await RicaricaAsync();
@@ -163,7 +184,18 @@
         _caricamento = true;
         try
         {
-            _anagrafiche = await AnagraficaManager.ElencoAsync();
+            var anagTask = AnagraficaManager.ElencoAsync();
+            var pagTask = CodicePagamentoManager.ElencoAsync();
+            var bancaTask = BancaAppoggioManager.ElencoAsync();
+            var ivaTask = CodiceIVAManager.ElencoAsync();
+            await Task.WhenAll(anagTask, pagTask, bancaTask, ivaTask);
+
+            _anagrafiche = anagTask.Result;
+            _pagamentoDesc = pagTask.Result.ToDictionary(p => p.IdCodicePagamento, p => p.DescrPag);
+            _bancaDesc = bancaTask.Result.ToDictionary(
+                b => b.IdBancaAppoggio,
+                b => string.IsNullOrWhiteSpace(b.AgenziaNome) ? b.BancaNome : $"{b.BancaNome} — {b.AgenziaNome}");
+            _ivaDesc = ivaTask.Result.ToDictionary(i => i.IdCodiceIVA, i => i.Descrizione);
         }
         catch (Exception ex)
         {
@@ -237,6 +269,12 @@
         TipoAnagrafica.EntePubblico => Color.Secondary,
         _ => Color.Default,
     };
+
+    // Risoluzione Id→descrizione per le colonne amministrative ("—" se assente
+    // o non più presente nel catalogo).
+    private string RisolviPagamento(Guid? id) => id is Guid g && _pagamentoDesc.TryGetValue(g, out var v) ? v : "—";
+    private string RisolviBanca(Guid? id) => id is Guid g && _bancaDesc.TryGetValue(g, out var v) ? v : "—";
+    private string RisolviIva(Guid? id) => id is Guid g && _ivaDesc.TryGetValue(g, out var v) ? v : "—";
 
     private async Task ApriDialogAggiungi()
     {

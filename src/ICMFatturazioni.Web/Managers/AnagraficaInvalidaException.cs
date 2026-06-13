@@ -22,6 +22,32 @@ public enum AnagraficaInvalidaMotivo
     /// <c>fatt.Province</c> (intercettata via FK constraint).
     /// </summary>
     ProvinciaInesistente,
+
+    /// <summary>
+    /// Il codice di pagamento indicato non esiste o non è attivo
+    /// (pre-check manager su <c>fatt.CodiciPagamento</c>; FK come sentinel).
+    /// </summary>
+    PagamentoInesistente,
+
+    /// <summary>
+    /// La banca di appoggio indicata non esiste o non è attiva
+    /// (pre-check manager su <c>fatt.BancheAppoggio</c>; FK come sentinel).
+    /// </summary>
+    BancaInesistente,
+
+    /// <summary>
+    /// La banca scelta non è coerente con il <c>FlagBanca</c> del pagamento:
+    /// pagamento "dati azienda" ⟹ banca aziendale; pagamento "dati cliente"
+    /// ⟹ banca di QUESTO cliente. Regola di dominio che incrocia due tabelle:
+    /// presidiata solo a livello applicativo (non è esprimibile come FK).
+    /// </summary>
+    BancaNonCoerenteColPagamento,
+
+    /// <summary>
+    /// Il codice IVA indicato non esiste o non è attivo
+    /// (pre-check manager su <c>fatt.CodiciIVA</c>; FK come sentinel).
+    /// </summary>
+    CodiceIVAInesistente,
 }
 
 /// <summary>

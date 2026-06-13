@@ -28,9 +28,11 @@
     <DialogContent>
         <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
 
-            @* Natura: toggle in creazione, intestazione fissa in modifica. *@
+            @* Natura: toggle in creazione, intestazione fissa in modifica.
+               In modalità ForzaCliente/ForzaAzienda (apertura "al volo" dalla
+               maschera anagrafica) il tipo è fisso: niente toggle. *@
             <div class="mb-4">
-                @if (!IsModifica)
+                @if (!IsModifica && !ForzaCliente && !ForzaAzienda)
                 {
                     <MudText Typo="Typo.caption" Class="mb-1">Tipo di banca</MudText>
                     <MudStack Row="true" Spacing="2">
@@ -62,20 +64,33 @@
                 @if (!_isAzienda)
                 {
                     <MudItem xs="12">
-                        <MudSelect T="Guid?"
-                                   Label="Intestatario (cliente) *"
-                                   @bind-Value="_model.IdCliente"
-                                   Required="true"
-                                   RequiredError="Selezionare il cliente intestatario"
-                                   Variant="Variant.Outlined"
-                                   Margin="Margin.Dense"
-                                   Class="campo-obbligatorio"
-                                   Clearable="true">
-                            @foreach (var a in _clienti)
-                            {
-                                <MudSelectItem T="Guid?" Value="@a.IdAnagrafica">@a.RagioneSociale</MudSelectItem>
-                            }
-                        </MudSelect>
+                        @if (ForzaCliente)
+                        {
+                            @* Intestatario fisso: è il cliente che si sta creando
+                               nella maschera anagrafica. Non modificabile qui. *@
+                            <MudField Label="Intestatario (cliente)"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense">
+                                @NomeClientePreimpostato()
+                            </MudField>
+                        }
+                        else
+                        {
+                            <MudSelect T="Guid?"
+                                       Label="Intestatario (cliente) *"
+                                       @bind-Value="_model.IdCliente"
+                                       Required="true"
+                                       RequiredError="Selezionare il cliente intestatario"
+                                       Variant="Variant.Outlined"
+                                       Margin="Margin.Dense"
+                                       Class="campo-obbligatorio"
+                                       Clearable="true">
+                                @foreach (var a in _clienti)
+                                {
+                                    <MudSelectItem T="Guid?" Value="@a.IdAnagrafica">@a.RagioneSociale</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
                     </MudItem>
                 }
 
@@ -176,6 +191,24 @@
     /// <summary>Riga iniziale: null = Aggiungi, valorizzata = Modifica.</summary>
     [Parameter] public BancaAppoggioRiga? Iniziale { get; set; }
 
+    /// <summary>
+    /// Se true il dialog parte (in creazione) bloccato sul tipo "Cliente" con
+    /// l'intestatario fisso a <see cref="IdClientePreimpostato"/>: niente toggle
+    /// Azienda/Cliente, niente select intestatario. Usato dall'apertura "al volo"
+    /// dalla maschera anagrafica per inserire la banca del cliente corrente.
+    /// </summary>
+    [Parameter] public bool ForzaCliente { get; set; }
+
+    /// <summary>Cliente intestatario quando <see cref="ForzaCliente"/> è true.</summary>
+    [Parameter] public Guid? IdClientePreimpostato { get; set; }
+
+    /// <summary>
+    /// Se true il dialog parte (in creazione) bloccato sul tipo "Azienda":
+    /// niente toggle. Usato dall'apertura "al volo" dalla maschera anagrafica
+    /// quando il pagamento scelto usa i dati bancari dell'azienda.
+    /// </summary>
+    [Parameter] public bool ForzaAzienda { get; set; }
+
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
 
     private MudForm _form = default!;
@@ -204,6 +237,24 @@
             _isAzienda = Iniziale.IsBancaAzienda;
             await RicaricaAgenzieAsync(_model.BancaNome);
         }
+        else if (ForzaCliente)
+        {
+            // Creazione "al volo" della banca del cliente corrente: tipo fisso a
+            // Cliente e intestatario preimpostato (la select è nascosta).
+            _isAzienda = false;
+            _model.IdCliente = IdClientePreimpostato;
+        }
+        else if (ForzaAzienda)
+        {
+            // Creazione "al volo" di una banca aziendale: tipo fisso ad Azienda.
+            _isAzienda = true;
+        }
+    }
+
+    private string NomeClientePreimpostato()
+    {
+        var c = _clienti.FirstOrDefault(a => a.IdAnagrafica == IdClientePreimpostato);
+        return c?.RagioneSociale ?? "cliente corrente";
     }
 
     // ---- Toggle natura (solo creazione, schede indipendenti) ----
