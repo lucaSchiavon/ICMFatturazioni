@@ -16,4 +16,7 @@ public interface IAuditRepository
 
     /// <summary>Tipi di entità distinti presenti in tabella (per popolare il filtro UI).</summary>
     Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Elimina le righe con <c>TimestampUtc &lt; soglia</c>. Ritorna le righe eliminate.</summary>
+    Task<int> PurgaPrecedentiAsync(DateTime sogliaUtc, CancellationToken cancellationToken = default);
 }

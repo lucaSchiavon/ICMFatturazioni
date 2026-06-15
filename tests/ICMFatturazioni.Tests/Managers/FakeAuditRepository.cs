@@ -46,4 +46,10 @@ internal sealed class FakeAuditRepository : IAuditRepository
     public Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<string>>(
             Inseriti.Select(a => a.EntityType).Distinct().OrderBy(t => t).ToList());
+
+    public Task<int> PurgaPrecedentiAsync(DateTime sogliaUtc, CancellationToken cancellationToken = default)
+    {
+        var rimossi = Inseriti.RemoveAll(a => a.TimestampUtc < sogliaUtc);
+        return Task.FromResult(rimossi);
+    }
 }

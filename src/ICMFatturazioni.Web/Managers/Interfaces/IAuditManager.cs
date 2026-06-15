@@ -23,4 +23,13 @@ public interface IAuditManager
 
     /// <summary>Tipi di entità distinti presenti, per popolare il filtro UI.</summary>
     Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retention temporale: elimina le righe di audit più vecchie di
+    /// <paramref name="mesi"/> mesi. Ritorna le righe eliminate. La purga di per
+    /// sé NON viene a sua volta auditata (è manutenzione, non un'operazione di
+    /// dominio dell'utente). Usata sia dal job automatico (AuditRetentionService)
+    /// sia dal pulsante manuale in <c>/admin/audit</c>; idempotente.
+    /// </summary>
+    Task<int> PurgaPrecedentiAsync(int mesi, CancellationToken cancellationToken = default);
 }

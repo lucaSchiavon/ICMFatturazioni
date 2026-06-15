@@ -84,6 +84,14 @@ internal sealed class AuditManager : IAuditManager
     public Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default)
         => _repository.GetEntityTypesAsync(cancellationToken);
 
+    public Task<int> PurgaPrecedentiAsync(int mesi, CancellationToken cancellationToken = default)
+    {
+        // Soglia calcolata col TimeProvider (testabile). |mesi| per tollerare un
+        // input negativo accidentale dalla UI senza purgare il futuro.
+        var soglia = _clock.GetUtcNow().UtcDateTime.AddMonths(-Math.Abs(mesi));
+        return _repository.PurgaPrecedentiAsync(soglia, cancellationToken);
+    }
+
     private static string? Tronca(string? s, int max)
         => s is not null && s.Length > max ? s[..max] : s;
 }

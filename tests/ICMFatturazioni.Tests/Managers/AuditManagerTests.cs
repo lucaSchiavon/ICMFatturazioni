@@ -108,6 +108,22 @@ public class AuditManagerTests
     }
 
     [Fact]
+    public async Task PurgaPrecedentiAsync_EliminaSoloLeRigheOltreLaFinestra()
+    {
+        var clock = new TestTimeProvider(new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero));
+        var repo = new FakeAuditRepository();
+        var sut = new AuditManager(repo, new FakeCurrentUserAccessor(Operatore, "admin"), new FakeLogManager(), clock);
+        var adesso = clock.GetUtcNow().UtcDateTime;
+        await repo.InsertAsync(new Audit { Id = Guid.NewGuid(), TimestampUtc = adesso.AddMonths(-40), Operazione = AuditOperazione.Creazione, EntityType = "X" });
+        await repo.InsertAsync(new Audit { Id = Guid.NewGuid(), TimestampUtc = adesso.AddMonths(-1), Operazione = AuditOperazione.Creazione, EntityType = "X" });
+
+        var eliminate = await sut.PurgaPrecedentiAsync(36);
+
+        Assert.Equal(1, eliminate);
+        Assert.Single(repo.Inseriti);
+    }
+
+    [Fact]
     public async Task GetEntityTypesAsync_RestituisceITipiDistintiOrdinati()
     {
         var repo = new FakeAuditRepository();

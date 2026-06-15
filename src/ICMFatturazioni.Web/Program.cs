@@ -5,6 +5,7 @@ using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Email;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Logging;
+using ICMFatturazioni.Web.Manutenzione;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Repositories;
@@ -195,6 +196,16 @@ builder.Services.AddProblemDetails();
 builder.Services.AddScoped<IAuditRepository, AuditRepository>();
 builder.Services.AddScoped<IAuditManager, AuditManager>();
 builder.Services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
+
+// === Retention/manutenzione audit (migration 024 + nota dimensionamento) ===
+// Compressione PAGE a DB (migration 024) + retention temporale a 36 mesi e
+// sentinella sui 10 GB di Express. La purga è esposta anche manualmente in
+// /admin/audit; il job automatico (AuditRetentionService) la applica a cadenza.
+builder.Services.Configure<AuditRetentionOptions>(
+    builder.Configuration.GetSection(AuditRetentionOptions.SectionName));
+builder.Services.AddScoped<IDatabaseSizeRepository, DatabaseSizeRepository>();
+builder.Services.AddScoped<IAuditManutenzione, AuditManutenzione>();
+builder.Services.AddHostedService<AuditRetentionService>();
 
 var app = builder.Build();
 

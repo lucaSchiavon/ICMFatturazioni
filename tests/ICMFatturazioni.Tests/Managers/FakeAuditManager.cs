@@ -30,10 +30,19 @@ internal sealed class FakeAuditManager : IAuditManager
         return Task.CompletedTask;
     }
 
+    /// <summary>Mesi richiesti all'ultima purga (per i test che la verificano).</summary>
+    public int? PurgaMesiRichiesti { get; private set; }
+
     // Non esercitati dai test che usano questo fake: stub minimi.
     public Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default)
         => Task.FromResult(new AuditRisultato(Array.Empty<Audit>(), 0));
 
     public Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+
+    public Task<int> PurgaPrecedentiAsync(int mesi, CancellationToken cancellationToken = default)
+    {
+        PurgaMesiRichiesti = mesi;
+        return Task.FromResult(0);
+    }
 }

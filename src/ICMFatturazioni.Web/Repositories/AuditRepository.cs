@@ -100,4 +100,12 @@ internal sealed class AuditRepository : IAuditRepository
             "SELECT DISTINCT EntityType FROM fatt.Audit ORDER BY EntityType;", cancellationToken: cancellationToken));
         return rows.ToList();
     }
+
+    public async Task<int> PurgaPrecedentiAsync(DateTime sogliaUtc, CancellationToken cancellationToken = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        return await conn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM fatt.Audit WHERE TimestampUtc < @SogliaUtc;",
+            new { SogliaUtc = sogliaUtc }, cancellationToken: cancellationToken));
+    }
 }

@@ -10,13 +10,36 @@
 @using ICMFatturazioni.Web.Auditing
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Manutenzione
 @using ICMFatturazioni.Web.Models
 @using ICMFatturazioni.Web.Presentation
+@using Microsoft.Extensions.Options
 @inject IAuditManager AuditManager
+@inject IAuditManutenzione AuditManutenzione
+@inject IOptions<AuditRetentionOptions> RetentionOptions
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>Audit · ICM Fatturazioni</PageTitle>
 
-<MudText Typo="Typo.h1" Class="mb-4">Audit operazioni</MudText>
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h1">Audit operazioni</MudText>
+    <MudButton Variant="Variant.Outlined" Color="Color.Error"
+               StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="PurgaAsync">
+        Purga &gt; @MesiConservazione mesi
+    </MudButton>
+</MudStack>
+
+@* Sentinella dimensione DB: avviso visibile quando i file dati superano la
+   soglia (tetto 10 GB di SQL Express). Stesso evento persistito in fatt.Log. *@
+@if (_stato is { Allarme: true })
+{
+    <MudAlert Severity="MudBlazor.Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+        Il database occupa <b>@_stato.DimensioneDatiMb MB</b>, oltre la soglia di allarme di
+        <b>@_stato.SogliaGb GB</b> (tetto SQL Server Express 10 GB). Valuta una retention più
+        stretta (riduci i mesi di conservazione) o l'archiviazione dei dati storici di audit/log.
+    </MudAlert>
+}
 
 <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
     <MudGrid Spacing="2">
@@ -105,8 +128,41 @@
     private string? _entityType;
     private string? _testo;
 
+    // Finestra di retention configurata (appsettings: AuditRetention:MesiConservazione).
+    private int MesiConservazione => RetentionOptions.Value.MesiConservazione;
+
+    // Stato dimensione DB vs soglia (per il banner di avviso). Sola lettura.
+    private StatoDimensione? _stato;
+
     protected override async Task OnInitializedAsync()
-        => _entityTypes = await AuditManager.GetEntityTypesAsync();
+    {
+        _entityTypes = await AuditManager.GetEntityTypesAsync();
+        _stato = await AuditManutenzione.ValutaDimensioneAsync();
+    }
+
+    private async Task PurgaAsync()
+    {
+        var mesi = MesiConservazione;
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Purga audit?" },
+            { x => x.NomeElemento, $"Operazioni più vecchie di {mesi} mesi" },
+            { x => x.Messaggio, "Verranno eliminate definitivamente dalla tabella fatt.Audit." },
+            { x => x.TestoConferma, "Elimina" },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var result = await dialog.Result;
+        if (result is not { Canceled: false })
+        {
+            return;
+        }
+
+        var eliminate = await AuditManager.PurgaPrecedentiAsync(mesi);
+        Snackbar.Add($"Eliminate {eliminate} righe di audit.", MudBlazor.Severity.Success);
+        _stato = await AuditManutenzione.ValutaDimensioneAsync();
+        await _grid.ReloadServerData();
+    }
 
     private async Task<GridData<Audit>> CaricaAsync(GridState<Audit> state, CancellationToken ct)
     {
