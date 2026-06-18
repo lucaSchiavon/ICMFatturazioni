@@ -20,6 +20,8 @@
 @using System.Globalization
 
 @inject IAttivitaManager AttivitaManager
+@inject IAttivitaDettaglioManager AttivitaDettaglioManager
+@inject ITipoDettaglioAttivitaManager TipoDettaglioAttivitaManager
 @inject IAnagraficaManager AnagraficaManager
 @inject ITipoAttivitaManager TipoAttivitaManager
 @inject IDialogService DialogService
@@ -320,11 +322,223 @@
                 }
             </MudStack>
 
-            @* Placeholder sezione dettagli (da sviluppare in Tappa 9) *@
-            <MudDivider Class="mt-4 mb-2" />
-            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
-                Dettagli attività — in sviluppo (Tappa 9)
-            </MudText>
+            @* ── Sezione dettagli attività ───────────────────────────────── *@
+            <MudDivider Class="mt-4 mb-3" />
+
+            <div class="d-flex align-center justify-space-between mb-2">
+                <MudText Typo="Typo.overline" Style="font-weight:700;">
+                    Dettagli attività
+                    @if (_dettagliLista.Count > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-1">
+                            @_dettagliLista.Count
+                        </MudChip>
+                    }
+                </MudText>
+                @if (_modalitaDettagli == ModalitaDettagli.SolaLettura)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Edit"
+                               Ripple="false"
+                               OnClick="AvviaGestioneDettagli">
+                        Gestione dettagli
+                    </MudButton>
+                }
+                else
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.CheckCircle"
+                               Ripple="false"
+                               OnClick="TerminaGestioneDettagli">
+                        Termina modifica
+                    </MudButton>
+                }
+            </div>
+
+            @* Form inserimento/modifica dettaglio (solo in modalità Modifica) *@
+            @if (_modalitaDettagli == ModalitaDettagli.Modifica)
+            {
+                <MudPaper Elevation="0" Class="mud-background-gray rounded pa-3 mb-3">
+                    <MudText Typo="Typo.caption" Class="mb-2">
+                        @(_dettaglioInModifica is null
+                            ? "Nuovo dettaglio"
+                            : $"Modifica: {_dettaglioInModifica.DescrizioneDettaglio}")
+                    </MudText>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudSelect T="Guid" @bind-Value="_fDettIdTipo"
+                                       Label="Tipo dettaglio *"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var t in _tipiDettaglio)
+                                {
+                                    <MudSelectItem T="Guid" Value="@t.IdTipoDettaglioAttivita">
+                                        @t.Descrizione
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="_fDettDescrizione"
+                                          Label="Descrizione *"
+                                          MaxLength="200"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                                          Immediate="true" />
+                        </MudItem>
+                        <MudItem xs="6" sm="3" md="2">
+                            <MudDatePicker Label="Termine previsto"
+                                           Date="_fDettTermine"
+                                           DateChanged="@(d => _fDettTermine = d)"
+                                           DateFormat="dd/MM/yyyy"
+                                           Culture="_itCulture"
+                                           Editable="true"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="6" sm="3" md="3">
+                            <MudNumericField T="decimal" @bind-Value="_fDettImporto"
+                                             Label="Importo € *"
+                                             Min="0.01m" Format="N2" Culture="_itCulture"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudTextField @bind-Value="_fDettNota"
+                                          Label="Nota (opzionale)"
+                                          MaxLength="500"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    </MudGrid>
+                    @if (!string.IsNullOrWhiteSpace(_erroreFormDettaglio))
+                    {
+                        <MudAlert Severity="MudBlazor.Severity.Error" Dense="true" Class="mt-2">
+                            @_erroreFormDettaglio
+                        </MudAlert>
+                    }
+                    <div class="d-flex justify-end gap-2 mt-2">
+                        @if (_dettaglioInModifica is not null)
+                        {
+                            <MudButton Size="Size.Small" Ripple="false"
+                                       StartIcon="@Icons.Material.Filled.Cancel"
+                                       OnClick="ResetFormDettaglio">
+                                Annulla modifica
+                            </MudButton>
+                        }
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   Ripple="false"
+                                   StartIcon="@(_dettaglioInModifica is null ? Icons.Material.Filled.Add : Icons.Material.Filled.Save)"
+                                   Disabled="_salvataggioDettaglio"
+                                   OnClick="SalvaDettaglioAsync">
+                            @(_salvataggioDettaglio ? "Salvataggio…"
+                              : _dettaglioInModifica is null ? "Aggiungi dettaglio" : "Salva")
+                        </MudButton>
+                    </div>
+                </MudPaper>
+            }
+
+            @* Griglia dettagli *@
+            @if (_caricamentoDettagli)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+            }
+            else if (_dettagliLista.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="py-3 text-center">
+                    Nessun dettaglio inserito.
+                    @if (_modalitaDettagli == ModalitaDettagli.SolaLettura)
+                    {
+                        <span> Clicca "Gestione dettagli" per aggiungerne.</span>
+                    }
+                </MudText>
+            }
+            else
+            {
+                <div style="overflow-x:auto;">
+                    <MudTable Items="_dettagliLista" Dense="true" Striped="true" Hover="true"
+                              Style="min-width:680px;">
+                        <HeaderContent>
+                            @if (_modalitaDettagli == ModalitaDettagli.Modifica)
+                            {
+                                <MudTh Style="width:72px;"></MudTh>
+                            }
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Descrizione</MudTh>
+                            <MudTh>Nota</MudTh>
+                            <MudTh>Termine</MudTh>
+                            <MudTh Style="text-align:right;">Importo €</MudTh>
+                            <MudTh Style="text-align:center;width:76px;">Scadenze</MudTh>
+                            @if (_modalitaDettagli == ModalitaDettagli.Modifica)
+                            {
+                                <MudTh Style="width:80px;"></MudTh>
+                            }
+                        </HeaderContent>
+                        <RowTemplate>
+                            @if (_modalitaDettagli == ModalitaDettagli.Modifica)
+                            {
+                                <MudTd Style="padding:2px 4px;">
+                                    <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward"
+                                                   Size="Size.Small" Ripple="false"
+                                                   Disabled="@(context.IdAttivitaDettaglio == _dettagliLista[0].IdAttivitaDettaglio)"
+                                                   OnClick="@(() => SpostaSuAsync(context))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward"
+                                                   Size="Size.Small" Ripple="false"
+                                                   Disabled="@(context.IdAttivitaDettaglio == _dettagliLista[^1].IdAttivitaDettaglio)"
+                                                   OnClick="@(() => SpostaGiuAsync(context))" />
+                                </MudTd>
+                            }
+                            <MudTd>@context.TipoDettaglioDescrizione</MudTd>
+                            <MudTd>@context.DescrizioneDettaglio</MudTd>
+                            <MudTd>
+                                @if (!string.IsNullOrWhiteSpace(context.NotaDettaglio))
+                                {
+                                    <MudTooltip Text="@context.NotaDettaglio">
+                                        <span style="cursor:help;">
+                                            <MudIcon Icon="@Icons.Material.Filled.StickyNote2"
+                                                     Size="Size.Small"
+                                                     Style="color:var(--mud-palette-text-secondary);vertical-align:middle;" />
+                                        </span>
+                                    </MudTooltip>
+                                    <span class="ml-1" style="font-size:.85em;">@context.NotaDettaglio</span>
+                                }
+                            </MudTd>
+                            <MudTd>
+                                @(context.TerminePrevisto.HasValue
+                                    ? context.TerminePrevisto.Value.ToString("dd/MM/yyyy")
+                                    : "—")
+                            </MudTd>
+                            <MudTd Style="text-align:right;font-weight:600;">
+                                @context.Importo.ToString("N2", _itCulture)
+                            </MudTd>
+                            <MudTd Style="text-align:center;">
+                                <MudBadge Content="@(context.NumeroScadenze > 0 ? context.NumeroScadenze.ToString() : null)"
+                                          Color="Color.Info" Overlap="true" Bordered="true">
+                                    <MudIconButton Icon="@Icons.Material.Filled.CalendarMonth"
+                                                   Size="Size.Small" Ripple="false"
+                                                   aria-label="Gestione scadenze"
+                                                   OnClick="@(() => ApriScadenzeAsync(context))" />
+                                </MudBadge>
+                            </MudTd>
+                            @if (_modalitaDettagli == ModalitaDettagli.Modifica)
+                            {
+                                <MudTd Style="padding:2px 4px;">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                   Size="Size.Small" Ripple="false"
+                                                   Disabled="@context.HasFattura"
+                                                   OnClick="@(() => AvviaModificaDettaglio(context))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   Size="Size.Small" Ripple="false"
+                                                   Color="Color.Error"
+                                                   Disabled="@context.HasFattura"
+                                                   OnClick="@(() => EliminaDettaglioAsync(context))" />
+                                </MudTd>
+                            }
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+                <div class="d-flex justify-end mt-2">
+                    <MudText Typo="Typo.subtitle2">
+                        Totale:
+                        <strong>@_dettagliLista.Sum(d => d.Importo).ToString("N2", _itCulture) €</strong>
+                    </MudText>
+                </div>
+            }
         }
 
     </MudPaper>
@@ -335,6 +549,8 @@
     private enum Modalita { Nessuna, Inserimento, Visualizzazione, Modifica }
 
     private enum FiltroTipo { Tutti, Enti, Societa, Privati }
+
+    private enum ModalitaDettagli { SolaLettura, Modifica }
 
     // ─── Cultura ─────────────────────────────────────────────────────────
     private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
@@ -373,6 +589,22 @@
     private DateTime? _fConcessioneEdilizia;
     private DateTime? _fInizioLavori;
     private decimal?  _fImportoOpera;
+
+    // ─── Dettagli attività ───────────────────────────────────────────────
+    private ModalitaDettagli                    _modalitaDettagli   = ModalitaDettagli.SolaLettura;
+    private IReadOnlyList<AttivitaDettaglio>    _dettagliLista      = Array.Empty<AttivitaDettaglio>();
+    private IReadOnlyList<TipoDettaglioAttivita> _tipiDettaglio     = Array.Empty<TipoDettaglioAttivita>();
+    private bool                                _caricamentoDettagli;
+    private AttivitaDettaglio?                  _dettaglioInModifica;
+
+    // Campi del form dettaglio inline
+    private Guid      _fDettIdTipo          = Guid.Empty;
+    private string    _fDettDescrizione     = string.Empty;
+    private decimal   _fDettImporto;
+    private DateTime? _fDettTermine;
+    private string    _fDettNota            = string.Empty;
+    private bool      _salvataggioDettaglio;
+    private string    _erroreFormDettaglio  = string.Empty;
 
     // ─── Computed: anagrafiche filtrate ─────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -461,6 +693,10 @@
         _attivitaSelezionataEliminabile = await AttivitaManager.EEliminabileAsync(a.IdAttivita);
         _modalita                       = Modalita.Visualizzazione;
         _erroreForm                     = string.Empty;
+        // Carica i dettagli della nuova selezione, resettando la modalità di editing.
+        _modalitaDettagli = ModalitaDettagli.SolaLettura;
+        ResetFormDettaglio();
+        await CaricaDettagliAsync();
     }
 
     // ─── Filtro tipo anagrafica con reset selezione se necessario ────────
@@ -625,5 +861,202 @@
         _fInizioLavori        = a.InizioLavori?.ToDateTime(TimeOnly.MinValue);
         _fImportoOpera        = a.ImportoOpera;
         _erroreForm           = string.Empty;
+    }
+
+    // ─── Caricamento dettagli ────────────────────────────────────────────
+    private async Task CaricaDettagliAsync()
+    {
+        if (_attivitaSelezionata is null) return;
+        _caricamentoDettagli = true;
+        try
+        {
+            _dettagliLista = await AttivitaDettaglioManager.ElencoPerAttivitaAsync(
+                _attivitaSelezionata.IdAttivita);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dettagli fallito.", "GestAttivitaStudio.CaricaDettagliAsync");
+            Snackbar.Add("Errore nel caricamento dei dettagli.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoDettagli = false; }
+    }
+
+    // ─── Avvio/termine modalità Gestione Dettagli ────────────────────────
+    private async Task AvviaGestioneDettagli()
+    {
+        // Carica i tipi dettaglio la prima volta (singleton della pagina).
+        if (_tipiDettaglio.Count == 0)
+            _tipiDettaglio = await TipoDettaglioAttivitaManager.ElencoAsync();
+        _modalitaDettagli = ModalitaDettagli.Modifica;
+        ResetFormDettaglio();
+    }
+
+    private void TerminaGestioneDettagli()
+    {
+        _modalitaDettagli = ModalitaDettagli.SolaLettura;
+        ResetFormDettaglio();
+    }
+
+    // ─── Form dettaglio ──────────────────────────────────────────────────
+    private void AvviaModificaDettaglio(AttivitaDettaglio d)
+    {
+        _dettaglioInModifica  = d;
+        _fDettIdTipo          = d.IdTipoDettaglioAttivita;
+        _fDettDescrizione     = d.DescrizioneDettaglio;
+        _fDettImporto         = d.Importo;
+        _fDettTermine         = d.TerminePrevisto?.ToDateTime(TimeOnly.MinValue);
+        _fDettNota            = d.NotaDettaglio ?? string.Empty;
+        _erroreFormDettaglio  = string.Empty;
+    }
+
+    private void ResetFormDettaglio()
+    {
+        _dettaglioInModifica  = null;
+        _fDettIdTipo          = Guid.Empty;
+        _fDettDescrizione     = string.Empty;
+        _fDettImporto         = 0m;
+        _fDettTermine         = null;
+        _fDettNota            = string.Empty;
+        _erroreFormDettaglio  = string.Empty;
+    }
+
+    private async Task SalvaDettaglioAsync()
+    {
+        _erroreFormDettaglio = string.Empty;
+        if (_fDettIdTipo == Guid.Empty)
+        {
+            _erroreFormDettaglio = "Selezionare il tipo dettaglio.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_fDettDescrizione))
+        {
+            _erroreFormDettaglio = "La descrizione è obbligatoria.";
+            return;
+        }
+        if (_fDettImporto <= 0)
+        {
+            _erroreFormDettaglio = "L'importo deve essere maggiore di zero.";
+            return;
+        }
+        if (_attivitaSelezionata is null) return;
+
+        _salvataggioDettaglio = true;
+        try
+        {
+            var d = new AttivitaDettaglio
+            {
+                IdAttivitaDettaglio     = _dettaglioInModifica?.IdAttivitaDettaglio ?? Guid.Empty,
+                IdAttivita              = _attivitaSelezionata.IdAttivita,
+                IdTipoDettaglioAttivita = _fDettIdTipo,
+                Ordine                  = _dettaglioInModifica?.Ordine ?? 0,
+                DescrizioneDettaglio    = _fDettDescrizione.Trim(),
+                Importo                 = _fDettImporto,
+                NotaDettaglio           = string.IsNullOrWhiteSpace(_fDettNota) ? null : _fDettNota.Trim(),
+                TerminePrevisto         = _fDettTermine.HasValue ? DateOnly.FromDateTime(_fDettTermine.Value) : null,
+                HasFattura              = _dettaglioInModifica?.HasFattura ?? false,
+            };
+
+            if (_dettaglioInModifica is null)
+            {
+                await AttivitaDettaglioManager.CreaAsync(d);
+                Snackbar.Add("Dettaglio aggiunto.", MudBlazor.Severity.Success);
+            }
+            else
+            {
+                await AttivitaDettaglioManager.AggiornaAsync(d);
+                Snackbar.Add("Dettaglio aggiornato.", MudBlazor.Severity.Success);
+            }
+
+            ResetFormDettaglio();
+            await CaricaDettagliAsync();
+        }
+        catch (AttivitaDettaglioInvalidaException ex)
+        {
+            _erroreFormDettaglio = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio dettaglio fallito.", "GestAttivitaStudio.SalvaDettaglioAsync");
+            _erroreFormDettaglio = "Errore inatteso durante il salvataggio.";
+        }
+        finally { _salvataggioDettaglio = false; }
+    }
+
+    private async Task EliminaDettaglioAsync(AttivitaDettaglio d)
+    {
+        var p = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare dettaglio?" },
+            { x => x.NomeElemento, d.DescrizioneDettaglio },
+            { x => x.Messaggio, "Il dettaglio verrà rimosso dall'attività." },
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, p, o);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await AttivitaDettaglioManager.EliminaAsync(d.IdAttivitaDettaglio);
+            Snackbar.Add("Dettaglio eliminato.", MudBlazor.Severity.Success);
+            ResetFormDettaglio();
+            await CaricaDettagliAsync();
+        }
+        catch (AttivitaDettaglioInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione dettaglio fallita.", "GestAttivitaStudio.EliminaDettaglioAsync");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // ─── Riordinamento dettagli ──────────────────────────────────────────
+    private async Task SpostaSuAsync(AttivitaDettaglio d)
+    {
+        try
+        {
+            await AttivitaDettaglioManager.SpostaSuAsync(d.IdAttivitaDettaglio);
+            await CaricaDettagliAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Riordinamento dettaglio fallito.", "GestAttivitaStudio.SpostaSuAsync");
+            Snackbar.Add("Errore nel riordinamento.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private async Task SpostaGiuAsync(AttivitaDettaglio d)
+    {
+        try
+        {
+            await AttivitaDettaglioManager.SpostaGiuAsync(d.IdAttivitaDettaglio);
+            await CaricaDettagliAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Riordinamento dettaglio fallito.", "GestAttivitaStudio.SpostaGiuAsync");
+            Snackbar.Add("Errore nel riordinamento.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // ─── Dialog scadenze ─────────────────────────────────────────────────
+    private async Task ApriScadenzeAsync(AttivitaDettaglio d)
+    {
+        var p = new DialogParameters<ScadenzeDettaglioDialog>
+        {
+            { x => x.Dettaglio, d },
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ScadenzeDettaglioDialog>("Scadenze pagamento", p, o);
+        await dialog.Result;
+        // Ricarica per aggiornare i badge NumeroScadenze nella griglia.
+        await CaricaDettagliAsync();
     }
 }

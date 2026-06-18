@@ -1,0 +1,25 @@
+using ICMFatturazioni.Web.Entities;
+
+namespace ICMFatturazioni.Web.Repositories.Interfaces;
+
+/// <summary>
+/// Accesso ai dati per <c>fatt.SchedulazionePagamenti</c>.
+/// Ordinamento implicito: <c>DataScadenza ASC</c>.
+/// </summary>
+public interface IScadenzaPagamentoRepository
+{
+    /// <summary>Restituisce le scadenze attive di un dettaglio, ordinate per DataScadenza ASC.</summary>
+    Task<IReadOnlyList<ScadenzaPagamento>> GetByDettaglioAsync(Guid idAttivitaDettaglio, CancellationToken ct = default);
+
+    /// <summary>Restituisce una scadenza per chiave primaria (incluse soft-deleted).</summary>
+    Task<ScadenzaPagamento?> GetByIdAsync(Guid idScadenza, CancellationToken ct = default);
+
+    /// <summary>Inserisce una nuova scadenza.</summary>
+    Task InsertAsync(ScadenzaPagamento scadenza, CancellationToken ct = default);
+
+    /// <summary>Aggiorna una scadenza esistente.</summary>
+    Task UpdateAsync(ScadenzaPagamento scadenza, CancellationToken ct = default);
+
+    /// <summary>Soft-delete: imposta IsAttivo = 0.</summary>
+    Task DisattivaAsync(Guid idScadenza, CancellationToken ct = default);
+}

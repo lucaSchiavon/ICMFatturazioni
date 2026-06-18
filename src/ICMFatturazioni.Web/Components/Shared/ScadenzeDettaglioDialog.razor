@@ -1,0 +1,297 @@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using System.Globalization
+@inject IScadenzaPagamentoManager ScadenzaPagamentoManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.EventNote" Class="mr-2" />
+            Scadenze — @Dettaglio.DescrizioneDettaglio
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        @* Avviso riga fatturata *@
+        @if (Dettaglio.HasFattura)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                Questa riga è collegata a una fattura emessa. Le scadenze sono in sola lettura.
+            </MudAlert>
+        }
+
+        @* Riepilogo importo riga vs totale schedulato *@
+        <div class="d-flex align-center justify-space-between mb-3">
+            <div>
+                <MudText Typo="Typo.caption">Importo riga</MudText>
+                <MudText Typo="Typo.subtitle1">
+                    <strong>@Dettaglio.Importo.ToString("N2", _itCulture) €</strong>
+                </MudText>
+            </div>
+            <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Default" />
+            <div>
+                <MudText Typo="Typo.caption">Schedulato</MudText>
+                <MudText Typo="Typo.subtitle1" Color="@(_sbilanciato ? Color.Warning : Color.Success)">
+                    <strong>@_totaleScadenzato.ToString("N2", _itCulture) €</strong>
+                </MudText>
+            </div>
+            @if (_sbilanciato)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" />
+                <MudText Typo="Typo.caption" Color="Color.Warning">
+                    Differenza: @Math.Abs(Dettaglio.Importo - _totaleScadenzato).ToString("N2", _itCulture) €
+                </MudText>
+            }
+        </div>
+
+        <MudDivider Class="mb-3" />
+
+        @* Form inserimento/modifica scadenza *@
+        @if (!Dettaglio.HasFattura)
+        {
+            <MudPaper Elevation="0" Class="mud-background-gray rounded pa-3 mb-3">
+                <MudText Typo="Typo.caption" Class="mb-2">
+                    @(_scadenzaInModifica is null ? "Nuova scadenza" : "Modifica scadenza")
+                </MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="4">
+                        <MudDatePicker Label="Data scadenza *"
+                                       Date="_fData"
+                                       DateChanged="@(d => _fData = d)"
+                                       DateFormat="dd/MM/yyyy"
+                                       Culture="_itCulture"
+                                       Editable="true"
+                                       Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudNumericField T="decimal"
+                                         Label="Importo € *"
+                                         @bind-Value="_fImporto"
+                                         Min="0.01m"
+                                         Format="N2"
+                                         Culture="_itCulture"
+                                         Variant="Variant.Outlined" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField Label="Nota (opzionale)"
+                                      @bind-Value="_fNota"
+                                      MaxLength="200"
+                                      Variant="Variant.Outlined" />
+                    </MudItem>
+                </MudGrid>
+                @if (!string.IsNullOrWhiteSpace(_erroreForm))
+                {
+                    <MudText Color="Color.Error" Typo="Typo.caption" Class="mt-1">@_erroreForm</MudText>
+                }
+                <div class="d-flex justify-end gap-2 mt-2">
+                    @if (_scadenzaInModifica is not null)
+                    {
+                        <MudButton Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Cancel"
+                                   OnClick="ResetForm">
+                            Annulla
+                        </MudButton>
+                    }
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               StartIcon="@(_scadenzaInModifica is null ? Icons.Material.Filled.Add : Icons.Material.Filled.Save)"
+                               Disabled="_salvataggio"
+                               OnClick="SalvaScadenzaAsync">
+                        @(_scadenzaInModifica is null ? "Aggiungi" : "Salva")
+                    </MudButton>
+                </div>
+            </MudPaper>
+        }
+
+        @* Griglia scadenze *@
+        @if (_caricamento)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_scadenze.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="text-center py-4">
+                Nessuna scadenza inserita.
+            </MudText>
+        }
+        else
+        {
+            <MudTable Items="_scadenze" Dense="true" Striped="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Data scadenza</MudTh>
+                    <MudTh Style="text-align:right;">Importo €</MudTh>
+                    <MudTh>Nota</MudTh>
+                    @if (!Dettaglio.HasFattura)
+                    {
+                        <MudTh Style="width:80px;"></MudTh>
+                    }
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.DataScadenza.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
+                    <MudTd>@context.Nota</MudTd>
+                    @if (!Dettaglio.HasFattura)
+                    {
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           OnClick="@(() => AvviaModifica(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => EliminaAsync(context))" />
+                        </MudTd>
+                    }
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Chiudi" Variant="Variant.Text">Chiudi</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public AttivitaDettaglio Dettaglio { get; set; } = null!;
+
+    private static readonly CultureInfo _itCulture = new("it-IT");
+
+    private IReadOnlyList<ScadenzaPagamento> _scadenze = [];
+    private bool     _caricamento;
+    private bool     _salvataggio;
+    private string   _erroreForm  = string.Empty;
+
+    // Form fields
+    private DateTime? _fData;
+    private decimal   _fImporto;
+    private string    _fNota = string.Empty;
+
+    private ScadenzaPagamento? _scadenzaInModifica;
+
+    private decimal _totaleScadenzato => _scadenze.Sum(s => s.Importo);
+    private bool    _sbilanciato     => Math.Abs(Dettaglio.Importo - _totaleScadenzato) > 0.01m;
+
+    protected override async Task OnInitializedAsync()
+        => await CaricaAsync();
+
+    private async Task CaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _scadenze = await ScadenzaPagamentoManager.ElencoPerDettaglioAsync(Dettaglio.IdAttivitaDettaglio);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private void AvviaModifica(ScadenzaPagamento s)
+    {
+        _scadenzaInModifica = s;
+        _fData    = s.DataScadenza.ToDateTime(TimeOnly.MinValue);
+        _fImporto = s.Importo;
+        _fNota    = s.Nota ?? string.Empty;
+        _erroreForm = string.Empty;
+    }
+
+    private void ResetForm()
+    {
+        _scadenzaInModifica = null;
+        _fData    = null;
+        _fImporto = 0m;
+        _fNota    = string.Empty;
+        _erroreForm = string.Empty;
+    }
+
+    private async Task SalvaScadenzaAsync()
+    {
+        _erroreForm = string.Empty;
+
+        if (!_fData.HasValue)
+        {
+            _erroreForm = "La data di scadenza è obbligatoria.";
+            return;
+        }
+        if (_fImporto <= 0)
+        {
+            _erroreForm = "L'importo deve essere maggiore di zero.";
+            return;
+        }
+
+        _salvataggio = true;
+        try
+        {
+            if (_scadenzaInModifica is null)
+            {
+                // Nuova scadenza
+                var nuova = new ScadenzaPagamento
+                {
+                    IdAttivitaDettaglio = Dettaglio.IdAttivitaDettaglio,
+                    DataScadenza        = DateOnly.FromDateTime(_fData.Value),
+                    Importo             = _fImporto,
+                    Nota                = string.IsNullOrWhiteSpace(_fNota) ? null : _fNota.Trim(),
+                };
+                await ScadenzaPagamentoManager.CreaAsync(nuova);
+                Snackbar.Add("Scadenza aggiunta.", Severity.Success);
+            }
+            else
+            {
+                // Modifica scadenza esistente
+                var aggiornata = new ScadenzaPagamento
+                {
+                    IdScadenza          = _scadenzaInModifica.IdScadenza,
+                    IdAttivitaDettaglio = _scadenzaInModifica.IdAttivitaDettaglio,
+                    DataScadenza        = DateOnly.FromDateTime(_fData.Value),
+                    Importo             = _fImporto,
+                    Nota                = string.IsNullOrWhiteSpace(_fNota) ? null : _fNota.Trim(),
+                    IsAttivo            = true,
+                };
+                await ScadenzaPagamentoManager.AggiornaAsync(aggiornata);
+                Snackbar.Add("Scadenza aggiornata.", Severity.Success);
+            }
+
+            ResetForm();
+            await CaricaAsync();
+        }
+        catch (ScadenzaPagamentoInvalidaException ex)
+        {
+            _erroreForm = ex.Message;
+        }
+        catch (Exception)
+        {
+            _erroreForm = "Errore durante il salvataggio. Riprovare.";
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+    }
+
+    private async Task EliminaAsync(ScadenzaPagamento s)
+    {
+        try
+        {
+            await ScadenzaPagamentoManager.EliminaAsync(s.IdScadenza);
+            Snackbar.Add("Scadenza eliminata.", Severity.Success);
+            await CaricaAsync();
+        }
+        catch (ScadenzaPagamentoInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Errore durante l'eliminazione.", Severity.Error);
+        }
+    }
+
+    private void Chiudi() => MudDialog.Close();
+}

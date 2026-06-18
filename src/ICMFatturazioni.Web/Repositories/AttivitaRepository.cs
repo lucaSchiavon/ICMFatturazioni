@@ -186,7 +186,7 @@ internal sealed class AttivitaRepository : IAttivitaRepository
         }
         catch (SqlException ex) when (ex.Number == 208)
         {
-            // fatt.AttivitaDettaglio non ancora creata (migration 027).
+            // fatt.AttivitaDettaglio non ancora creata (migration 028).
             return false;
         }
     }
