@@ -91,6 +91,10 @@ builder.Services.AddScoped<IAgenziaRepository, AgenziaRepository>();
 builder.Services.AddScoped<IBancaAppoggioRepository, BancaAppoggioRepository>();
 builder.Services.AddScoped<ITipoPagamentoRepository, TipoPagamentoRepository>();
 builder.Services.AddScoped<ICodicePagamentoRepository, CodicePagamentoRepository>();
+builder.Services.AddScoped<ITipoAttivitaRepository, TipoAttivitaRepository>();
+builder.Services.AddScoped<ITipoDettaglioAttivitaRepository, TipoDettaglioAttivitaRepository>();
+builder.Services.AddScoped<IDescrizioneAttivitaRepository, DescrizioneAttivitaRepository>();
+builder.Services.AddScoped<IAttivitaRepository, AttivitaRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -106,6 +110,10 @@ builder.Services.AddScoped<IAgenziaManager, AgenziaManager>();
 builder.Services.AddScoped<IBancaAppoggioManager, BancaAppoggioManager>();
 builder.Services.AddScoped<ITipoPagamentoManager, TipoPagamentoManager>();
 builder.Services.AddScoped<ICodicePagamentoManager, CodicePagamentoManager>();
+builder.Services.AddScoped<ITipoAttivitaManager, TipoAttivitaManager>();
+builder.Services.AddScoped<ITipoDettaglioAttivitaManager, TipoDettaglioAttivitaManager>();
+builder.Services.AddScoped<IDescrizioneAttivitaManager, DescrizioneAttivitaManager>();
+builder.Services.AddScoped<IAttivitaManager, AttivitaManager>();
 
 // Servizio puro di calcolo scadenze (stateless) → singleton.
 builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();

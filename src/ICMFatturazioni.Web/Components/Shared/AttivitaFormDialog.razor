@@ -1,0 +1,226 @@
+@*
+    Dialog Attività — crea o modifica una testata attività (fatt.Attivita).
+    Iniziale = null  → modalità creazione.
+    Iniziale ≠ null  → modalità modifica (id conservato).
+    I campi data usano DateTime? (MudDatePicker) convertiti a DateOnly?
+    nell'entità passata al manager.
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IAttivitaManager AttivitaManager
+@inject IAnagraficaManager AnagraficaManager
+@inject ITipoAttivitaManager TipoAttivitaManager
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            <MudGrid Spacing="3">
+
+                @* ── Anagrafica ──────────────────────────────────── *@
+                <MudItem xs="12">
+                    <MudSelect T="Guid"
+                               Label="Cliente (anagrafica) *"
+                               @bind-Value="_model.IdAnagrafica"
+                               Required="true"
+                               RequiredError="Il cliente è obbligatorio"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Class="campo-obbligatorio"
+                               ToStringFunc="@(id => _anagrafiche.FirstOrDefault(a => a.IdAnagrafica == id)?.RagioneSociale ?? string.Empty)">
+                        @foreach (var a in _anagrafiche)
+                        {
+                            <MudSelectItem Value="a.IdAnagrafica">@a.RagioneSociale</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @* ── Tipo attività ───────────────────────────────── *@
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid"
+                               Label="Tipo attività *"
+                               @bind-Value="_model.IdTipoAttivita"
+                               Required="true"
+                               RequiredError="Il tipo è obbligatorio"
+                               Variant="Variant.Outlined"
+                               Margin="Margin.Dense"
+                               Class="campo-obbligatorio"
+                               ToStringFunc="@(id => _tipiAttivita.FirstOrDefault(t => t.IdTipoAttivita == id)?.Descrizione ?? string.Empty)">
+                        @foreach (var t in _tipiAttivita)
+                        {
+                            <MudSelectItem Value="t.IdTipoAttivita">@t.Descrizione</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                @* ── Descrizione ─────────────────────────────────── *@
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_model.Descrizione"
+                                  Label="Descrizione *"
+                                  Required="true"
+                                  RequiredError="La descrizione è obbligatoria"
+                                  MaxLength="200"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  Class="campo-obbligatorio" />
+                </MudItem>
+
+                @* ── Date (opzionali, ordine vincolato dal manager) ─ *@
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker Label="Progetto definitivo"
+                                   @bind-Date="_model.ProgettoDefinitivo"
+                                   DateFormat="dd/MM/yyyy"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Editable="true"
+                                   Culture="@_itCulture" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker Label="Concessione edilizia"
+                                   @bind-Date="_model.ConcessioneEdilizia"
+                                   DateFormat="dd/MM/yyyy"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Editable="true"
+                                   Culture="@_itCulture" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker Label="Inizio lavori"
+                                   @bind-Date="_model.InizioLavori"
+                                   DateFormat="dd/MM/yyyy"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Editable="true"
+                                   Culture="@_itCulture" />
+                </MudItem>
+
+                @* ── Importo opera ───────────────────────────────── *@
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="decimal?"
+                                     @bind-Value="_model.ImportoOpera"
+                                     Label="Importo opera (€)"
+                                     Format="N2"
+                                     Culture="@_itCulture"
+                                     Variant="Variant.Outlined"
+                                     Margin="Margin.Dense"
+                                     Min="0" />
+                </MudItem>
+
+            </MudGrid>
+
+            @if (!string.IsNullOrEmpty(_errore))
+            {
+                <MudAlert Severity="MudBlazor.Severity.Error" Dense="true" Class="mt-3">@_errore</MudAlert>
+            }
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="@(() => MudDialog.Cancel())" Ripple="false">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(!_isValid || _salvataggio)"
+                   OnClick="SalvaAsync" Ripple="false">
+            @(_salvataggio ? "Salvataggio…" : "Salva")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+
+    /// <summary>Null → crea; valorizzato → modifica.</summary>
+    [Parameter] public Attivita? Iniziale { get; set; }
+
+    private sealed class FormModel
+    {
+        public Guid     IdAnagrafica    { get; set; }
+        public Guid     IdTipoAttivita  { get; set; }
+        public string   Descrizione     { get; set; } = string.Empty;
+        public DateTime? ProgettoDefinitivo  { get; set; }
+        public DateTime? ConcessioneEdilizia { get; set; }
+        public DateTime? InizioLavori        { get; set; }
+        public decimal? ImportoOpera         { get; set; }
+    }
+
+    private MudForm _form = null!;
+    private FormModel _model = new();
+    private bool _isValid;
+    private bool _salvataggio;
+    private string _errore = string.Empty;
+
+    private IReadOnlyList<Anagrafica>   _anagrafiche  = Array.Empty<Anagrafica>();
+    private IReadOnlyList<TipoAttivita> _tipiAttivita = Array.Empty<TipoAttivita>();
+
+    private static readonly System.Globalization.CultureInfo _itCulture =
+        System.Globalization.CultureInfo.GetCultureInfo("it-IT");
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Carica i lookups in parallelo.
+        var t1 = AnagraficaManager.ElencoAsync();
+        var t2 = TipoAttivitaManager.ElencoAsync();
+        await Task.WhenAll(t1, t2);
+        _anagrafiche  = t1.Result;
+        _tipiAttivita = t2.Result;
+
+        if (Iniziale is not null)
+        {
+            _model = new FormModel
+            {
+                IdAnagrafica        = Iniziale.IdAnagrafica,
+                IdTipoAttivita      = Iniziale.IdTipoAttivita,
+                Descrizione         = Iniziale.Descrizione,
+                ProgettoDefinitivo  = Iniziale.ProgettoDefinitivo?.ToDateTime(TimeOnly.MinValue),
+                ConcessioneEdilizia = Iniziale.ConcessioneEdilizia?.ToDateTime(TimeOnly.MinValue),
+                InizioLavori        = Iniziale.InizioLavori?.ToDateTime(TimeOnly.MinValue),
+                ImportoOpera        = Iniziale.ImportoOpera,
+            };
+        }
+    }
+
+    private async Task SalvaAsync()
+    {
+        await _form.Validate();
+        if (!_isValid) return;
+
+        _salvataggio = true;
+        _errore = string.Empty;
+        try
+        {
+            var entita = new Attivita
+            {
+                IdAttivita          = Iniziale?.IdAttivita ?? Guid.Empty,
+                IdAnagrafica        = _model.IdAnagrafica,
+                IdTipoAttivita      = _model.IdTipoAttivita,
+                Numero              = Iniziale?.Numero ?? 0,
+                Descrizione         = _model.Descrizione,
+                ProgettoDefinitivo  = ToDateOnly(_model.ProgettoDefinitivo),
+                ConcessioneEdilizia = ToDateOnly(_model.ConcessioneEdilizia),
+                InizioLavori        = ToDateOnly(_model.InizioLavori),
+                ImportoOpera        = _model.ImportoOpera,
+            };
+
+            if (Iniziale is null)
+                await AttivitaManager.CreaAsync(entita);
+            else
+                await AttivitaManager.AggiornaAsync(entita);
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (AttivitaInvalidaException ex)
+        {
+            _errore = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Salvataggio attività fallito.", "AttivitaFormDialog.SalvaAsync");
+            _errore = "Errore inatteso durante il salvataggio.";
+        }
+        finally { _salvataggio = false; }
+    }
+
+    private static DateOnly? ToDateOnly(DateTime? dt)
+        => dt.HasValue ? DateOnly.FromDateTime(dt.Value) : null;
+}

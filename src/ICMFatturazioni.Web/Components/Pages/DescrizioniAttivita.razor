@@ -1,0 +1,169 @@
+@* Pagina /descrizioni-attivita — catalogo descrizioni standard richiamabili in inserimento attività. *@
+
+@page "/descrizioni-attivita"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IDescrizioneAttivitaManager DescrizioneManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Descrizioni attività · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Descrizioni attività</MudText>
+
+<MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+    Testi standard richiamabili durante l'inserimento di un'attività. Il campo <b>Ordine</b> controlla la
+    posizione nell'elenco di selezione (valore più basso = prima).
+</MudAlert>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" DebounceInterval="200"
+                      Style="min-width: 260px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit" Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete" Ripple="false"
+                       OnClick="@(() => ConfermaEdElimina(_selezionato))">
+                Elimina
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="DescrizioneAttivita"
+             Items="@DescrizioniFiltrate"
+             Dense="true" Hover="true" Striped="false" Bordered="false"
+             FixedHeader="true" Height="calc(100vh - 340px)"
+             Virtualize="true" ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="@((v) => _selezionato = v)"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Ordine" Title="Ord." InitialDirection="SortDirection.Ascending" />
+        <PropertyColumn Property="x => x.Descrizione" Title="Testo descrizione" StickyLeft="true" />
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   Size="Size.Small" Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessuna descrizione trovata.</MudText></NoRecordsContent>
+    <LoadingContent><MudText>Caricamento in corso…</MudText></LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<DescrizioneAttivita> _descrizioni = Array.Empty<DescrizioneAttivita>();
+    private DescrizioneAttivita? _selezionato;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync() => await RicaricaAsync();
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _descrizioni = await DescrizioneManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento descrizioni attività fallito.", "DescrizioniAttivita.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamento = false; }
+    }
+
+    private IEnumerable<DescrizioneAttivita> DescrizioniFiltrate => string.IsNullOrWhiteSpace(_filtro)
+        ? _descrizioni
+        : _descrizioni.Where(d => d.Descrizione.Contains(_filtro.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private string RigaClass(DescrizioneAttivita d, int _) =>
+        _selezionato?.IdDescrizioneAttivita == d.IdDescrizioneAttivita ? "anagrafica-riga-selezionata" : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<DescrizioneAttivita> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2) await ApriDialogModifica(args.Item);
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var p = new DialogParameters<DescrizioneAttivitaFormDialog> { { x => x.Iniziale, null } };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<DescrizioneAttivitaFormDialog>("Aggiungi descrizione", p, o);
+        if (await d.Result is { Canceled: false })
+        {
+            Snackbar.Add("Descrizione creata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(DescrizioneAttivita? t)
+    {
+        if (t is null) return;
+        var p = new DialogParameters<DescrizioneAttivitaFormDialog> { { x => x.Iniziale, t } };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<DescrizioneAttivitaFormDialog>("Modifica descrizione", p, o);
+        if (await d.Result is { Canceled: false })
+        {
+            Snackbar.Add("Descrizione aggiornata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(DescrizioneAttivita? t)
+    {
+        if (t is null) return;
+        var p = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare descrizione?" },
+            { x => x.NomeElemento, t.Descrizione },
+            { x => x.Messaggio, "Verrà disattivata e non comparirà più nell'elenco di selezione." },
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, p, o);
+        if (await d.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await DescrizioneManager.EliminaAsync(t.IdDescrizioneAttivita);
+            Snackbar.Add("Descrizione eliminata.", MudBlazor.Severity.Success);
+            if (_selezionato?.IdDescrizioneAttivita == t.IdDescrizioneAttivita) _selezionato = null;
+            await RicaricaAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Eliminazione descrizione attività fallita.", "DescrizioniAttivita.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

@@ -1,0 +1,201 @@
+@* Pagina /tipi-attivita-studio — catalogo tipi attività (cap. 9.1 dispensa). *@
+
+@page "/tipi-attivita-studio"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ITipoAttivitaManager TipoAttivitaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Tipi attività studio · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Tipi attività studio</MudText>
+
+<MudAlert Severity="MudBlazor.Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+    Il campo <b>Gestisci come</b> determina il comportamento nell'inserimento attività:
+    <b>Consulenza</b> = prestazione intellettuale; <b>Progetto</b> = legato a opera con date e importo.
+</MudAlert>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per descrizione…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" DebounceInterval="200"
+                      Style="min-width: 260px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit" Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+
+            @if (_selezionatoEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete" Ripple="false"
+                           OnClick="@(() => ConfermaEdElimina(_selezionato))">
+                    Elimina
+                </MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="TipoAttivita"
+             Items="@TipiFiltrati"
+             Dense="true" Hover="true" Striped="false" Bordered="false"
+             FixedHeader="true" Height="calc(100vh - 360px)"
+             Virtualize="true" ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="OnSelezionatoChanged"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" StickyLeft="true" />
+        <TemplateColumn Title="Gestisci come" Sortable="false">
+            <CellTemplate>
+                @if (context.Item.GestisciCome == GestisciCome.Progetto)
+                {
+                    <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text">Progetto</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Text">Consulenza</MudChip>
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Studi di settore" Sortable="false">
+            <CellTemplate>
+                <MudIcon Icon="@(context.Item.StudiSettore ? Icons.Material.Filled.Check : Icons.Material.Filled.Remove)"
+                         Color="@(context.Item.StudiSettore ? Color.Success : Color.Default)"
+                         Size="Size.Small" />
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   Size="Size.Small" Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessun tipo attività trovato.</MudText></NoRecordsContent>
+    <LoadingContent><MudText>Caricamento in corso…</MudText></LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<TipoAttivita> _tipi = Array.Empty<TipoAttivita>();
+    private TipoAttivita? _selezionato;
+    private bool _selezionatoEliminabile;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync() => await RicaricaAsync();
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _tipi = await TipoAttivitaManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento tipi attività fallito.", "TipiAttivitaStudio.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamento = false; }
+    }
+
+    private IEnumerable<TipoAttivita> TipiFiltrati => string.IsNullOrWhiteSpace(_filtro)
+        ? _tipi
+        : _tipi.Where(t => t.Descrizione.Contains(_filtro.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private async Task OnSelezionatoChanged(TipoAttivita? t)
+    {
+        _selezionato = t;
+        _selezionatoEliminabile = t is not null && await TipoAttivitaManager.EEliminabileAsync(t.IdTipoAttivita);
+    }
+
+    private string RigaClass(TipoAttivita t, int _) =>
+        _selezionato?.IdTipoAttivita == t.IdTipoAttivita ? "anagrafica-riga-selezionata" : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<TipoAttivita> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2) await ApriDialogModifica(args.Item);
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var p = new DialogParameters<TipoAttivitaFormDialog> { { x => x.Iniziale, null } };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<TipoAttivitaFormDialog>("Aggiungi tipo attività", p, o);
+        if (await d.Result is { Canceled: false })
+        {
+            Snackbar.Add("Tipo attività creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(TipoAttivita? t)
+    {
+        if (t is null) return;
+        var p = new DialogParameters<TipoAttivitaFormDialog> { { x => x.Iniziale, t } };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<TipoAttivitaFormDialog>("Modifica tipo attività", p, o);
+        if (await d.Result is { Canceled: false })
+        {
+            Snackbar.Add("Tipo attività aggiornato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(TipoAttivita? t)
+    {
+        if (t is null) return;
+        var p = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare tipo attività?" },
+            { x => x.NomeElemento, t.Descrizione },
+            { x => x.Messaggio, "Verrà disattivato e non comparirà più nell'elenco." },
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, p, o);
+        if (await d.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await TipoAttivitaManager.EliminaAsync(t.IdTipoAttivita);
+            Snackbar.Add("Tipo attività eliminato.", MudBlazor.Severity.Success);
+            if (_selezionato?.IdTipoAttivita == t.IdTipoAttivita) _selezionato = null;
+            await RicaricaAsync();
+        }
+        catch (TipoAttivitaConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: il tipo è usato da una o più attività.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Eliminazione tipo attività fallita.", "TipiAttivitaStudio.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}

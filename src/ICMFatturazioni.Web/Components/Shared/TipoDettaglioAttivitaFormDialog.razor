@@ -1,0 +1,73 @@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ITipoDettaglioAttivitaManager TipoDettaglioManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isModifica ? "Modifica tipo dettaglio" : "Aggiungi tipo dettaglio")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_formValido">
+            <MudTextField @bind-Value="_descrizione"
+                          Label="Descrizione"
+                          Required="true" RequiredError="Campo obbligatorio."
+                          HelperText="Es. DISCIPLINARE, EXTRA DISCIPLINARE"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          MaxLength="100" Counter="100"
+                          Immediate="true"
+                          Class="campo-obbligatorio" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()" Ripple="false">Annulla</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Ripple="false" OnClick="Salva" Disabled="!_formValido">
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public TipoDettaglioAttivita? Iniziale { get; set; }
+
+    private MudForm _form = default!;
+    private bool _formValido;
+    private bool _isModifica;
+    private string _descrizione = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        _isModifica  = Iniziale is not null;
+        _descrizione = Iniziale?.Descrizione ?? string.Empty;
+    }
+
+    private async Task Salva()
+    {
+        await _form.Validate();
+        if (!_formValido) return;
+
+        var entity = new TipoDettaglioAttivita
+        {
+            IdTipoDettaglioAttivita = Iniziale?.IdTipoDettaglioAttivita ?? Guid.Empty,
+            Descrizione             = _descrizione,
+        };
+
+        try
+        {
+            if (_isModifica)
+                await TipoDettaglioManager.AggiornaAsync(entity);
+            else
+                await TipoDettaglioManager.CreaAsync(entity);
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (TipoDettaglioAttivitaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+    }
+}

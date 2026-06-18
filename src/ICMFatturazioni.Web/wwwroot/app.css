@@ -109,3 +109,99 @@ h1:focus {
     background-color: #EEF4FA;
     border-radius: var(--mud-default-borderradius);
 }
+
+/* ------------------------------------------------------------------ */
+/* Listbox a selezione singola (GestAttivitaStudio — tre selettori)    */
+/* Stile nativo-like: bordo, sfondo surface, item hover/selected.      */
+/* ------------------------------------------------------------------ */
+
+/* Ogni MudItem nel grid a 3 colonne viene reso flex col per permettere
+   al MudPaper interno di occupare tutta l'altezza della riga. */
+.icm-grid-3col > .mud-grid-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.icm-sellist {
+    border: 1px solid var(--mud-palette-lines-inputs);
+    border-radius: var(--mud-default-borderradius);
+    background: var(--mud-palette-surface);
+    overflow-y: auto;
+}
+
+.icm-sellist-item {
+    padding: 3px 10px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    line-height: 1.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+    transition: background-color 0.1s;
+}
+
+.icm-sellist-item:hover {
+    background-color: var(--mud-palette-action-hover);
+}
+
+.icm-sellist-item.selected,
+.icm-sellist-item.selected:hover {
+    background-color: var(--mud-palette-primary);
+    color: var(--mud-palette-white);
+}
+
+.icm-sellist-placeholder {
+    padding: 8px 10px;
+    color: var(--mud-palette-text-secondary);
+    font-size: 0.875rem;
+    font-style: italic;
+}
+
+/* Badge tipo anagrafica (S/P/E) nella listbox anagrafiche */
+.icm-tipo-badge {
+    display: inline-block;
+    width: 14px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    opacity: 0.75;
+    text-align: center;
+    margin-right: 4px;
+}
+
+/* Item a due colonne (Nr | Descrizione) nella listbox attività */
+.icm-sellist-item-2col {
+    display: flex;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.icm-sellist-item-2col .icm-nr {
+    min-width: 42px;
+    font-weight: 600;
+    text-align: right;
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    opacity: 0.85;
+}
+
+.icm-sellist-item-2col .icm-desc {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Pannello testata attività (visualizzazione): label + valore */
+.icm-field-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--mud-palette-text-secondary);
+    margin-bottom: 2px;
+}
+
+.icm-field-value {
+    font-size: 0.9rem;
+    font-weight: 500;
+}

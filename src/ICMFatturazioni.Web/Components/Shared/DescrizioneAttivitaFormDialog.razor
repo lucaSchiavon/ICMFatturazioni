@@ -1,0 +1,90 @@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject IDescrizioneAttivitaManager DescrizioneManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isModifica ? "Modifica descrizione" : "Aggiungi descrizione")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_formValido">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_model.Descrizione"
+                              Label="Testo descrizione"
+                              Required="true" RequiredError="Campo obbligatorio."
+                              HelperText="Descrizione standard richiamabile in inserimento attività"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              MaxLength="200" Counter="200"
+                              Immediate="true"
+                              Class="campo-obbligatorio" />
+
+                <MudNumericField @bind-Value="_model.Ordine"
+                                 Label="Ordine"
+                                 HelperText="Posizione nell'elenco (più basso = prima)"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 Min="0" />
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()" Ripple="false">Annulla</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Ripple="false" OnClick="Salva" Disabled="!_formValido">
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public DescrizioneAttivita? Iniziale { get; set; }
+
+    private MudForm _form = default!;
+    private bool _formValido;
+    private bool _isModifica;
+
+    private DescrizioneFormModel _model = new();
+
+    private sealed class DescrizioneFormModel
+    {
+        public string Descrizione { get; set; } = string.Empty;
+        public int Ordine { get; set; }
+    }
+
+    protected override void OnParametersSet()
+    {
+        _isModifica       = Iniziale is not null;
+        _model.Descrizione = Iniziale?.Descrizione ?? string.Empty;
+        _model.Ordine      = Iniziale?.Ordine ?? 0;
+    }
+
+    private async Task Salva()
+    {
+        await _form.Validate();
+        if (!_formValido) return;
+
+        var entity = new DescrizioneAttivita
+        {
+            IdDescrizioneAttivita = Iniziale?.IdDescrizioneAttivita ?? Guid.Empty,
+            Descrizione           = _model.Descrizione,
+            Ordine                = _model.Ordine,
+        };
+
+        try
+        {
+            if (_isModifica)
+                await DescrizioneManager.AggiornaAsync(entity);
+            else
+                await DescrizioneManager.CreaAsync(entity);
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (DescrizioneAttivitaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+    }
+}

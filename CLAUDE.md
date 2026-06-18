@@ -51,65 +51,21 @@ Ogni Repository ha **uno e un solo** Manager dedicato che ne incapsula la logica
 
 ## Struttura della soluzione
 
-```
-MyApp.sln
-│
-├── src/
-│   └── MyApp.Web/                          # Progetto Blazor Web App
-│       │
-│       ├── Components/                     # Componenti Blazor (Presentation Layer)
-│       │   ├── Layout/                     # MainLayout, NavMenu, ecc.
-│       │   ├── Pages/                      # Pagine routable (@page)
-│       │   ├── Shared/                     # Componenti condivisi
-│       │   ├── App.razor
-│       │   ├── Routes.razor
-│       │   └── _Imports.razor
-│       │
-│       ├── Entities/                       # Entità di dominio (POCO)
-│       │   ├── User.cs
-│       │   ├── Product.cs
-│       │   └── Order.cs
-│       │
-│       ├── Repositories/                   # Data Access Layer (Dapper)
-│       │   ├── Interfaces/
-│       │   │   ├── IUserRepository.cs
-│       │   │   └── IProductRepository.cs
-│       │   ├── UserRepository.cs
-│       │   └── ProductRepository.cs
-│       │
-│       ├── Managers/                       # Application Layer (logica di business)
-│       │   ├── Interfaces/
-│       │   │   ├── IUserManager.cs
-│       │   │   └── IProductManager.cs
-│       │   ├── UserManager.cs
-│       │   └── ProductManager.cs
-│       │
-│       ├── Authentication/                 # Cookie auth, claims, policies
-│       │   ├── CookieAuthHandler.cs
-│       │   └── AuthorizationPolicies.cs
-│       │
-│       ├── Data/                           # Connection factory, DB helpers
-│       │   ├── ISqlConnectionFactory.cs
-│       │   └── SqlConnectionFactory.cs
-│       │
-│       ├── Migrations/                     # Script SQL versionati (NON modificare quelli esistenti)
-│       │   ├── 001_InitialSchema.sql
-│       │   ├── 002_AddProductsTable.sql
-│       │   └── ...
-│       │
-│       ├── Models/                         # DTO / ViewModel per la UI
-│       ├── wwwroot/                        # Asset statici
-│       ├── appsettings.json
-│       ├── appsettings.Development.json
-│       ├── Program.cs
-│       └── MyApp.Web.csproj
-│
-└── tests/
-    └── MyApp.Tests/                        # Progetto di test (xUnit)
-        ├── Managers/
-        ├── Repositories/
-        └── MyApp.Tests.csproj
-```
+Soluzione: `ICMFatturazioni.sln` — app in `src/ICMFatturazioni.Web/`, test in `tests/ICMFatturazioni.Tests/`.
+
+Cartelle principali dell'app:
+- `Components/` — pagine e componenti Blazor (Layout/, Pages/, Shared/)
+- `Entities/` — POCO di dominio (senza dipendenze da Dapper/EF/ASP.NET)
+- `Repositories/` + `Managers/` — DAL e business logic, ciascuno con sottocartella `Interfaces/`
+- `Authentication/` — cookie auth, claims, policy
+- `Data/` — `ISqlConnectionFactory` / `SqlConnectionFactory`
+- `Migrations/` — script SQL versionati in ordine numerico (**NON modificare quelli esistenti**)
+- `Models/` — DTO e ViewModel per la UI
+- `Auditing/` — helper `AuditDettaglio` (Snapshot/Diff/Pretty)
+- `Logging/` — `DbLoggerProvider`, `LogQueue`, `LogWriterService`, `LogSanitizer`
+- `Manutenzione/` — `AuditRetentionService`, `AuditManutenzione`
+- `Services/` — `IScadenzaCalculator` e altri servizi applicativi
+- `execution/` (root soluzione) — script PowerShell riproducibili (es. `recreate-db.ps1`)
 
 ## Convenzioni di codice C#
 
@@ -230,10 +186,10 @@ dotnet build -c Release
 ### Esecuzione locale
 
 ```bash
-dotnet run --project src/MyApp.Web
+dotnet run --project src/ICMFatturazioni.Web --launch-profile http
 ```
 
-L'app sarà disponibile su `https://localhost:5001` (o porta configurata in `launchSettings.json`).
+L'app sarà disponibile su `http://localhost:5248` (o porta configurata in `launchSettings.json`).
 
 ### Test
 
@@ -245,10 +201,15 @@ dotnet test --collect:"XPlat Code Coverage"             # Con code coverage
 
 ### Database
 
-Gli script di migration vanno applicati in ordine numerico al SQL Server Express locale:
+Gli script di migration vanno applicati in ordine numerico. Usare lo script riproducibile:
 
+```powershell
+.\execution\recreate-db.ps1        # ricrea il DB da zero (drop + apply all migrations)
+```
+
+Oppure manualmente:
 ```bash
-sqlcmd -S .\SQLEXPRESS -d MyAppDb -i src/MyApp.Web/Migrations/001_InitialSchema.sql
+sqlcmd -S .\SQLEXPRESS -d ICMFatturazioni -i src/ICMFatturazioni.Web/Migrations/001_CreateSchemas.sql
 ```
 
 ### Format / Lint
@@ -307,9 +268,7 @@ Quando un valore può legittimamente essere null, dichiararlo esplicitamente (`s
 
 ### 6. Logging degli errori (tabella `fatt.Log`)
 
-**Ogni errore di runtime o eccezione sollevata dall'applicazione DEVE essere persistito nella tabella `fatt.Log`.** La regola è categorica e si applica a tutti i layer (UI Blazor, Manager, Repository, middleware, background job). L'obiettivo è avere visibilità completa, in produzione, su errori subdoli, silenti all'interfaccia o difficili da riprodurre.
-
-> **Impianto attuale (mirror di `dbo.Log` di ICMVerbali, migration `014_Log.sql`).** Sostituisce il precedente `LogErrors` (BIGINT/IDENTITY + servizio `IErrorLogger`): scrittura **asincrona disaccoppiata** e **cattura automatica** dei log del framework. Tabella **immutabile** (solo INSERT, mai UPDATE).
+**Ogni errore di runtime o eccezione sollevata dall'applicazione DEVE essere persistito nella tabella `fatt.Log`.** La regola è categorica e si applica a tutti i layer (UI Blazor, Manager, Repository, middleware, background job). Tabella **immutabile** (solo INSERT, mai UPDATE). Mirror di `dbo.Log` di ICMVerbali (migration `014_Log.sql`).
 
 #### Cosa deve essere tracciato
 
@@ -407,7 +366,7 @@ Regole vincolanti emerse dal decision-gate del 2026-05-20 (decisioni D1-D20). Le
   - `fatt.*` — **tutte** le tabelle di ICMFatturazioni: lookup di stato (`fatt.Paesi`, `fatt.Province`, `fatt.NatureIVA`, `fatt.CondizioniPagamento`, `fatt.ModalitaPagamento`), anagrafiche (`fatt.Anagrafica`), codici IVA/pagamento, banche, attività (`fatt.Attivita`, `fatt.AttivitaDettaglio`, `fatt.SchedulazionePagamenti`), e le trasversali (`fatt.Utenti`, `fatt.Log`, `fatt.Audit`).
   - La prima migration (`001_CreateSchemas.sql`) crea **solo** lo schema `fatt` (`CREATE SCHEMA fatt`) prima di qualsiasi tabella.
   - Tutte le query SQL nei Repository usano il nome **schema-qualificato** (`FROM fatt.Paesi`, non `FROM Paesi`).
-  - **Nomi entità invariati nel contesto ICMFatturazioni**: `Attivita` e `Anagrafica` restano tali (in ICMVerbali sono `Progetto` e `Committente`); la fusione è lavoro futuro con ADR dedicato. Divergenze note da risolvere alla fusione: PK `INT IDENTITY` (qui) vs `uniqueidentifier` (Verbali); `DataRecord` vs `CreatedAt`/`UpdatedAt`+`IsAttivo`. Vedi `docs/piano-sviluppo-fase1-attivita.md` §1.1.
+  - **Nomi entità invariati nel contesto ICMFatturazioni**: `Attivita` e `Anagrafica` restano tali (in ICMVerbali sono `Progetto` e `Committente`); la fusione è lavoro futuro con ADR dedicato.
 - **Campi enum-like** (`TipoAnagrafica` con valori `S`/`P`/`E`): enum C# con persistenza `char(1)` (o codice testuale dove l'originale lo prevede). L'enum espone il valore di persistenza esplicitamente, mai derivato dall'ordinale.
 
 ### Allineamento a ICMVerbali (D22, 2026-06-09) — VINCOLANTE
@@ -423,15 +382,12 @@ ICMFatturazioni deve **uniformarsi a ICMVerbali** (`C:\SVILUPPO\GIT\ICMVerbali`,
   - **Logging errori** su `fatt.Log` (mirror di `dbo.Log`) via `ILogManager.LogErroreAsync(ex, spiegazione, sorgente)` + rete automatica `DbLoggerProvider`; le eccezioni tipizzate di validazione **non** si loggano (vedi loro Regola 6 / `docs/B17-logging.md`).
   - **Nomi tabella/colonna**: restano **fedeli al legacy italiano** (D1, scelta utente) — `CodiciIVA`, `Paesi`, `Anagrafica`, ecc. NON si adotta il singolare di Verbali. (Solo le *caratteristiche strutturali* si uniformano, non i nomi.)
   - **Lookup ministeriali Fatturazioni-only** (`Paesi`, `Province`, `NatureIVA`, `CondizioniPagamento`, `ModalitaPagamento`): mantengono le loro chiavi naturali/attuali (non si fondono con Verbali, le anagrafiche le referenziano per codice naturale).
-- **Retrofit**: la verticale `Anagrafica` già esistente va riscritta a GUID + `IsAttivo`. `Utenti` e `LogErrors` NON si retrofittano a parte: confluiscono nei rispettivi step di mirror (auth e logging) per non produrre lavoro usa-e-getta. *(Step logging completato: `LogErrors` → `fatt.Log`/`fatt.Audit`, vedi Regola 6.)*
 
 ### Schema database (D5, D6, D9, D19, D20)
 
 - **Tabelle "fisse" Agenzia Entrate** (Nature IVA, Condizioni/Modalità pagamento, Tipologie clientela): tabelle SQL vere, popolate da seed **idempotente** (`MERGE` o `IF NOT EXISTS`) in `Migrations/`. Niente enum C# come unica fonte.
-- **DB di partenza vuoto**: nessuna importazione dei dati storici dall'Access. L'app nasce pulita.
-- **Lookup di partenza**: schema + dati delle 5 tabelle di lookup sono in `TabelleLookupMancanti.sql` (root del progetto). In Fase 1 vanno importati nello schema applicativo (`fatt.*`, ADR D21) e il tipo user-defined `dbo.DataRecord` va ridichiarato (`CREATE TYPE dbo.DataRecord FROM DATETIME NOT NULL`) **oppure** normalizzato a `DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()` colonna per colonna. Scegliere la seconda opzione se non emergono dipendenze sul tipo custom.
-- **Colonna `DataRecord` (audit timestamp)**: aggiunta **caso per caso**, non automatica. Tabelle volatili e tabelle dove l'audit serve davvero → sì. Tabelle di lookup statiche → no.
-- **Campo PEC**: il nome corretto è `PECFatturaElettronica`. Il refuso `PerFatturaEletronica` presente nello schema PNG va **scartato** nel nuovo schema.
+- **DB di partenza vuoto**: nessuna importazione dei dati storici dall'Access. Le 5 lookup di partenza (`Paesi`, `Province`, `NatureIVA`, `CondizioniPagamento`, `ModalitaPagamento`) sono già importate in `fatt.*` dalle migration 001-004.
+- **Campo PEC**: il nome corretto è `PECFatturaElettronica`. Il refuso `PerFatturaEletronica` presente nello schema PNG va **scartato**.
 
 ### Source of truth (D7)
 
@@ -446,9 +402,9 @@ Se un documento più basso contraddice uno più alto, vince il più alto. Se la 
 
 ### Autenticazione (D4)
 
-- Tabella `dbo.Utenti` dedicata con `Username` (unique), `PasswordHash`, `Salt` (se l'algoritmo non lo embedda), `Attivo BIT`, `DataRecord`.
-- Algoritmo di hashing: **BCrypt** (libreria `BCrypt.Net-Next`) o **PBKDF2** (`Microsoft.AspNetCore.Cryptography.KeyDerivation`). Decidere alla creazione della Fase 1 (richiede approvazione NuGet — vedi Regola 1).
-- Mai password in chiaro nemmeno temporaneamente. Reset password = genera token monouso, invia per email, l'utente sceglie la nuova.
+- Tabella `fatt.Utenti` con GUID v7 PK, `PasswordHash` PBKDF2 (`Microsoft.AspNetCore.Cryptography.KeyDerivation`, nessun NuGet aggiuntivo), `IdRuolo` FK→`fatt.Ruoli`, `IsAttivo`, `TemaPreferito`.
+- Mai password in chiaro. Reset/invito = token monouso via email (MailKit/Brevo), l'utente sceglie la nuova password dal link.
+- Password policy: min 10 caratteri, almeno 1 maiuscola, 1 minuscola, 1 cifra (enforced da `PasswordPolicy` in `Authentication/`).
 
 ### UI / MudBlazor (D10, D11, D12, D13, D15, D17, D18)
 
@@ -478,53 +434,18 @@ Se incontri un caso non coperto da nessuno dei tre, **segnalalo** prima di inven
 
 ## Roadmap di porting
 
-Strategia in 4 fasi per costruire l'app verticalmente, senza accumulare codice non testato in UI. Ogni fase ha un checkpoint esplicito di approvazione utente prima di passare alla successiva.
+Ogni fase ha un checkpoint esplicito di approvazione utente prima di passare alla successiva.
 
-### Fase 0 — Decisioni vincolanti (NESSUN CODICE) ✅
+### Fasi completate ✅
 
-Chiusa il 2026-05-20. Output: sezioni "Convenzioni di porting" e "Roadmap di porting" in `CLAUDE.md` + `docs/decisioni-architetturali.md` (ADR) + aggiornamento di `brand-guidelines.md`.
+- **Fase 0** (2026-05-20): decisioni architetturali ADR D1-D22, brand-guidelines → `docs/decisioni-architetturali.md`
+- **Fase 1** (mig. 001-015): spina dorsale — schema `fatt`, auth cookie, MudBlazor, logging (`fatt.Log`), audit (`fatt.Audit`), auth DB-driven (ruoli/menu/permessi), reset password via email
+- **Fase 2** (mig. 005): verticale canonica Anagrafica — pattern Manager/Repository/test/UI consolidato
+- **Fase 3** (mig. 016-024): Codici IVA, Banche di appoggio (normalizzate a 3 tabelle), Tipi/Codici pagamento + `ScadenzaCalculator`, Tipologie clientela; integrazione Anagrafica con FK ai cataloghi; retention/compressione `fatt.Audit`
 
-### Fase 1 — Spina dorsale (1 commit)
+### Fase 4 — Gestione Attività clienti (prossima, next migration: 025)
 
-> *Nota storica: descrive il piano originale di Fase 1. Diverse scelte sono poi evolute e questo elenco va letto come record del percorso, non come stato attuale — in particolare: schema unico `fatt` (ADR D21, supera `sta`/`ana`/`fat`); `dbo.Utenti` → `fatt.Utenti`; e l'impianto di logging (`003_LogErrors`/`IErrorLogger`/`dbo.LogErrors`) sostituito da `fatt.Log` + `DbLoggerProvider` + `ILogManager` (vedi Regola 6).*
-
-Niente CRUD di dominio. Solo lo scheletro tecnico:
-
-- Migration `001_CreateSchemas.sql` (creazione schema `sta`, `ana`, `fat`)
-- Migration `002_Auth.sql` (tabella `dbo.Utenti` + indici)
-- Migration `003_LogErrors.sql` (tabella di log errori — vedi Regola 6)
-- Migration `004_LookupSta.sql` (import schema + dati da `TabelleLookupMancanti.sql`, normalizzati nello schema `sta`)
-- Cookie auth funzionante (login/logout + middleware), utente seed hardcoded dev-only (da rimuovere prima del rilascio)
-- `IErrorLogger` + `ErrorLogRepository` operativi e cablati nel middleware globale, `ErrorBoundary` di Blazor, `CircuitHandler`
-- `MainLayout` + `NavMenu` (voci disabilitate tranne "Tabelle amministrative")
-- `MudThemingProvider` con `IcmTheme` (Light + Dark)
-- Pagina vuota `/tabelle-amministrative` con tabs per le 5 sezioni
-- Redirect a `/login` se non autenticato
-
-**Checkpoint**: app si avvia, login funziona, layout vuoto navigabile, errori finiscono in `dbo.LogErrors`, toggle dark mode funziona.
-
-### Fase 2 — Verticale canonica: Anagrafica (3-5 commit)
-
-**Banco di prova del pattern.** Se regge sull'entità più complessa, regge ovunque.
-
-- Migration `005_Anagrafica.sql`
-- **Decisione D8 chiusa** prima di iniziare
-- `Anagrafica.cs` entity + `IAnagraficaRepository`/`AnagraficaRepository` (Dapper, schema `fatt`, JOIN LEFT verso `fatt.Paesi`/`fatt.Province` come da VBA originale)
-- `IAnagraficaManager`/`AnagraficaManager` con validazioni (campi obbligatori, FK verso `fatt.*`, divieto eliminazione se ci sono dipendenze)
-- Test xUnit del Manager con repository fake
-- 3 pagine Blazor: elenco con `MudDataGrid` filtrabile, dialog "Aggiungi", dialog "Modifica" — pattern visibility-driven (`Modifica`/`Elimina` nascosti finché non c'è selezione)
-- Verifica manuale browser desktop + responsive mobile (scroll orizzontale + sticky)
-
-### Fase 3 — Replica del pattern (1 commit per entità)
-
-Ordine consigliato per complessità crescente:
-
-1. **Codici IVA** (campi condizionali Aliquota/Natura)
-2. **Banche di appoggio** (due categorie: aziendali vs clienti)
-3. **Tipi di pagamento → Codici di pagamento** (parent/child + utility verifica scadenza)
-4. **Tipologie clientela** (tabella fissa, solo seed, niente CRUD utente)
-
-Ogni entità eredita il pattern consolidato in Fase 2: stessa struttura Manager/Repository, stessa logica di validazione, stesso layout pagina.
+Cuore del programma (dispensa cap. 9-10): `fatt.Attivita` (testata) + `fatt.AttivitaDettaglio` + `fatt.SchedulazionePagamenti`. Ogni verticale segue il pattern consolidato in Fase 2.
 
 ## Principi operativi per l'agente
 

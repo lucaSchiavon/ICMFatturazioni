@@ -1,0 +1,106 @@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ITipoAttivitaManager TipoAttivitaManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_isModifica ? "Modifica tipo attività" : "Aggiungi tipo attività")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_formValido">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_model.TipoAttivita"
+                              Label="Descrizione"
+                              Required="true" RequiredError="Campo obbligatorio."
+                              HelperText="Es. CONSULENZE, PROGETTAZIONI"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              MaxLength="100" Counter="100"
+                              Immediate="true"
+                              Class="campo-obbligatorio" />
+
+                <MudSelect @bind-Value="_model.GestisciCome"
+                           Label="Gestisci come"
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Required="true" RequiredError="Campo obbligatorio."
+                           HelperText="Governa il comportamento nell'inserimento attività"
+                           Class="campo-obbligatorio">
+                    <MudSelectItem Value="GestisciCome.Consulenza">Consulenza</MudSelectItem>
+                    <MudSelectItem Value="GestisciCome.Progetto">Progetto</MudSelectItem>
+                </MudSelect>
+
+                <MudCheckBox @bind-Value="_model.StudiSettore"
+                             Label="Studi di settore"
+                             Color="Color.Primary" />
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Annulla" Ripple="false">Annulla</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Ripple="false" OnClick="Salva" Disabled="!_formValido">
+            Salva
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public TipoAttivita? Iniziale { get; set; }
+
+    private MudForm _form = default!;
+    private bool _formValido;
+    private bool _isModifica;
+
+    private TipoAttivitaFormModel _model = new();
+
+    private sealed class TipoAttivitaFormModel
+    {
+        public string TipoAttivita { get; set; } = string.Empty;
+        public GestisciCome GestisciCome { get; set; } = GestisciCome.Consulenza;
+        public bool StudiSettore { get; set; } = true;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _isModifica = Iniziale is not null;
+        if (Iniziale is not null)
+        {
+            _model.TipoAttivita  = Iniziale.Descrizione;
+            _model.GestisciCome  = Iniziale.GestisciCome;
+            _model.StudiSettore  = Iniziale.StudiSettore;
+        }
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+
+    private async Task Salva()
+    {
+        await _form.Validate();
+        if (!_formValido) return;
+
+        var entity = new TipoAttivita
+        {
+            IdTipoAttivita = Iniziale?.IdTipoAttivita ?? Guid.Empty,
+            Descrizione    = _model.TipoAttivita,
+            GestisciCome   = _model.GestisciCome,
+            StudiSettore   = _model.StudiSettore,
+        };
+
+        try
+        {
+            if (_isModifica)
+                await TipoAttivitaManager.AggiornaAsync(entity);
+            else
+                await TipoAttivitaManager.CreaAsync(entity);
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (TipoAttivitaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+    }
+}

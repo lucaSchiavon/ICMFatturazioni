@@ -1,0 +1,177 @@
+@* Pagina /tipi-dett-attivita-studio — catalogo tipi dettaglio attività. *@
+
+@page "/tipi-dett-attivita-studio"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ITipoDettaglioAttivitaManager TipoDettaglioManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Tipi dettaglio attività · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Tipi dettaglio attività studio</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Immediate="true" DebounceInterval="200"
+                      Style="min-width: 260px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit" Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+
+            @if (_selezionatoEliminabile)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete" Ripple="false"
+                           OnClick="@(() => ConfermaEdElimina(_selezionato))">
+                    Elimina
+                </MudButton>
+            }
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="TipoDettaglioAttivita"
+             Items="@TipiFiltrati"
+             Dense="true" Hover="true" Striped="false" Bordered="false"
+             FixedHeader="true" Height="calc(100vh - 320px)"
+             Virtualize="true" ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="OnSelezionatoChanged"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" StickyLeft="true" />
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                   Size="Size.Small" Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessun tipo dettaglio trovato.</MudText></NoRecordsContent>
+    <LoadingContent><MudText>Caricamento in corso…</MudText></LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<TipoDettaglioAttivita> _tipi = Array.Empty<TipoDettaglioAttivita>();
+    private TipoDettaglioAttivita? _selezionato;
+    private bool _selezionatoEliminabile;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync() => await RicaricaAsync();
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _tipi = await TipoDettaglioManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento tipi dettaglio attività fallito.", "TipiDettAttivitaStudio.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamento = false; }
+    }
+
+    private IEnumerable<TipoDettaglioAttivita> TipiFiltrati => string.IsNullOrWhiteSpace(_filtro)
+        ? _tipi
+        : _tipi.Where(t => t.Descrizione.Contains(_filtro.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private async Task OnSelezionatoChanged(TipoDettaglioAttivita? t)
+    {
+        _selezionato = t;
+        _selezionatoEliminabile = t is not null && await TipoDettaglioManager.EEliminabileAsync(t.IdTipoDettaglioAttivita);
+    }
+
+    private string RigaClass(TipoDettaglioAttivita t, int _) =>
+        _selezionato?.IdTipoDettaglioAttivita == t.IdTipoDettaglioAttivita ? "anagrafica-riga-selezionata" : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<TipoDettaglioAttivita> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2) await ApriDialogModifica(args.Item);
+    }
+
+    private async Task ApriDialogAggiungi()
+    {
+        var p = new DialogParameters<TipoDettaglioAttivitaFormDialog> { { x => x.Iniziale, null } };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<TipoDettaglioAttivitaFormDialog>("Aggiungi tipo dettaglio", p, o);
+        if (await d.Result is { Canceled: false })
+        {
+            Snackbar.Add("Tipo dettaglio creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(TipoDettaglioAttivita? t)
+    {
+        if (t is null) return;
+        var p = new DialogParameters<TipoDettaglioAttivitaFormDialog> { { x => x.Iniziale, t } };
+        var o = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<TipoDettaglioAttivitaFormDialog>("Modifica tipo dettaglio", p, o);
+        if (await d.Result is { Canceled: false })
+        {
+            Snackbar.Add("Tipo dettaglio aggiornato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(TipoDettaglioAttivita? t)
+    {
+        if (t is null) return;
+        var p = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare tipo dettaglio?" },
+            { x => x.NomeElemento, t.Descrizione },
+            { x => x.Messaggio, "Verrà disattivato e non comparirà più nell'elenco." },
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, p, o);
+        if (await d.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await TipoDettaglioManager.EliminaAsync(t.IdTipoDettaglioAttivita);
+            Snackbar.Add("Tipo dettaglio eliminato.", MudBlazor.Severity.Success);
+            if (_selezionato?.IdTipoDettaglioAttivita == t.IdTipoDettaglioAttivita) _selezionato = null;
+            await RicaricaAsync();
+        }
+        catch (TipoDettaglioAttivitaConDipendenzeException)
+        {
+            Snackbar.Add("Impossibile eliminare: il tipo è usato da uno o più dettagli attività.", MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Eliminazione tipo dettaglio attività fallita.", "TipiDettAttivitaStudio.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}
