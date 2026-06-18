@@ -191,6 +191,16 @@ h1:focus {
     text-overflow: ellipsis;
 }
 
+/* Utility responsive ICM: visibilità per breakpoint.
+   icm-solo-desktop → nascosta su smartphone (< 600px), visibile su tablet/desktop.
+   icm-solo-mobile  → visibile su smartphone, nascosta su tablet/desktop. */
+@media (max-width: 599.98px) {
+    .icm-solo-desktop { display: none !important; }
+}
+@media (min-width: 600px) {
+    .icm-solo-mobile  { display: none !important; }
+}
+
 /* Pannello testata attività (visualizzazione): label + valore */
 .icm-field-label {
     font-size: 0.7rem;
