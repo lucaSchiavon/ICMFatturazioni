@@ -15,6 +15,40 @@ Questo progetto è una **Blazor Web App** basata su **.NET 10** che utilizza la 
 - **Database**: SQL Server Express (locale o remoto)
 - **Linguaggio**: C# con Nullable Reference Types abilitati
 
+## ⚠️ Database unificato con ICMVerbali (REGOLA VINCOLANTE)
+
+Dal 2026-06-19 ICMFatturazioni e ICMVerbali sono una suite che condivide **un
+unico database**: **`ICMVerbaliDb`**. La connection string di questo progetto
+punta lì (`appsettings.json` → `ConnectionStrings:Default`). Il vecchio DB
+`ICMFatturazioni` **non è più usato**.
+
+Lo schema `fatt` di questo progetto è stato **fuso dentro ICMVerbali**:
+
+- Le due entità condivise vivono come **tabelle fisiche in `dbo` di ICMVerbali**,
+  esposte a questo applicativo tramite **viste aggiornabili**:
+  - `fatt.Anagrafica` → vista su `dbo.Committente` (colonna `IdAnagrafica`=`Id`,
+    `PIVA`=`PartitaIva`, ecc.)
+  - `fatt.Attivita` → vista su `dbo.Progetto` (`Numero`=`Codice` **stringa**,
+    `Descrizione`=`Nome`). Per questo `Attivita.Numero` è `string`, non `int`.
+- Tutte le altre tabelle `fatt` (cataloghi, banche, pagamenti, auth/menu/log/audit)
+  sono tabelle fisiche normali nel DB unificato.
+
+**Regole vincolanti:**
+
+1. **Schema di proprietà di ICMVerbali.** Qualsiasi modifica allo schema (nuove
+   tabelle/colonne `fatt`, indici, ALTER) va scritta come migration numerata in
+   `C:\SVILUPPO\GIT\ICMVerbali\src\ICMVerbali.Web\Migrations\` (numerazione 53+,
+   prefisso `Fatt` nel nome). La cartella `Migrations/` di **questo** repo è
+   **CONGELATA** (vedi `000_CARTELLA_CONGELATA_LEGGIMI.md`): non aggiungere/
+   modificare `.sql` qui.
+2. **Qui si tocca solo codice C#** (entità, repository, manager, UI), mai lo schema.
+3. **Le due entità condivise sono "minime" se create da ICMVerbali.** Una riga di
+   anagrafica/attività inserita dall'app verbali può avere molti campi `fatt`
+   vuoti (CAP, IBAN, codici pagamento, …): ICMVerbali valorizza solo gli
+   invarianti NOT NULL/FK (`TipoAnagrafica`, `SiglaPaese`, `IdTipoAttivita`). Quando
+   sviluppi qui, **non assumere** che i campi opzionali siano popolati e verifica
+   la congruenza tipo-dati su `fatt.Anagrafica`/`fatt.Attivita`.
+
 ## Architettura
 
 L'applicazione segue un'architettura **Layered (N-Tier)** con tre livelli logici:

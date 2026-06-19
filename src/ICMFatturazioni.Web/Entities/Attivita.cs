@@ -17,8 +17,14 @@ public sealed class Attivita
     /// <summary>FK → fatt.TipiAttivita: tipo (CONSULENZE, PROGETTAZIONI, ALTRO).</summary>
     public Guid IdTipoAttivita { get; set; }
 
-    /// <summary>Numero identificativo dell'attività, inputtabile dall'utente (dispensa cap. 10.2).</summary>
-    public int Numero { get; set; }
+    /// <summary>
+    /// Numero/codice identificativo dell'attività, inputtabile dall'utente
+    /// (dispensa cap. 10.2: "numero o nome mnemonico"). Tipizzato come stringa
+    /// dopo la fusione col DB unificato: e' il medesimo campo di
+    /// dbo.Progetto.Codice in ICMVerbali (es. "WHA-WHD"), esposto come "Numero"
+    /// dalla vista fatt.Attivita.
+    /// </summary>
+    public string Numero { get; set; } = string.Empty;
 
     /// <summary>Descrizione libera dell'attività. Obbligatoria.</summary>
     public required string Descrizione { get; init; }

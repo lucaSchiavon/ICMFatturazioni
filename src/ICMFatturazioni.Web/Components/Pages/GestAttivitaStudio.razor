@@ -192,12 +192,11 @@
                 <MudGrid Spacing="2">
 
                     <MudItem xs="12" sm="3" md="2">
-                        <MudNumericField T="int" @bind-Value="_fNumero"
-                                         Label="Numero *"
-                                         Required="true" RequiredError="Il numero è obbligatorio"
-                                         Min="1" HideSpinButtons="true"
-                                         Variant="Variant.Outlined" Margin="Margin.Dense"
-                                         Class="campo-obbligatorio" Immediate="true" />
+                        <MudTextField @bind-Value="_fNumero"
+                                      Label="Numero *"
+                                      Required="true" RequiredError="Il numero è obbligatorio"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense"
+                                      Class="campo-obbligatorio" Immediate="true" />
                     </MudItem>
 
                     <MudItem xs="12" sm="9" md="10">
@@ -663,7 +662,7 @@
     private bool     _formValido;
     private bool     _salvataggio;
     private string   _erroreForm          = string.Empty;
-    private int      _fNumero;
+    private string   _fNumero = string.Empty;
     private string   _fDescr              = string.Empty;
     private DateTime? _fProgettoDefinitivo;
     private DateTime? _fConcessioneEdilizia;
@@ -923,7 +922,7 @@
 
     private void ResetForm()
     {
-        _fNumero              = 0;
+        _fNumero              = string.Empty;
         _fDescr               = string.Empty;
         _fProgettoDefinitivo  = null;
         _fConcessioneEdilizia = null;

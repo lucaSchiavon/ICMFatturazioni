@@ -93,7 +93,7 @@ internal sealed class AttivitaManager : IAttivitaManager
         IdAttivita          = a.IdAttivita,
         IdAnagrafica        = a.IdAnagrafica,
         IdTipoAttivita      = a.IdTipoAttivita,
-        Numero              = a.Numero,
+        Numero              = a.Numero.Trim(),
         Descrizione         = a.Descrizione.Trim(),
         ProgettoDefinitivo  = a.ProgettoDefinitivo,
         ConcessioneEdilizia = a.ConcessioneEdilizia,
@@ -104,10 +104,10 @@ internal sealed class AttivitaManager : IAttivitaManager
 
     private static void ValidaCampi(Attivita a)
     {
-        if (a.Numero <= 0)
+        if (string.IsNullOrWhiteSpace(a.Numero))
             throw new AttivitaInvalidaException(
                 AttivitaInvalidoMotivo.NumeroNonValido,
-                "Il numero attività deve essere un valore positivo.");
+                "Il numero/codice attività è obbligatorio.");
 
         if (string.IsNullOrWhiteSpace(a.Descrizione))
             throw new AttivitaInvalidaException(

@@ -14,7 +14,7 @@ public class AttivitaManagerTests
 
     private static Attivita Att(
         string descr           = "Progettazione residenziale",
-        int    numero          = 100,
+        string numero          = "100",
         Guid?  idAnagrafica    = null,
         Guid?  idTipoAttivita  = null,
         DateOnly? projDef      = null,
@@ -43,13 +43,13 @@ public class AttivitaManagerTests
         var fake = new FakeAttivitaRepository();
         var sut  = NewSut(fake);
 
-        var id = await sut.CreaAsync(Att(numero: 42));
+        var id = await sut.CreaAsync(Att(numero: "42"));
 
         Assert.NotEqual(Guid.Empty, id);
         var a = await fake.GetByIdAsync(id);
         Assert.NotNull(a);
         Assert.Equal("Progettazione residenziale", a.Descrizione);
-        Assert.Equal(42, a.Numero);
+        Assert.Equal("42", a.Numero);
     }
 
     [Fact]
@@ -57,25 +57,19 @@ public class AttivitaManagerTests
     {
         var fake = new FakeAttivitaRepository();
         var sut  = NewSut(fake);
-        var id1  = await sut.CreaAsync(Att(descr: "Prima",   numero: 10));
-        var id2  = await sut.CreaAsync(Att(descr: "Seconda", numero: 20));
-        Assert.Equal(10, (await fake.GetByIdAsync(id1))!.Numero);
-        Assert.Equal(20, (await fake.GetByIdAsync(id2))!.Numero);
+        var id1  = await sut.CreaAsync(Att(descr: "Prima",   numero: "10"));
+        var id2  = await sut.CreaAsync(Att(descr: "Seconda", numero: "20"));
+        Assert.Equal("10", (await fake.GetByIdAsync(id1))!.Numero);
+        Assert.Equal("20", (await fake.GetByIdAsync(id2))!.Numero);
     }
 
-    [Fact]
-    public async Task CreaAsync_NumeroZero_LanciaNumeroNonValido()
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreaAsync_NumeroVuoto_LanciaNumeroNonValido(string numero)
     {
         var sut = NewSut(new FakeAttivitaRepository());
-        var ex  = await Assert.ThrowsAsync<AttivitaInvalidaException>(() => sut.CreaAsync(Att(numero: 0)));
-        Assert.Equal(AttivitaInvalidoMotivo.NumeroNonValido, ex.Motivo);
-    }
-
-    [Fact]
-    public async Task CreaAsync_NumeroNegativo_LanciaNumeroNonValido()
-    {
-        var sut = NewSut(new FakeAttivitaRepository());
-        var ex  = await Assert.ThrowsAsync<AttivitaInvalidaException>(() => sut.CreaAsync(Att(numero: -5)));
+        var ex  = await Assert.ThrowsAsync<AttivitaInvalidaException>(() => sut.CreaAsync(Att(numero: numero)));
         Assert.Equal(AttivitaInvalidoMotivo.NumeroNonValido, ex.Motivo);
     }
 
@@ -223,8 +217,8 @@ public class AttivitaManagerTests
     {
         var fake = new FakeAttivitaRepository();
         var sut  = NewSut(fake);
-        await sut.CreaAsync(Att(descr: "Prima",   numero: 10));
-        await sut.CreaAsync(Att(descr: "Seconda", numero: 20));
+        await sut.CreaAsync(Att(descr: "Prima",   numero: "10"));
+        await sut.CreaAsync(Att(descr: "Seconda", numero: "20"));
 
         var elenco = await sut.ElencoAsync();
         Assert.Equal("Seconda", elenco[0].Descrizione);

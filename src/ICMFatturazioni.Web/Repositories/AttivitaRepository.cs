@@ -30,7 +30,7 @@ internal sealed class AttivitaRepository : IAttivitaRepository
         public Guid      IdAttivita              { get; init; }
         public Guid      IdAnagrafica            { get; init; }
         public Guid      IdTipoAttivita          { get; init; }
-        public int       Numero                  { get; init; }
+        public string    Numero                  { get; init; } = string.Empty;
         public string    Descrizione             { get; init; } = string.Empty;
         public DateTime? ProgettoDefinitivo      { get; init; }
         public DateTime? ConcessioneEdilizia     { get; init; }
@@ -73,7 +73,7 @@ internal sealed class AttivitaRepository : IAttivitaRepository
         """;
 
     private const string SqlSelectAttivi =
-        SqlSelectBase + " WHERE a.IsAttivo = 1 ORDER BY a.Numero DESC;";
+        SqlSelectBase + " WHERE a.IsAttivo = 1 ORDER BY TRY_CAST(a.Numero AS int) DESC, a.Numero DESC;";
 
     public async Task<IReadOnlyList<Attivita>> GetAttiviAsync(CancellationToken cancellationToken = default)
     {
@@ -84,7 +84,7 @@ internal sealed class AttivitaRepository : IAttivitaRepository
     }
 
     private const string SqlSelectByAnagrafica =
-        SqlSelectBase + " WHERE a.IdAnagrafica = @IdAnagrafica AND a.IsAttivo = 1 ORDER BY a.Numero DESC;";
+        SqlSelectBase + " WHERE a.IdAnagrafica = @IdAnagrafica AND a.IsAttivo = 1 ORDER BY TRY_CAST(a.Numero AS int) DESC, a.Numero DESC;";
 
     public async Task<IReadOnlyList<Attivita>> GetByAnagraficaAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
     {
@@ -95,7 +95,7 @@ internal sealed class AttivitaRepository : IAttivitaRepository
     }
 
     private const string SqlSelectByAnagraficaETipo =
-        SqlSelectBase + " WHERE a.IdAnagrafica = @IdAnagrafica AND a.IdTipoAttivita = @IdTipoAttivita AND a.IsAttivo = 1 ORDER BY a.Numero DESC;";
+        SqlSelectBase + " WHERE a.IdAnagrafica = @IdAnagrafica AND a.IdTipoAttivita = @IdTipoAttivita AND a.IsAttivo = 1 ORDER BY TRY_CAST(a.Numero AS int) DESC, a.Numero DESC;";
 
     public async Task<IReadOnlyList<Attivita>> GetByAnagraficaETipoAsync(Guid idAnagrafica, Guid idTipoAttivita, CancellationToken cancellationToken = default)
     {

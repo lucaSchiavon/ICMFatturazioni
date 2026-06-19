@@ -194,7 +194,7 @@
                 IdAttivita          = Iniziale?.IdAttivita ?? Guid.Empty,
                 IdAnagrafica        = _model.IdAnagrafica,
                 IdTipoAttivita      = _model.IdTipoAttivita,
-                Numero              = Iniziale?.Numero ?? 0,
+                Numero              = Iniziale?.Numero ?? string.Empty,
                 Descrizione         = _model.Descrizione,
                 ProgettoDefinitivo  = ToDateOnly(_model.ProgettoDefinitivo),
                 ConcessioneEdilizia = ToDateOnly(_model.ConcessioneEdilizia),
