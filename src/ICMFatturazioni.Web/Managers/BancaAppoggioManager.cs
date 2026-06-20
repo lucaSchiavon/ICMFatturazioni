@@ -70,6 +70,10 @@ internal sealed class BancaAppoggioManager : IBancaAppoggioManager
         var norm = Normalizza(input);
         ValidaInput(norm);
 
+        // Unicità IBAN prima del get-or-create di banca/agenzia: un IBAN
+        // duplicato non deve lasciare anagrafiche bancarie orfane.
+        await ValidaIbanUnicoAsync(norm, escludiId: null, cancellationToken);
+
         var (idBanca, idAgenzia) = await RisolviBancaAgenziaAsync(norm, cancellationToken);
 
         if (await _repository.ExistsLegameAttivoAsync(norm.IdCliente, idBanca, idAgenzia, escludiId: null, cancellationToken))
@@ -107,6 +111,10 @@ internal sealed class BancaAppoggioManager : IBancaAppoggioManager
     {
         var norm = Normalizza(input);
         ValidaInput(norm);
+
+        // Unicità IBAN: escludo l'appoggio corrente così la modifica che lascia
+        // invariato il proprio IBAN non viene scambiata per un duplicato.
+        await ValidaIbanUnicoAsync(norm, escludiId: norm.IdBancaAppoggio, cancellationToken);
 
         var precedente = await _repository.GetByIdAsync(norm.IdBancaAppoggio, cancellationToken);
 
@@ -230,6 +238,16 @@ internal sealed class BancaAppoggioManager : IBancaAppoggioManager
                 "Il CAB deve essere di 5 cifre.");
         }
 
+        // IBAN obbligatorio per le banche dell'azienda: è il conto su cui si
+        // ricevono i bonifici. Per le banche cliente è già forzato a null da
+        // Normalizza (l'obbligo non si applica).
+        if (i.IdCliente is null && string.IsNullOrWhiteSpace(i.IBAN))
+        {
+            throw new BancaAppoggioInvalidaException(
+                BancaAppoggioInvalidaMotivo.IbanObbligatorio,
+                "L'IBAN è obbligatorio per le banche dell'azienda.");
+        }
+
         // IBAN (solo banca azienda; per il cliente è già null).
         if (!string.IsNullOrWhiteSpace(i.IBAN))
         {
@@ -256,6 +274,26 @@ internal sealed class BancaAppoggioManager : IBancaAppoggioManager
                         $"Il CAB ({i.CAB}) non coincide con quello contenuto nell'IBAN ({cabIban}).");
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Garantisce l'unicità dell'IBAN tra gli appoggi attivi (vincolo
+    /// applicativo, non a DB): un IBAN identifica un solo conto, quindi non può
+    /// comparire su due banche di appoggio. Si applica alle sole banche azienda
+    /// (per i clienti l'IBAN è già <c>null</c> dopo la normalizzazione).
+    /// </summary>
+    private async Task ValidaIbanUnicoAsync(BancaAppoggioInput norm, Guid? escludiId, CancellationToken cancellationToken)
+    {
+        if (norm.IBAN is null)
+        {
+            return;
+        }
+        if (await _repository.ExistsIbanAttivoAsync(norm.IBAN, escludiId, cancellationToken))
+        {
+            throw new BancaAppoggioInvalidaException(
+                BancaAppoggioInvalidaMotivo.IbanDuplicato,
+                "Esiste già una banca di appoggio con questo IBAN: un IBAN può appartenere a un solo conto.");
         }
     }
 

@@ -36,7 +36,9 @@ public class BancaAppoggioManagerTests
         }
     }
 
-    private static BancaAppoggioInput Azienda(string banca = "Intesa", string? abi = null, string? agenzia = null, string? cab = null, string? iban = null)
+    // L'IBAN è obbligatorio per le banche azienda: di default l'helper ne fornisce
+    // uno valido (IbanOk). I test che verificano l'obbligo passano iban: null.
+    private static BancaAppoggioInput Azienda(string banca = "Intesa", string? abi = null, string? agenzia = null, string? cab = null, string? iban = IbanOk)
         => new(Guid.Empty, null, banca, abi, agenzia, cab, iban);
 
     private static BancaAppoggioInput Cliente(Guid idCliente, string banca = "Unicredit", string? abi = null, string? agenzia = null, string? cab = null)
@@ -50,14 +52,15 @@ public class BancaAppoggioManagerTests
     public async Task CreaAsync_Valido_RisolveBancaAgenziaEPersiste()
     {
         var sut = new Sut();
-        var id = await sut.Manager.CreaAsync(Azienda(banca: "Intesa", abi: "03069", agenzia: "Sede", cab: "11111"));
+        // ABI/CAB coerenti con IbanOk (05428/11101): l'IBAN azienda è obbligatorio.
+        var id = await sut.Manager.CreaAsync(Azienda(banca: "Intesa", abi: "05428", agenzia: "Sede", cab: "11101"));
 
         var riga = await sut.Manager.GetByIdAsync(id);
         Assert.NotNull(riga);
         Assert.Equal("Intesa", riga!.BancaNome);
-        Assert.Equal("03069", riga.ABI);
+        Assert.Equal("05428", riga.ABI);
         Assert.Equal("Sede", riga.AgenziaNome);
-        Assert.Equal("11111", riga.CAB);
+        Assert.Equal("11101", riga.CAB);
         Assert.Single(sut.BancheRepo.Store);
         Assert.Single(sut.AgenzieRepo.Store);
     }
@@ -176,6 +179,59 @@ public class BancaAppoggioManagerTests
 
         var riga = await sut.Manager.GetByIdAsync(id);
         Assert.Null(riga!.IBAN);
+    }
+
+    // =================================================================
+    // IBAN obbligatorio (solo azienda) + unicità
+    // =================================================================
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreaAsync_AziendaSenzaIban_LanciaIbanObbligatorio(string? iban)
+    {
+        var sut = new Sut();
+        var ex = await Assert.ThrowsAsync<BancaAppoggioInvalidaException>(
+            () => sut.Manager.CreaAsync(Azienda(banca: "Intesa", iban: iban)));
+        Assert.Equal(BancaAppoggioInvalidaMotivo.IbanObbligatorio, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task CreaAsync_BancaClienteSenzaIban_Ammessa()
+    {
+        // Il cliente non ha IBAN: l'obbligo vale solo per l'azienda.
+        var sut = new Sut();
+        var id = await sut.Manager.CreaAsync(Cliente(Guid.CreateVersion7(), banca: "Unicredit"));
+        Assert.NotNull(await sut.Manager.GetByIdAsync(id));
+    }
+
+    [Fact]
+    public async Task CreaAsync_StessoIbanSuAltraBancaAzienda_LanciaIbanDuplicato()
+    {
+        var sut = new Sut();
+        await sut.Manager.CreaAsync(Azienda(banca: "Intesa", iban: IbanOk));
+
+        // Stesso IBAN su una banca diversa: un IBAN = un solo conto.
+        var ex = await Assert.ThrowsAsync<BancaAppoggioInvalidaException>(
+            () => sut.Manager.CreaAsync(Azienda(banca: "Unicredit", iban: IbanOk)));
+        Assert.Equal(BancaAppoggioInvalidaMotivo.IbanDuplicato, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task AggiornaAsync_MantieneProprioIban_NonLanciaDuplicato()
+    {
+        // Modificare un appoggio lasciandone invariato l'IBAN non deve essere
+        // scambiato per un duplicato di sé stesso (escludiId).
+        var sut = new Sut();
+        var id = await sut.Manager.CreaAsync(Azienda(banca: "Intesa", iban: IbanOk));
+
+        var update = new BancaAppoggioInput(id, null, "Intesa", null, "Sede", "11101", IbanOk);
+        await sut.Manager.AggiornaAsync(update);
+
+        var riga = await sut.Manager.GetByIdAsync(id);
+        Assert.Equal(IbanOk, riga!.IBAN);
+        Assert.Equal("Sede", riga.AgenziaNome);
     }
 
     // =================================================================

@@ -37,6 +37,14 @@ public interface IBancaAppoggioRepository
     /// </summary>
     Task<bool> ExistsLegameAttivoAsync(Guid? idCliente, Guid idBanca, Guid? idAgenzia, Guid? escludiId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Verifica se esiste già un appoggio attivo con lo stesso <paramref name="iban"/>
+    /// (atteso già normalizzato: maiuscolo, senza spazi), escludendo
+    /// <paramref name="escludiId"/>. Serve a garantire l'unicità dell'IBAN a
+    /// livello applicativo (un IBAN identifica un solo conto): nessun vincolo DB.
+    /// </summary>
+    Task<bool> ExistsIbanAttivoAsync(string iban, Guid? escludiId, CancellationToken cancellationToken = default);
+
     /// <summary>Inserisce un nuovo appoggio (id GUID già valorizzato dal manager).</summary>
     Task InsertAsync(BancaAppoggio banca, CancellationToken cancellationToken = default);
 

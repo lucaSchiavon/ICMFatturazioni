@@ -69,6 +69,12 @@ internal sealed class FakeBancaAppoggioRepository : IBancaAppoggioRepository
             && (escludiId is null || b.IdBancaAppoggio != escludiId)));
     }
 
+    public Task<bool> ExistsIbanAttivoAsync(string iban, Guid? escludiId, CancellationToken cancellationToken = default)
+        => Task.FromResult(_store.Values.Any(b =>
+            b.IsAttivo
+            && string.Equals(b.IBAN, iban, StringComparison.Ordinal)
+            && (escludiId is null || b.IdBancaAppoggio != escludiId)));
+
     public Task InsertAsync(BancaAppoggio banca, CancellationToken cancellationToken = default)
     {
         _store[banca.IdBancaAppoggio] = banca;

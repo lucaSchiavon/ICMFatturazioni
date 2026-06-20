@@ -10,8 +10,9 @@
       auto-compila. Modificandoli si AGGIORNA la banca/agenzia (niente doppioni).
     - Toggle Azienda / Cliente solo in creazione (schede indipendenti). In
       modifica la natura è fissa: si vede solo la scheda pertinente.
-    - IBAN solo per la banca azienda. Validazioni di formato/checksum/coerenza
-      sono nel manager (mostrate come errore server).
+    - IBAN solo per la banca azienda, dove è obbligatorio e univoco (un IBAN =
+      un solo conto). Validazioni di formato/checksum/coerenza/unicità sono nel
+      manager (mostrate come errore server).
 *@
 
 @using ICMFatturazioni.Web.Entities
@@ -153,10 +154,13 @@
                 {
                     <MudItem xs="12">
                         <MudTextField @bind-Value="_model.IBAN"
-                                      Label="IBAN"
+                                      Label="IBAN *"
                                       MaxLength="34"
+                                      Required="true"
+                                      RequiredError="L'IBAN è obbligatorio per le banche dell'azienda"
                                       Variant="Variant.Outlined"
                                       Margin="Margin.Dense"
+                                      Class="campo-obbligatorio"
                                       HelperText="Conto su cui i clienti versano i bonifici (ABI/CAB sono contenuti nell'IBAN)" />
                     </MudItem>
                 }

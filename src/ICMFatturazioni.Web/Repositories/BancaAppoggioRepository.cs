@@ -119,6 +119,28 @@ internal sealed class BancaAppoggioRepository : IBancaAppoggioRepository
     }
 
     // ---------------------------------------------------------------------
+    // Unicità IBAN (vincolo applicativo, non a DB): un IBAN = un solo conto
+    // ---------------------------------------------------------------------
+
+    private const string SqlExistsIban = """
+        SELECT CASE WHEN EXISTS (
+            SELECT 1 FROM fatt.BancheAppoggio
+            WHERE IsAttivo = 1
+              AND IBAN = @IBAN
+              AND (@EscludiId IS NULL OR IdBancaAppoggio <> @EscludiId)
+        ) THEN 1 ELSE 0 END;
+        """;
+
+    public async Task<bool> ExistsIbanAttivoAsync(string iban, Guid? escludiId, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlExistsIban,
+            new { IBAN = iban, EscludiId = escludiId },
+            cancellationToken: cancellationToken);
+        return await connection.ExecuteScalarAsync<bool>(cmd);
+    }
+
+    // ---------------------------------------------------------------------
     // Scritture (entità di legame)
     // ---------------------------------------------------------------------
 

@@ -20,6 +20,13 @@ public enum BancaAppoggioInvalidaMotivo
     /// <summary>Il CAB non è nel formato corretto (5 cifre).</summary>
     CabNonValido,
 
+    /// <summary>
+    /// L'IBAN manca su una banca dell'azienda. Per le banche azienda l'IBAN è
+    /// obbligatorio (è il conto su cui si ricevono i bonifici); per le banche
+    /// cliente è invece sempre assente.
+    /// </summary>
+    IbanObbligatorio,
+
     /// <summary>L'IBAN non è formalmente valido (formato o checksum errato).</summary>
     IbanNonValido,
 
@@ -28,6 +35,13 @@ public enum BancaAppoggioInvalidaMotivo
     /// indicati (incoerenza tra IBAN e codici).
     /// </summary>
     IbanIncoerente,
+
+    /// <summary>
+    /// L'IBAN indicato è già usato da un'altra banca di appoggio attiva. Un IBAN
+    /// identifica univocamente un conto corrente: non può comparire su due
+    /// appoggi distinti. Verificato a livello applicativo (nessun vincolo DB).
+    /// </summary>
+    IbanDuplicato,
 
     /// <summary>
     /// Lo stesso intestatario ha già un appoggio attivo con la stessa banca e
