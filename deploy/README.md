@@ -11,9 +11,10 @@ build/runtime: servono come riferimento al momento del deploy.
   Contiene placeholder `CHANGE_ME_*`. **Non versionare** la versione reale
   (gia' escluso dal `.gitignore`).
 - `CHECKLIST-RILASCIO.md` — checklist da compilare ad ogni messa in produzione.
-
-> `dotnet publish -c Release` genera gia' un `web.config` valido: in genere non
-> serve un template dedicato. Editalo solo per aggiungere env var o header.
+- `web.example.config` — template di `web.config` di riferimento (env var, header
+  di sicurezza, `requestTimeout`, stdout log). **In genere non serve sostituirlo**:
+  `dotnet publish -c Release` genera gia' un `web.config` valido; usa questo come
+  reference per le poche sezioni da editare.
 
 ## ⚠️ Differenze rispetto a ICMVerbali
 
