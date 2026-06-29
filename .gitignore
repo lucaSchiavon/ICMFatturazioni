@@ -3,6 +3,14 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+# Segreti di deploy: appsettings di Production/Staging contengono connection
+# string, password admin e chiave SMTP. NON versionare (vedi deploy/README.md).
+# I template *.example.json restano tracciati.
+appsettings.Production.json
+appsettings.Staging.json
+**/appsettings.Production.json
+**/appsettings.Staging.json
+
 # User-specific files
 *.rsuser
 *.suo
@@ -216,6 +224,9 @@ publish/
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
 *.publishproj
+# Eccezione: il profilo di publish a cartella (FileSystem) e' versionato — non
+# contiene credenziali, a differenza dei profili Web Deploy. Mirror di ICMVerbali.
+!src/ICMFatturazioni.Web/Properties/PublishProfiles/FolderProfile.pubxml
 
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
 # checkin your Azure Web App publish settings, but sensitive information contained
