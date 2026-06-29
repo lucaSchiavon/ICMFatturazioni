@@ -9,24 +9,39 @@
     runtime sarà introdotto con la pagina del profilo utente (Fase 3+).
 *@
 @using System.Security.Claims
+@using ICMFatturazioni.Web.Authentication
 @using ICMFatturazioni.Web.Components.Shared
+@using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Theme
 @inherits LayoutComponentBase
+@inject ICurrentUserAccessor CurrentUser
+@inject IUtenteManager UtenteManager
 
 <MudThemeProvider Theme="@IcmTheme.Default" IsDarkMode="@_isDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
+@* La preferenza di tema (chiaro/scuro) è propagata in cascata così che anche
+   il NavMenu possa adattarsi (es. variante del logo Vis Logica). *@
+<CascadingValue Value="_isDarkMode" Name="IsDarkMode">
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Inherit" Style="background-color: #1E2A3B; color: #FFFFFF;">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                        Ripple="false" OnClick="@ToggleDrawer" />
         <MudText Typo="Typo.h6" Class="ml-2">ICM Fatturazioni</MudText>
         <MudSpacer />
+        @* Toggle tema chiaro/scuro: mostra l'icona della modalità in cui si
+           passerebbe. La scelta è persistita su fatt.Utenti (TemaPreferito). *@
+        <MudTooltip Text="@(_isDarkMode ? "Passa al tema chiaro" : "Passa al tema scuro")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Inherit" Ripple="false"
+                           OnClick="@ToggleTemaAsync"
+                           aria-label="Cambia tema chiaro/scuro" />
+        </MudTooltip>
         <AuthorizeView>
             <Authorized>
-                <MudText Typo="Typo.body2" Class="mr-4">@context.User.Identity?.Name</MudText>
+                <MudText Typo="Typo.body2" Class="mx-4">@context.User.Identity?.Name</MudText>
                 <form method="post" action="/auth/logout" style="display:inline;">
                     <AntiforgeryToken />
                     <MudButton ButtonType="ButtonType.Submit"
@@ -54,6 +69,7 @@
         </MudContainer>
     </MudMainContent>
 </MudLayout>
+</CascadingValue>
 
 <div id="blazor-error-ui" data-nosnippet>
     Si è verificato un errore non gestito.
@@ -64,22 +80,34 @@
 @code {
     private bool _drawerOpen = true;
     private bool _isDarkMode;
-
-    // Auth state cascading: usato per leggere la preferenza tema iniziale
-    // dell'utente loggato. Per ora è write-once (al mount); il toggle
-    // runtime arriverà con la pagina profilo (Fase 3).
-    [CascadingParameter]
-    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    private Guid? _idUtente;
 
     protected override async Task OnInitializedAsync()
     {
-        if (AuthenticationStateTask is not null)
+        // Preferenza tema letta dal DB (non dal claim, che è fissato al login):
+        // così il toggle resta coerente anche dopo un refresh della pagina,
+        // senza dover rifare il login. Fallback al tema chiaro.
+        (_idUtente, _) = await CurrentUser.GetAsync();
+        if (_idUtente is Guid id)
         {
-            var state = await AuthenticationStateTask;
-            var tema = state.User.FindFirst("tema_preferito")?.Value;
-            _isDarkMode = tema == "dark";
+            var utente = await UtenteManager.GetByIdAsync(id);
+            _isDarkMode = utente?.TemaPreferito == "dark";
         }
     }
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    /// <summary>
+    /// Commuta tema chiaro/scuro: aggiorna subito la UI e persiste la scelta su
+    /// fatt.Utenti. La persistenza è best-effort — se fallisce, il cambio resta
+    /// applicato per la sessione corrente (l'errore viene loggato a monte).
+    /// </summary>
+    private async Task ToggleTemaAsync()
+    {
+        _isDarkMode = !_isDarkMode;
+        if (_idUtente is Guid id)
+        {
+            await UtenteManager.ImpostaTemaPreferitoAsync(id, _isDarkMode ? "dark" : "light");
+        }
+    }
 }

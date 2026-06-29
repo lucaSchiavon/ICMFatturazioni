@@ -275,7 +275,11 @@ app.UseRateLimiter();
 
 app.UseAntiforgery();
 
-app.MapStaticAssets();
+// AllowAnonymous: senza questo, la fallback policy globale (RequireAuthenticatedUser)
+// si applica anche agli asset statici, e una richiesta anonima a /images/*, /css,
+// /js verrebbe rediretta a /login. È il motivo per cui il logo nella pagina di
+// login (richiesto dal browser prima dell'autenticazione) risultava rotto.
+app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

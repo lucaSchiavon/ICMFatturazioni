@@ -15,46 +15,64 @@
 @using ICMFatturazioni.Web.Navigation
 @inject IMenuService MenuService
 
-<MudNavMenu>
-    <MudNavLink Href="/dashboard"
-                Icon="@Icons.Material.Filled.Dashboard"
-                Match="NavLinkMatch.Prefix">
-        Home
-    </MudNavLink>
+@* Shell flex a colonna: la navigazione scorre, il blocco "Powered by" resta
+   ancorato in fondo al drawer (margin-top:auto). Replica il pattern di ICMVerbali. *@
+<div class="icm-nav-shell">
+    <MudNavMenu Class="icm-nav-scrollable">
+        <MudNavLink Href="/dashboard"
+                    Icon="@Icons.Material.Filled.Dashboard"
+                    Match="NavLinkMatch.Prefix">
+            Home
+        </MudNavLink>
 
-    <MudDivider Class="my-2" />
+        <MudDivider Class="my-2" />
 
-    @if (_menu is null)
-    {
-        <div class="d-flex justify-center pa-4">
-            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-        </div>
-    }
-    else
-    {
-        @foreach (var nodo in _menu)
+        @if (_menu is null)
         {
-            @if (nodo.EGruppo)
+            <div class="d-flex justify-center pa-4">
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            </div>
+        }
+        else
+        {
+            @foreach (var nodo in _menu)
             {
-                <MudNavGroup Title="@nodo.Descrizione"
-                             Icon="@IconaResolver.Risolvi(nodo.Icona)"
-                             Expanded="@nodo.Figli.Any(f => f.Attivo)">
-                    @foreach (var figlio in nodo.Figli)
-                    {
-                        <NavMenuItem Nodo="figlio" />
-                    }
-                </MudNavGroup>
-            }
-            else
-            {
-                <NavMenuItem Nodo="nodo" />
+                @if (nodo.EGruppo)
+                {
+                    <MudNavGroup Title="@nodo.Descrizione"
+                                 Icon="@IconaResolver.Risolvi(nodo.Icona)"
+                                 Expanded="@nodo.Figli.Any(f => f.Attivo)">
+                        @foreach (var figlio in nodo.Figli)
+                        {
+                            <NavMenuItem Nodo="figlio" />
+                        }
+                    </MudNavGroup>
+                }
+                else
+                {
+                    <NavMenuItem Nodo="nodo" />
+                }
             }
         }
-    }
-</MudNavMenu>
+    </MudNavMenu>
+
+    <div class="powered-by">
+        <a href="https://www.vislogica.com" target="_blank" rel="noopener noreferrer" title="Powered by Vis Logica">
+            <span class="powered-by-label">Powered by</span>
+            @* Logo a colori sul drawer chiaro, variante bianca su quello scuro:
+               il navy del logo a colori sparirebbe sul fondo scuro. *@
+            <img src="@(IsDarkMode ? "/images/vis-logica-logo-bianco.png" : "/images/vis-logica-logo.png")"
+                 alt="Vis Logica" class="powered-by-logo" />
+        </a>
+    </div>
+</div>
 
 @code {
     private IReadOnlyList<MenuNodo>? _menu;
+
+    /// <summary>Tema corrente (propagato da MainLayout): seleziona la variante del logo.</summary>
+    [CascadingParameter(Name = "IsDarkMode")]
+    public bool IsDarkMode { get; set; }
 
     protected override async Task OnInitializedAsync()
     {

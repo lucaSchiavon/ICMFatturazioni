@@ -87,26 +87,34 @@ h1:focus {
     }
 }
 
-/* Riga selezionata della griglia anagrafiche: giallo tenue per dare un
-   feedback visivo immediato di "riga attiva". Si usa !important per
-   prevalere su hover/striping della MudDataGrid; le regole sulle celle
-   sticky coprono anche la prima/ultima colonna fissata. */
+/* Riga selezionata della griglia anagrafiche: tinta ambra tenue per dare un
+   feedback visivo immediato di "riga attiva". Si usa !important per prevalere
+   su hover/striping della MudDataGrid; le regole sulle celle sticky coprono
+   anche la prima/ultima colonna fissata.
+   color-mix con la superficie del tema (non più il fisso #FEF6D6): in light
+   resta un crema tenue identico a prima, in dark diventa un tono caldo SCURO
+   che non copre più il testo chiaro della riga. Si adatta da sé al tema. */
 .anagrafica-riga-selezionata,
 .anagrafica-riga-selezionata td {
-    background-color: #FEF6D6 !important;
+    background-color: color-mix(in srgb, #D97706 22%, var(--mud-palette-surface)) !important;
 }
 .anagrafica-riga-selezionata .sticky-left,
 .anagrafica-riga-selezionata .sticky-right {
-    background-color: #FEF6D6 !important;
+    background-color: color-mix(in srgb, #D97706 22%, var(--mud-palette-surface)) !important;
 }
 
 /* Campi obbligatori dei form: oltre all'asterisco nella label, il controllo
-   riceve una tinta blu tenue (icm-blue-50) per segnalare "da compilare"
-   senza l'allarme del rosso. Vale per MudTextField e MudSelect (outlined):
-   il riempimento va sul contenitore .mud-input-outlined (l'area racchiusa
-   dal fieldset del bordo), non sullo slot dell'input che è trasparente. */
+   riceve una tinta blu tenue per segnalare "da compilare" senza l'allarme del
+   rosso. Vale per MudTextField e MudSelect (outlined): il riempimento va sul
+   contenitore .mud-input-outlined (l'area racchiusa dal fieldset del bordo),
+   non sullo slot dell'input che è trasparente.
+   La tinta nasce da color-mix tra il colore primario e la superficie del tema
+   (non più il fisso #EEF4FA): in light resta un azzurrino tenue, in dark il
+   primario è più chiaro (icm-blue-300) quindi il mix SCHIARISCE il campo sul
+   fondo scuro rendendolo ben distinguibile, senza il riquadro accecante che
+   nascondeva la label. Si adatta da sé al tema senza duplicare le regole. */
 .campo-obbligatorio .mud-input.mud-input-outlined {
-    background-color: #EEF4FA;
+    background-color: color-mix(in srgb, var(--mud-palette-primary) 20%, var(--mud-palette-surface));
     border-radius: var(--mud-default-borderradius);
 }
 

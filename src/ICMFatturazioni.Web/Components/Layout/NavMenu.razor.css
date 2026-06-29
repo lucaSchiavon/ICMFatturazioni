@@ -1,1 +1,56 @@
-/* Scoped CSS volutamente vuoto: il menu è gestito da MudNavMenu. */
+/*
+    Layout del menu laterale: la navigazione occupa lo spazio disponibile e
+    scorre, mentre il blocco "Powered by Vis Logica" resta ancorato in fondo
+    al drawer. Replica il pattern di ICMVerbali, adattato al MudDrawer chiaro
+    di questo progetto (logo Vis Logica a colori, non bianco).
+*/
+.icm-nav-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 100%;
+}
+
+/* La MudNavMenu prende tutta l'altezza residua e scorre da sola. */
+.icm-nav-scrollable {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* Blocco firma in fondo: margin-top:auto lo spinge in basso anche quando la
+   navigazione è corta. Colori presi dalle CSS-var di MudBlazor così da
+   adattarsi automaticamente al tema chiaro/scuro (il divisore e il testo
+   secondario cambiano da soli). */
+.powered-by {
+    margin-top: auto;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--mud-palette-divider);
+    text-align: center;
+}
+
+    .powered-by a {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+        text-decoration: none;
+        opacity: 0.7;
+        transition: opacity 0.15s ease;
+    }
+
+    .powered-by a:hover {
+        opacity: 1;
+    }
+
+.powered-by-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.powered-by-logo {
+    height: 22px;
+    width: auto;
+}
