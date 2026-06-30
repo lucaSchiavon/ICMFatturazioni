@@ -101,6 +101,65 @@ public class ScadenzaPagamentoManagerTests
     }
 
     // -------------------------------------------------------------------------
+    // Somma scadenze ≤ importo dettaglio (ripartizione completa)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CreaAsync_SommaSupererebbeImporto_LanciaSommaEccedeImporto()
+    {
+        // Dettaglio = 1000. Prima 700 (ok), poi 400 → 1100 > 1000 → rifiutata.
+        var (sut, _, _) = NewSut();
+        await sut.CreaAsync(Sca(importo: 700m));
+
+        var ex = await Assert.ThrowsAsync<ScadenzaPagamentoInvalidaException>(
+            () => sut.CreaAsync(Sca(importo: 400m)));
+        Assert.Equal(ScadenzaPagamentoMotivoInvalido.SommaEccedeImporto, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task CreaAsync_SommaEsattaImporto_Consentita()
+    {
+        // Dettaglio = 1000. 600 + 400 = 1000 esatti → entrambe accettate.
+        var (sut, fakeRepo, _) = NewSut();
+        await sut.CreaAsync(Sca(importo: 600m));
+        await sut.CreaAsync(Sca(importo: 400m));
+
+        var tutte = await fakeRepo.GetByDettaglioAsync(IdDettaglio);
+        Assert.Equal(1000m, tutte.Sum(s => s.Importo));
+    }
+
+    [Fact]
+    public async Task AggiornaAsync_SommaSupererebbeImporto_LanciaSommaEccedeImporto()
+    {
+        // Dettaglio = 1000. 600 + 300 = 900. Aggiornare la 300 a 500 → 1100 > 1000 → rifiutata.
+        var (sut, _, _) = NewSut();
+        await sut.CreaAsync(Sca(importo: 600m));
+        var id300 = await sut.CreaAsync(Sca(importo: 300m));
+
+        var aggiornata = Sca(importo: 500m);
+        aggiornata.IdScadenza = id300;
+
+        var ex = await Assert.ThrowsAsync<ScadenzaPagamentoInvalidaException>(
+            () => sut.AggiornaAsync(aggiornata));
+        Assert.Equal(ScadenzaPagamentoMotivoInvalido.SommaEccedeImporto, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task AggiornaAsync_EscludeLaScadenzaStessa_Consentita()
+    {
+        // Dettaglio = 1000. Unica scadenza da 1000; aggiornarla a 800 deve passare
+        // (la somma esclude la scadenza che si sta riscrivendo).
+        var (sut, fakeRepo, _) = NewSut();
+        var id = await sut.CreaAsync(Sca(importo: 1000m));
+
+        var aggiornata = Sca(importo: 800m);
+        aggiornata.IdScadenza = id;
+        await sut.AggiornaAsync(aggiornata);
+
+        Assert.Equal(800m, (await fakeRepo.GetByIdAsync(id))!.Importo);
+    }
+
+    // -------------------------------------------------------------------------
     // Protezione HasFattura
     // -------------------------------------------------------------------------
 
@@ -151,9 +210,10 @@ public class ScadenzaPagamentoManagerTests
     public async Task ElencoPerDettaglioAsync_OrdinaPerDataAsc()
     {
         var (sut, _, _) = NewSut();
-        await sut.CreaAsync(Sca(data: new DateOnly(2025, 12, 31)));
-        await sut.CreaAsync(Sca(data: new DateOnly(2025,  6, 30)));
-        await sut.CreaAsync(Sca(data: new DateOnly(2026,  3, 31)));
+        // Importi che ripartiscono i 1000 € del dettaglio senza eccederli.
+        await sut.CreaAsync(Sca(data: new DateOnly(2025, 12, 31), importo: 300m));
+        await sut.CreaAsync(Sca(data: new DateOnly(2025,  6, 30), importo: 300m));
+        await sut.CreaAsync(Sca(data: new DateOnly(2026,  3, 31), importo: 400m));
 
         var lista = await sut.ElencoPerDettaglioAsync(IdDettaglio);
 

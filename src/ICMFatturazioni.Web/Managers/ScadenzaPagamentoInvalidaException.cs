@@ -13,6 +13,9 @@ public enum ScadenzaPagamentoMotivoInvalido
 
     /// <summary>L'importo è ≤ 0.</summary>
     ImportoNonValido,
+
+    /// <summary>La somma delle scadenze attive eccederebbe l'importo del dettaglio attività.</summary>
+    SommaEccedeImporto,
 }
 
 /// <summary>

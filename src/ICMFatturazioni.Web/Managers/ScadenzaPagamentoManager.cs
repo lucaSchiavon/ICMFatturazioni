@@ -41,6 +41,10 @@ public sealed class ScadenzaPagamentoManager : IScadenzaPagamentoManager
                 ScadenzaPagamentoMotivoInvalido.DettaglioFatturato,
                 "La riga è collegata a una fattura emessa: non è possibile aggiungere scadenze.");
 
+        // Sentinel: la somma delle scadenze attive non può eccedere l'importo del
+        // dettaglio (le scadenze sono una ripartizione completa dell'importo).
+        await ValidaSommaNonEccedenteAsync(scadenza, dettaglio, escludiIdScadenza: null, ct);
+
         scadenza.IdScadenza = Guid.CreateVersion7();
         await _repo.InsertAsync(scadenza, ct);
 
@@ -73,6 +77,10 @@ public sealed class ScadenzaPagamentoManager : IScadenzaPagamentoManager
             throw new ScadenzaPagamentoInvalidaException(
                 ScadenzaPagamentoMotivoInvalido.DettaglioFatturato,
                 "La riga è collegata a una fattura emessa: non è possibile modificare le scadenze.");
+
+        // Sentinel: la nuova somma (escludendo la scadenza che si sta aggiornando)
+        // non può eccedere l'importo del dettaglio.
+        await ValidaSommaNonEccedenteAsync(scadenza, dettaglio, escludiIdScadenza: scadenza.IdScadenza, ct);
 
         var prima = await _repo.GetByIdAsync(scadenza.IdScadenza, ct);
         await _repo.UpdateAsync(scadenza, ct);
@@ -117,6 +125,34 @@ public sealed class ScadenzaPagamentoManager : IScadenzaPagamentoManager
                 cancellationToken: ct);
         }
         catch { /* audit best-effort */ }
+    }
+
+    /// <summary>
+    /// Sentinel di correttezza: la somma delle scadenze attive del dettaglio
+    /// (più la scadenza in inserimento/modifica) non può superare l'importo del
+    /// dettaglio. Le scadenze sono una ripartizione completa dell'importo: il
+    /// limite superiore è invariante e va difeso a prescindere dalla UI.
+    /// </summary>
+    private async Task ValidaSommaNonEccedenteAsync(
+        ScadenzaPagamento scadenza,
+        AttivitaDettaglio? dettaglio,
+        Guid? escludiIdScadenza,
+        CancellationToken ct)
+    {
+        // Senza dettaglio non si conosce l'importo di riferimento: nulla da validare.
+        if (dettaglio is null) return;
+
+        var esistenti = await _repo.GetByDettaglioAsync(scadenza.IdAttivitaDettaglio, ct);
+        var sommaAltre = esistenti
+            .Where(s => escludiIdScadenza is null || s.IdScadenza != escludiIdScadenza.Value)
+            .Sum(s => s.Importo);
+
+        // Tolleranza per arrotondamenti su DECIMAL(18,2).
+        if (sommaAltre + scadenza.Importo > dettaglio.Importo + 0.005m)
+            throw new ScadenzaPagamentoInvalidaException(
+                ScadenzaPagamentoMotivoInvalido.SommaEccedeImporto,
+                $"La somma delle scadenze ({(sommaAltre + scadenza.Importo).ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("it-IT"))} €) " +
+                $"supererebbe l'importo del dettaglio ({dettaglio.Importo.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("it-IT"))} €).");
     }
 
     private static void ValidaCampi(ScadenzaPagamento s)

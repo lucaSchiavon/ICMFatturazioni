@@ -1132,7 +1132,16 @@
         {
             { x => x.Dettaglio, d },
         };
-        var o = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true };
+        // ESC e click sul backdrop disabilitati: la maschera scadenze si chiude
+        // SOLO dal pulsante Chiudi, che a sua volta compare solo quando le scadenze
+        // ripartiscono l'intero importo del dettaglio (regola di completezza).
+        var o = new DialogOptions
+        {
+            MaxWidth         = MaxWidth.Medium,
+            FullWidth        = true,
+            CloseOnEscapeKey = false,
+            BackdropClick    = false,
+        };
         var dialog = await DialogService.ShowAsync<ScadenzeDettaglioDialog>("Scadenze pagamento", p, o);
         await dialog.Result;
         // Ricarica per aggiornare i badge NumeroScadenze nella griglia.

@@ -47,8 +47,19 @@
 
         <MudDivider Class="mb-3" />
 
-        @* Form inserimento/modifica scadenza *@
-        @if (!Dettaglio.HasFattura)
+        @* Regola: le scadenze devono ripartire l'INTERO importo del dettaglio. *@
+        @if (!Dettaglio.HasFattura && _sbilanciato)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Schedula l'intero importo del dettaglio (@Dettaglio.Importo.ToString("N2", _itCulture) €)
+                con una o più scadenze. Finché il totale schedulato non coincide, la maschera non può
+                essere chiusa. Residuo da schedulare: <strong>@_residuo.ToString("N2", _itCulture) €</strong>.
+            </MudAlert>
+        }
+
+        @* Form inserimento/modifica scadenza — nascosto quando l'importo è già
+           interamente schedulato e non si sta modificando una scadenza esistente. *@
+        @if (!Dettaglio.HasFattura && (_sbilanciato || _scadenzaInModifica is not null))
         {
             <MudPaper Elevation="0" Class="mud-background-gray rounded pa-3 mb-3">
                 <MudText Typo="Typo.caption" Class="mb-2">
@@ -69,6 +80,7 @@
                                          Label="Importo € *"
                                          @bind-Value="_fImporto"
                                          Min="0.01m"
+                                         Max="_maxImportoForm"
                                          Format="N2"
                                          Culture="_itCulture"
                                          Variant="Variant.Outlined" />
@@ -103,6 +115,15 @@
                     </MudButton>
                 </div>
             </MudPaper>
+        }
+
+        @* Importo interamente schedulato: la maschera può essere chiusa. *@
+        @if (!Dettaglio.HasFattura && _bilanciato && _scadenzaInModifica is null)
+        {
+            <MudAlert Severity="Severity.Success" Dense="true" Class="mb-3">
+                Importo interamente schedulato (@Dettaglio.Importo.ToString("N2", _itCulture) €).
+                Puoi chiudere la maschera.
+            </MudAlert>
         }
 
         @* Griglia scadenze *@
@@ -149,7 +170,46 @@
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Chiudi" Variant="Variant.Text">Chiudi</MudButton>
+        @* Chiusura "pulita" (Chiudi) solo quando l'importo è interamente schedulato
+           oppure la riga è in sola lettura. Altrimenti l'unica uscita è "Esci senza
+           salvare", che elimina le scadenze incomplete: ESC e click sul backdrop
+           sono disabilitati a monte (DialogOptions in GestAttivitaStudio) così
+           l'uscita passa sempre da qui e la ripartizione parziale non persiste. *@
+        @if (Dettaglio.HasFattura || _bilanciato)
+        {
+            <MudButton OnClick="Chiudi" Variant="Variant.Text">Chiudi</MudButton>
+        }
+        else if (_confermaUscita)
+        {
+            <div class="d-flex align-center flex-wrap gap-2">
+                <MudText Typo="Typo.caption" Color="Color.Error" Class="mr-2 my-2">
+                    Le scadenze di questo dettaglio (@_totaleScadenzato.ToString("N2", _itCulture) €)
+                    non verranno salvate e saranno eliminate. Confermi?
+                </MudText>
+                <MudButton Size="Size.Small" Variant="Variant.Text"
+                           Disabled="_salvataggio"
+                           OnClick="@(() => _confermaUscita = false)">
+                    Annulla
+                </MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.DeleteForever"
+                           Disabled="_salvataggio"
+                           OnClick="EsciSenzaSalvareAsync">
+                    Esci ed elimina
+                </MudButton>
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Color="Color.Warning" Class="mr-2 my-2">
+                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" />
+                Schedula l'intero importo per chiudere — mancano @_residuo.ToString("N2", _itCulture) €.
+            </MudText>
+            <MudButton Variant="Variant.Text"
+                       OnClick="@(() => _confermaUscita = true)">
+                Esci senza salvare
+            </MudButton>
+        }
     </DialogActions>
 </MudDialog>
 
@@ -173,12 +233,26 @@
     private string    _fNota = string.Empty;
 
     private ScadenzaPagamento? _scadenzaInModifica;
+    // True quando l'utente ha chiesto di uscire da una ripartizione incompleta e
+    // si attende la conferma dell'eliminazione delle scadenze.
+    private bool _confermaUscita;
 
     private decimal _totaleScadenzato => _scadenze.Sum(s => s.Importo);
-    private bool    _sbilanciato     => Math.Abs(Dettaglio.Importo - _totaleScadenzato) > 0.01m;
+    private decimal _residuo          => Dettaglio.Importo - _totaleScadenzato;
+    // Bilanciato = la somma delle scadenze copre ESATTAMENTE l'importo del dettaglio.
+    private bool    _bilanciato       => Math.Abs(_residuo) <= 0.005m;
+    private bool    _sbilanciato      => !_bilanciato;
+    // Importo massimo consentito nel form: in inserimento = residuo; in modifica =
+    // residuo + l'importo della scadenza che si sta riscrivendo.
+    private decimal _maxImportoForm   => _scadenzaInModifica is null
+        ? _residuo
+        : _residuo + _scadenzaInModifica.Importo;
 
     protected override async Task OnInitializedAsync()
-        => await CaricaAsync();
+    {
+        await CaricaAsync();
+        ResetForm();
+    }
 
     private async Task CaricaAsync()
     {
@@ -205,8 +279,11 @@
     private void ResetForm()
     {
         _scadenzaInModifica = null;
-        _fData    = null;
-        _fImporto = 0m;
+        // Default per una nuova scadenza: data = termine previsto del dettaglio,
+        // importo = residuo ancora da schedulare (sulla PRIMA scadenza coincide
+        // con l'intero importo del dettaglio).
+        _fData    = Dettaglio.TerminePrevisto?.ToDateTime(TimeOnly.MinValue);
+        _fImporto = _residuo > 0m ? _residuo : 0m;
         _fNota    = string.Empty;
         _erroreForm = string.Empty;
     }
@@ -223,6 +300,14 @@
         if (_fImporto <= 0)
         {
             _erroreForm = "L'importo deve essere maggiore di zero.";
+            return;
+        }
+        // Cap: la somma delle scadenze non può eccedere l'importo del dettaglio.
+        if (_fImporto > _maxImportoForm + 0.005m)
+        {
+            _erroreForm = $"L'importo non può superare il residuo disponibile " +
+                          $"({_maxImportoForm.ToString("N2", _itCulture)} €): la somma delle scadenze " +
+                          $"non può eccedere l'importo del dettaglio ({Dettaglio.Importo.ToString("N2", _itCulture)} €).";
             return;
         }
 
@@ -258,8 +343,8 @@
                 Snackbar.Add("Scadenza aggiornata.", Severity.Success);
             }
 
-            ResetForm();
             await CaricaAsync();
+            ResetForm();
         }
         catch (ScadenzaPagamentoInvalidaException ex)
         {
@@ -282,6 +367,7 @@
             await ScadenzaPagamentoManager.EliminaAsync(s.IdScadenza);
             Snackbar.Add("Scadenza eliminata.", Severity.Success);
             await CaricaAsync();
+            ResetForm();
         }
         catch (ScadenzaPagamentoInvalidaException ex)
         {
@@ -294,4 +380,32 @@
     }
 
     private void Chiudi() => MudDialog.Close();
+
+    /// <summary>
+    /// Uscita da una ripartizione incompleta: una somma di scadenze inferiore
+    /// all'importo del dettaglio non è uno stato valido e non deve persistere.
+    /// Si eliminano (soft-delete) tutte le scadenze attive del dettaglio, che torna
+    /// "da schedulare", e si chiude la maschera.
+    /// </summary>
+    private async Task EsciSenzaSalvareAsync()
+    {
+        _salvataggio = true;
+        try
+        {
+            foreach (var s in _scadenze)
+                await ScadenzaPagamentoManager.EliminaAsync(s.IdScadenza);
+
+            Snackbar.Add("Scadenze non salvate: il dettaglio resta da schedulare.", Severity.Info);
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("Errore durante l'annullamento delle scadenze.", Severity.Error);
+        }
+        finally
+        {
+            _salvataggio = false;
+        }
+
+        MudDialog.Close();
+    }
 }
