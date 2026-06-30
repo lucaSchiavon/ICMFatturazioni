@@ -1,0 +1,111 @@
+@*
+    Pagina /aliquote-vigenti — gestione delle aliquote vigenti (fatt.Aliquote).
+
+    Decisione (opzione A, 2026-06-30): la pagina gestisce SOLO le aliquote di
+    sistema usate dal calcolo dell'avviso (CNPAIA, ritenuta). Se ne modificano
+    descrizione e valore; non si aggiungono né si eliminano righe (le aliquote
+    libere non avrebbero oggi alcun consumatore). Il backend mantiene comunque la
+    CRUD completa, così un'eventuale evoluzione (aliquote selezionabili sul singolo
+    avviso) resterà una semplice aggiunta lato UI.
+*@
+
+@page "/aliquote-vigenti"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using System.Globalization
+@inject IAliquotaManager AliquotaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Aliquote vigenti · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-2">Aliquote vigenti</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">
+            Aliquote di sistema usate dal calcolo dell'avviso. Seleziona una riga (o doppio clic) per modificarne il valore.
+        </MudText>
+
+        <MudSpacer />
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit" Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="Aliquota"
+             Items="@_aliquote"
+             Dense="true" Hover="true" FixedHeader="true"
+             Height="calc(100vh - 280px)"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="@(a => _selezionato = a)"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        <PropertyColumn Property="x => x.Descrizione" Title="Descrizione" StickyLeft="true" />
+        <TemplateColumn Title="Valore">
+            <CellTemplate>@context.Item.Valore.ToString("0.##", _itCulture)%</CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent><MudText>Nessuna aliquota configurata.</MudText></NoRecordsContent>
+    <LoadingContent><MudText>Caricamento in corso…</MudText></LoadingContent>
+</MudDataGrid>
+
+@code {
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    private IReadOnlyList<Aliquota> _aliquote = Array.Empty<Aliquota>();
+    private Aliquota? _selezionato;
+    private bool _caricamento = true;
+
+    protected override async Task OnInitializedAsync() => await RicaricaAsync();
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            _aliquote = await AliquotaManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento aliquote fallito.", "AliquoteVigenti.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamento = false; }
+    }
+
+    private string RigaClass(Aliquota a, int _) =>
+        _selezionato is not null && _selezionato.IdAliquota == a.IdAliquota
+            ? "anagrafica-riga-selezionata" : string.Empty;
+
+    private async Task OnRowClick(DataGridRowClickEventArgs<Aliquota> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2)
+            await ApriDialogModifica(args.Item);
+    }
+
+    private async Task ApriDialogModifica(Aliquota? a)
+    {
+        if (a is null) return;
+        var parameters = new DialogParameters<AliquotaFormDialog> { { x => x.Iniziale, a } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<AliquotaFormDialog>("Modifica aliquota", parameters, options);
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Aliquota aggiornata.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+}

@@ -98,6 +98,7 @@ builder.Services.AddScoped<IAttivitaRepository, AttivitaRepository>();
 builder.Services.AddScoped<IAttivitaDettaglioRepository, AttivitaDettaglioRepository>();
 builder.Services.AddScoped<IScadenzaPagamentoRepository, ScadenzaPagamentoRepository>();
 builder.Services.AddScoped<ISpesaAnticipataRepository, SpesaAnticipataRepository>();
+builder.Services.AddScoped<IAliquotaRepository, AliquotaRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -120,9 +121,13 @@ builder.Services.AddScoped<IAttivitaManager, AttivitaManager>();
 builder.Services.AddScoped<IAttivitaDettaglioManager, AttivitaDettaglioManager>();
 builder.Services.AddScoped<IScadenzaPagamentoManager, ScadenzaPagamentoManager>();
 builder.Services.AddScoped<ISpesaAnticipataManager, SpesaAnticipataManager>();
+builder.Services.AddScoped<IAliquotaManager, AliquotaManager>();
 
 // Servizio puro di calcolo scadenze (stateless) → singleton.
 builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();
+
+// Servizio puro di calcolo fiscale dell'avviso (cascata cap. 7) → singleton.
+builder.Services.AddSingleton<ICalcoloFiscaleAvviso, CalcoloFiscaleAvviso>();
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le

@@ -37,7 +37,8 @@
                 <MudItem xs="12" sm="6">
                     <MudSelect T="TipoAnagrafica"
                                Label="Tipologia *"
-                               @bind-Value="_model.TipoAnagrafica"
+                               Value="_model.TipoAnagrafica"
+                               ValueChanged="OnTipoAnagraficaChanged"
                                Required="true"
                                RequiredError="Tipologia obbligatoria"
                                Variant="Variant.Outlined"
@@ -275,6 +276,19 @@
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense" />
                 </MudItem>
+
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Dati fiscali</MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="_model.SostitutoImposta"
+                                 Label="Sostituto d'imposta (applica ritenuta d'acconto in avviso)"
+                                 Dense="true" Color="Color.Primary" />
+                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
+                        Proposto in base alla tipologia (Società/Ente = sì, Privato = no); modificabile per i casi particolari (es. forfettari).
+                    </MudText>
+                </MudItem>
             </MudGrid>
 
             @if (!string.IsNullOrEmpty(_infoMessaggio))
@@ -467,6 +481,16 @@
     private static string DescriviBanca(BancaAppoggioRiga b)
         => string.IsNullOrWhiteSpace(b.AgenziaNome) ? b.BancaNome : $"{b.BancaNome} — {b.AgenziaNome}";
 
+    // Cambio tipologia: in INSERIMENTO ricalcola il default del flag sostituto
+    // d'imposta (Privato → no, Società/Ente → sì); resta sovrascrivibile. In
+    // MODIFICA non si tocca il valore già impostato sul cliente.
+    private void OnTipoAnagraficaChanged(TipoAnagrafica nuovo)
+    {
+        _model.TipoAnagrafica = nuovo;
+        if (_idCorrente is null)
+            _model.SostitutoImposta = nuovo != TipoAnagrafica.Privato;
+    }
+
     private async Task OnPagamentoChangedAsync(Guid? value)
     {
         _model.IdPag = value;
@@ -564,6 +588,10 @@
         public string? CodiceDestinatario { get; set; }
         public string? PECFatturaElettronica { get; set; }
 
+        // Sostituto d'imposta: pilota la ritenuta d'acconto in avviso (cap. 7).
+        // Default true (impresa); ricalcolato dal tipo in inserimento.
+        public bool SostitutoImposta { get; set; } = true;
+
         // Riferimenti amministrativi (Tappa 6). Nullable: l'anagrafica può non
         // avere ancora pagamento/banca/codice IVA associati.
         public Guid? IdPag { get; set; }
@@ -587,6 +615,7 @@
             Contatto              = a.Contatto,
             CodiceDestinatario    = a.CodiceDestinatario,
             PECFatturaElettronica = a.PECFatturaElettronica,
+            SostitutoImposta      = a.SostitutoImposta,
             IdPag                 = a.IdPag,
             IdBancaAppoggio       = a.IdBancaAppoggio,
             IdCodiciIVA           = a.IdCodiciIVA,
@@ -610,6 +639,7 @@
             Contatto              = Contatto,
             CodiceDestinatario    = CodiceDestinatario,
             PECFatturaElettronica = PECFatturaElettronica,
+            SostitutoImposta      = SostitutoImposta,
             IdPag                 = IdPag,
             IdBancaAppoggio       = IdBancaAppoggio,
             IdCodiciIVA           = IdCodiciIVA,

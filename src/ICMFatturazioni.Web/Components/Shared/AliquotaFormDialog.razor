@@ -1,0 +1,122 @@
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using System.Globalization
+@inject IAliquotaManager AliquotaManager
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        @if (Iniziale?.IsSistema == true)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                Aliquota di sistema (codice <strong>@Iniziale.Codice</strong>): usata dal calcolo dell'avviso.
+                Puoi modificarne descrizione e valore, ma non eliminarla.
+            </MudAlert>
+        }
+
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_descrizione"
+                              Label="Descrizione *"
+                              MaxLength="200"
+                              Immediate="true"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudNumericField T="decimal" @bind-Value="_valore"
+                                 Label="Valore % *"
+                                 Min="0m" Max="100m" Format="0.##" Culture="_itCulture"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+
+        @if (!string.IsNullOrWhiteSpace(_errore))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_errore</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Annulla" Variant="Variant.Text">Annulla</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
+                   Disabled="_salvataggio" OnClick="SalvaAsync">
+            @(_salvataggio ? "Salvataggio…" : "Salva")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    /// <summary>Aliquota da modificare; null in inserimento.</summary>
+    [Parameter] public Aliquota? Iniziale { get; set; }
+
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    private string  _descrizione = string.Empty;
+    private decimal _valore;
+    private bool    _salvataggio;
+    private string  _errore = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        if (Iniziale is not null)
+        {
+            _descrizione = Iniziale.Descrizione;
+            _valore      = Iniziale.Valore;
+        }
+    }
+
+    private async Task SalvaAsync()
+    {
+        _errore = string.Empty;
+        if (string.IsNullOrWhiteSpace(_descrizione))
+        {
+            _errore = "La descrizione è obbligatoria.";
+            return;
+        }
+        if (_valore < 0 || _valore > 100)
+        {
+            _errore = "Il valore deve essere compreso tra 0 e 100.";
+            return;
+        }
+
+        _salvataggio = true;
+        try
+        {
+            if (Iniziale is null)
+            {
+                // Aliquota libera: Codice null (le aliquote di sistema sono solo da seed).
+                await AliquotaManager.CreaAsync(new Aliquota
+                {
+                    Descrizione = _descrizione.Trim(),
+                    Valore      = _valore,
+                });
+            }
+            else
+            {
+                await AliquotaManager.AggiornaAsync(new Aliquota
+                {
+                    IdAliquota  = Iniziale.IdAliquota,
+                    Codice      = Iniziale.Codice,   // immutato (non aggiornato dal repo)
+                    Descrizione = _descrizione.Trim(),
+                    Valore      = _valore,
+                    IsAttivo    = true,
+                });
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (AliquotaInvalidaException ex)
+        {
+            _errore = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Salvataggio aliquota fallito.", "AliquotaFormDialog.SalvaAsync");
+            _errore = "Errore durante il salvataggio. Riprovare.";
+        }
+        finally { _salvataggio = false; }
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+}

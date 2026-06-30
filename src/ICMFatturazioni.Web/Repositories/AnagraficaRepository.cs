@@ -52,6 +52,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
         public Guid? IdTipologieClientela { get; init; }
         public string? CodiceDestinatario { get; init; }
         public string? PECFatturaElettronica { get; init; }
+        public bool SostitutoImposta { get; init; }
         public bool IsAttivo { get; init; }
     }
 
@@ -77,6 +78,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
         IdTipologieClientela  = row.IdTipologieClientela,
         CodiceDestinatario    = row.CodiceDestinatario,
         PECFatturaElettronica = row.PECFatturaElettronica,
+        SostitutoImposta      = row.SostitutoImposta,
         IsAttivo              = row.IsAttivo,
     };
 
@@ -88,7 +90,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
             IdAnagrafica, TipoAnagrafica, RagioneSociale, Indirizzo, CAP, City,
             Provincia, SiglaPaese, Telefono, Cellulare, Fax, Email, PIVA,
             Contatto, IdPag, IdBancaAppoggio, IdCodiciIVA, IdTipologieClientela,
-            CodiceDestinatario, PECFatturaElettronica, IsAttivo
+            CodiceDestinatario, PECFatturaElettronica, SostitutoImposta, IsAttivo
         FROM fatt.Anagrafica
         """;
 
@@ -135,12 +137,12 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
             (IdAnagrafica, TipoAnagrafica, RagioneSociale, Indirizzo, CAP, City, Provincia,
              SiglaPaese, Telefono, Cellulare, Fax, Email, PIVA, Contatto,
              IdPag, IdBancaAppoggio, IdCodiciIVA, IdTipologieClientela,
-             CodiceDestinatario, PECFatturaElettronica, IsAttivo)
+             CodiceDestinatario, PECFatturaElettronica, SostitutoImposta, IsAttivo)
         VALUES
             (@IdAnagrafica, @TipoAnagrafica, @RagioneSociale, @Indirizzo, @CAP, @City, @Provincia,
              @SiglaPaese, @Telefono, @Cellulare, @Fax, @Email, @PIVA, @Contatto,
              @IdPag, @IdBancaAppoggio, @IdCodiciIVA, @IdTipologieClientela,
-             @CodiceDestinatario, @PECFatturaElettronica, @IsAttivo);
+             @CodiceDestinatario, @PECFatturaElettronica, @SostitutoImposta, @IsAttivo);
         """;
 
     public async Task InsertAsync(Anagrafica anagrafica, CancellationToken cancellationToken = default)
@@ -178,6 +180,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
             IdTipologieClientela  = @IdTipologieClientela,
             CodiceDestinatario    = @CodiceDestinatario,
             PECFatturaElettronica = @PECFatturaElettronica,
+            SostitutoImposta      = @SostitutoImposta,
             IsAttivo              = @IsAttivo
         WHERE IdAnagrafica = @IdAnagrafica;
         """;
@@ -250,6 +253,7 @@ internal sealed class AnagraficaRepository : IAnagraficaRepository
         p.Add("IdTipologieClientela",  a.IdTipologieClientela);
         p.Add("CodiceDestinatario",    a.CodiceDestinatario);
         p.Add("PECFatturaElettronica", a.PECFatturaElettronica);
+        p.Add("SostitutoImposta",      a.SostitutoImposta);
         p.Add("IsAttivo",              a.IsAttivo);
         return p;
     }

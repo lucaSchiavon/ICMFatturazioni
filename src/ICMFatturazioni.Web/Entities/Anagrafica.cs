@@ -83,6 +83,14 @@ public sealed class Anagrafica
     public string? PECFatturaElettronica { get; init; }
 
     /// <summary>
+    /// True se il cliente è sostituto d'imposta (tipicamente imprese/enti): solo
+    /// in tal caso l'avviso applica la ritenuta d'acconto (dispensa cap. 7).
+    /// Default derivato dal tipo (Privato → false, Società/Ente → true) ma
+    /// sovrascrivibile per i casi particolari. Default applicativo <c>true</c>.
+    /// </summary>
+    public bool SostitutoImposta { get; init; } = true;
+
+    /// <summary>
     /// Soft-delete (ADR D22): <c>true</c> = attiva, <c>false</c> = disattivata.
     /// Le anagrafiche non si cancellano fisicamente. Default <c>true</c>.
     /// </summary>
