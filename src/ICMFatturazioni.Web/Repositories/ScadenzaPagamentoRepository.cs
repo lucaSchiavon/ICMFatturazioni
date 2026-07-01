@@ -1,6 +1,7 @@
 using Dapper;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Web.Repositories;
@@ -56,6 +57,73 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         var cmd  = new CommandDefinition(SqlSelectByDettaglio, new { IdAttivitaDettaglio = idAttivitaDettaglio }, cancellationToken: ct);
         var rows = await conn.QueryAsync<ScadenzaPagamentoRow>(cmd);
         return rows.Select(ToEntity).ToList();
+    }
+
+    // -----------------------------------------------------------------------
+    // Lettura "scadenze fatturabili" per attività (read-model per l'avviso).
+    // Radicata sulla scadenza; JOIN read-only su dettaglio + tipo; subquery per
+    // il "già allocato" (righe di avvisi attivi dello stesso dettaglio).
+    // -----------------------------------------------------------------------
+    private sealed class ScadenzaFatturabileRow
+    {
+        public Guid     IdScadenza                  { get; init; }
+        public Guid     IdAttivitaDettaglio         { get; init; }
+        public DateTime DataScadenza                { get; init; }
+        public decimal  Importo                     { get; init; }
+        public string?  Nota                        { get; init; }
+        public int      OrdineDettaglio             { get; init; }
+        public Guid     IdTipoDettaglioAttivita     { get; init; }
+        public string?  TipoDettaglioDescrizione    { get; init; }
+        public string   DescrizioneDettaglio        { get; init; } = string.Empty;
+        public decimal  ImportoDettaglio            { get; init; }
+        public decimal  GiaAllocatoAvvisiPrecedenti { get; init; }
+    }
+
+    private const string SqlSelectFatturabili = """
+        SELECT
+            s.IdScadenza,
+            s.IdAttivitaDettaglio,
+            s.DataScadenza,
+            s.Importo,
+            s.Nota,
+            d.Ordine                  AS OrdineDettaglio,
+            d.IdTipoDettaglioAttivita,
+            td.TipoDettaglioAttivita  AS TipoDettaglioDescrizione,
+            d.DescrizioneDettaglio,
+            d.Importo                 AS ImportoDettaglio,
+            (SELECT COALESCE(SUM(r.Importo), 0)
+               FROM fatt.AvvisoFatturaRighe r
+               JOIN fatt.AvvisiFattura a ON a.IdAvviso = r.IdAvviso
+              WHERE r.IdAttivitaDettaglio = d.IdAttivitaDettaglio
+                AND a.IsAttivo = 1) AS GiaAllocatoAvvisiPrecedenti
+        FROM fatt.SchedulazionePagamenti s
+        JOIN fatt.AttivitaDettaglio d ON d.IdAttivitaDettaglio = s.IdAttivitaDettaglio
+        LEFT JOIN fatt.TipiDettaglioAttivita td
+               ON td.IdTipoDettaglioAttivita = d.IdTipoDettaglioAttivita
+        WHERE d.IdAttivita = @IdAttivita
+          AND s.IsAttivo = 1
+          AND d.IsAttivo = 1
+          AND s.IdAvvisoRiga IS NULL
+        ORDER BY d.Ordine ASC, s.DataScadenza ASC;
+        """;
+
+    public async Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlSelectFatturabili, new { IdAttivita = idAttivita }, cancellationToken: ct);
+        var rows = await conn.QueryAsync<ScadenzaFatturabileRow>(cmd);
+        return rows.Select(r => new ScadenzaFatturabile(
+            IdScadenza:                  r.IdScadenza,
+            IdAttivitaDettaglio:         r.IdAttivitaDettaglio,
+            DataScadenza:                DateOnly.FromDateTime(r.DataScadenza),
+            Importo:                     r.Importo,
+            Nota:                        r.Nota,
+            OrdineDettaglio:             r.OrdineDettaglio,
+            IdTipoDettaglioAttivita:     r.IdTipoDettaglioAttivita,
+            TipoDettaglioDescrizione:    r.TipoDettaglioDescrizione,
+            DescrizioneDettaglio:        r.DescrizioneDettaglio,
+            ImportoDettaglio:            r.ImportoDettaglio,
+            GiaAllocatoAvvisiPrecedenti: r.GiaAllocatoAvvisiPrecedenti)).ToList();
     }
 
     private const string SqlSelectById =

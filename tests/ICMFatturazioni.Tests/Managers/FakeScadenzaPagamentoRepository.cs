@@ -1,4 +1,5 @@
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Tests.Managers;
@@ -9,6 +10,15 @@ namespace ICMFatturazioni.Tests.Managers;
 internal sealed class FakeScadenzaPagamentoRepository : IScadenzaPagamentoRepository
 {
     private readonly List<ScadenzaPagamento> _store = new();
+
+    /// <summary>
+    /// Scadenze "fatturabili" seminate dai test (read-model). Il fake le restituisce
+    /// per attività così com'è (nei test l'attività è unica), simulando la query reale.
+    /// </summary>
+    public List<ScadenzaFatturabile> Fatturabili { get; } = new();
+
+    public Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ScadenzaFatturabile>>(Fatturabili.ToList());
 
     public Task<IReadOnlyList<ScadenzaPagamento>> GetByDettaglioAsync(Guid idAttivitaDettaglio, CancellationToken ct = default)
     {
