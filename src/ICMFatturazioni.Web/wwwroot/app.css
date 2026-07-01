@@ -223,3 +223,66 @@ h1:focus {
     font-size: 0.9rem;
     font-weight: 500;
 }
+
+/* ------------------------------------------------------------------ */
+/* Griglia di selezione scadenze dell'Avviso di fattura.
+   Le scadenze sono raggruppate per dettaglio attività; ogni blocco ha uno
+   sfondo tenue alternato per distinguere a colpo d'occhio i dettagli
+   (memoria avviso-fattura-design). Tabella custom (non MudTable) perché serve
+   il raggruppamento con celle valorizzate solo sulla prima riga del blocco. */
+/* ------------------------------------------------------------------ */
+.icm-scad-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    min-width: 760px;
+}
+
+.icm-scad-table th {
+    text-align: left;
+    font-weight: 700;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--mud-palette-text-secondary);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+    white-space: nowrap;
+}
+
+.icm-scad-table td {
+    padding: 5px 8px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+
+.icm-scad-table .icm-num {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Sfondo tenue alternato per blocco/dettaglio */
+.icm-scad-blocco-0 > td { background-color: color-mix(in srgb, var(--mud-palette-primary) 5%, transparent); }
+.icm-scad-blocco-1 > td { background-color: color-mix(in srgb, var(--mud-palette-secondary) 6%, transparent); }
+
+/* Riga scadenza selezionata (rata inclusa nell'avviso in bozza) */
+.icm-scad-table tr.icm-scad-sel > td {
+    background-color: color-mix(in srgb, var(--mud-palette-success) 16%, transparent);
+}
+
+/* Celle di riepilogo dettaglio (Tipo/Descrizione + grandezze): solo prima riga */
+.icm-scad-desc { font-weight: 600; }
+.icm-scad-residuo-zero { color: var(--mud-palette-success-darken); font-weight: 700; }
+
+/* Card mobile per una scadenza */
+.icm-scad-card {
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius);
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+.icm-scad-card.icm-scad-sel {
+    border-color: var(--mud-palette-success);
+    background-color: color-mix(in srgb, var(--mud-palette-success) 10%, transparent);
+}
