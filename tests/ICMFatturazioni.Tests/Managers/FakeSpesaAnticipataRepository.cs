@@ -19,6 +19,18 @@ internal sealed class FakeSpesaAnticipataRepository : ISpesaAnticipataRepository
         return Task.FromResult<IReadOnlyList<SpesaAnticipata>>(result);
     }
 
+    /// <summary>Id delle spese "già collegate" a un avviso (escluse dai fatturabili).</summary>
+    public HashSet<Guid> Collegate { get; } = new();
+
+    public Task<IReadOnlyList<SpesaAnticipata>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    {
+        var result = _store
+            .Where(s => s.IdAttivita == idAttivita && s.IsAttivo && !Collegate.Contains(s.IdSpesaAnticipata))
+            .OrderBy(s => s.Data)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<SpesaAnticipata>>(result);
+    }
+
     public Task<SpesaAnticipata?> GetByIdAsync(Guid idSpesaAnticipata, CancellationToken ct = default)
     {
         var s = _store.FirstOrDefault(x => x.IdSpesaAnticipata == idSpesaAnticipata);

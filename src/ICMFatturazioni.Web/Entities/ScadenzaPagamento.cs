@@ -22,6 +22,26 @@ public sealed class ScadenzaPagamento
     /// <summary>Nota libera (es. "acconto 30%"). Facoltativa.</summary>
     public string? Nota { get; init; }
 
+    /// <summary>
+    /// FK → fatt.AvvisoFatturaRighe: riga-avviso che ha "consumato" (evaso) questa
+    /// rata. <c>null</c> = rata ancora da evadere. Quando valorizzata la scadenza è
+    /// <b>congelata</b> in Gestione Scadenze (lock a livello rata): niente modifica,
+    /// eliminazione o ri-suddivisione finché non si annulla l'avviso che la consuma.
+    /// </summary>
+    public Guid? IdAvvisoRiga { get; init; }
+
+    /// <summary>True se la rata è già evasa da un avviso (derivato da <see cref="IdAvvisoRiga"/>).</summary>
+    public bool IsEvasa => IdAvvisoRiga.HasValue;
+
     /// <summary>Soft-delete (ADR D22). Default <c>true</c>.</summary>
     public bool IsAttivo { get; init; } = true;
+
+    // --- Nav read-only (non mappate su colonne): valorizzate solo dalla lettura
+    //     per-dettaglio, per mostrare in UI in quale avviso la rata è stata evasa. ---
+
+    /// <summary>Data dell'avviso che ha evaso la rata (null se non evasa).</summary>
+    public DateOnly? AvvisoDataEvasione { get; set; }
+
+    /// <summary>Oggetto dell'avviso che ha evaso la rata (null se non evasa o senza oggetto).</summary>
+    public string? AvvisoOggettoEvasione { get; set; }
 }

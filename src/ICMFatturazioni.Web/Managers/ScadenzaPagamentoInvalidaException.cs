@@ -8,6 +8,9 @@ public enum ScadenzaPagamentoMotivoInvalido
     /// <summary>La riga dettaglio parent è collegata a una fattura; le scadenze non possono essere modificate.</summary>
     DettaglioFatturato,
 
+    /// <summary>La rata è già evasa da un avviso di fattura: è congelata finché l'avviso non viene annullato.</summary>
+    RataEvasa,
+
     /// <summary>La data di scadenza non è stata valorizzata.</summary>
     DataObbligatoria,
 

@@ -78,6 +78,14 @@ public sealed class ScadenzaPagamentoManager : IScadenzaPagamentoManager
                 ScadenzaPagamentoMotivoInvalido.DettaglioFatturato,
                 "La riga è collegata a una fattura emessa: non è possibile modificare le scadenze.");
 
+        // Lock a livello rata: una scadenza già evasa da un avviso è congelata.
+        // Si legge lo stato PERSISTITO (l'entità in arrivo dalla UI non porta il lock).
+        var esistente = await _repo.GetByIdAsync(scadenza.IdScadenza, ct);
+        if (esistente is { IsEvasa: true })
+            throw new ScadenzaPagamentoInvalidaException(
+                ScadenzaPagamentoMotivoInvalido.RataEvasa,
+                "Rata già evasa in un avviso di fattura: annulla l'avviso per poterla modificare.");
+
         // Sentinel: la nuova somma (escludendo la scadenza che si sta aggiornando)
         // non può eccedere l'importo del dettaglio.
         await ValidaSommaNonEccedenteAsync(scadenza, dettaglio, escludiIdScadenza: scadenza.IdScadenza, ct);
@@ -107,6 +115,12 @@ public sealed class ScadenzaPagamentoManager : IScadenzaPagamentoManager
             throw new ScadenzaPagamentoInvalidaException(
                 ScadenzaPagamentoMotivoInvalido.DettaglioFatturato,
                 "La riga è collegata a una fattura emessa: non è possibile eliminare le scadenze.");
+
+        // Lock a livello rata: una scadenza già evasa da un avviso non si elimina.
+        if (scadenza.IsEvasa)
+            throw new ScadenzaPagamentoInvalidaException(
+                ScadenzaPagamentoMotivoInvalido.RataEvasa,
+                "Rata già evasa in un avviso di fattura: annulla l'avviso per poterla eliminare.");
 
         await _repo.DisattivaAsync(idScadenza, ct);
 

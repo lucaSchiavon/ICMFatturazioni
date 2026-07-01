@@ -203,6 +203,54 @@ public class ScadenzaPagamentoManagerTests
     }
 
     // -------------------------------------------------------------------------
+    // Lock a livello rata (rata evasa da un avviso di fattura)
+    // -------------------------------------------------------------------------
+
+    // Semina direttamente nel repo una rata già "evasa" (IdAvvisoRiga valorizzato):
+    // simula lo stato dopo l'emissione di un avviso che l'ha consumata.
+    private static ScadenzaPagamento ScaEvasa(decimal importo = 500m)
+    {
+        return new ScadenzaPagamento
+        {
+            IdScadenza          = Guid.NewGuid(),
+            IdAttivitaDettaglio = IdDettaglio,
+            DataScadenza        = new DateOnly(2025, 12, 31),
+            Importo             = importo,
+            IdAvvisoRiga        = Guid.NewGuid(),
+        };
+    }
+
+    [Fact]
+    public async Task AggiornaAsync_RataEvasa_LanciaRataEvasa()
+    {
+        var (sut, fakeRepo, _) = NewSut();
+        var evasa = ScaEvasa();
+        await fakeRepo.InsertAsync(evasa);
+
+        var modifica = Sca(importo: 800m);
+        modifica.IdScadenza = evasa.IdScadenza;
+
+        var ex = await Assert.ThrowsAsync<ScadenzaPagamentoInvalidaException>(
+            () => sut.AggiornaAsync(modifica));
+        Assert.Equal(ScadenzaPagamentoMotivoInvalido.RataEvasa, ex.Motivo);
+        // La rata resta invariata (500 €, non 800 €).
+        Assert.Equal(500m, (await fakeRepo.GetByIdAsync(evasa.IdScadenza))!.Importo);
+    }
+
+    [Fact]
+    public async Task EliminaAsync_RataEvasa_LanciaRataEvasa()
+    {
+        var (sut, fakeRepo, _) = NewSut();
+        var evasa = ScaEvasa();
+        await fakeRepo.InsertAsync(evasa);
+
+        var ex = await Assert.ThrowsAsync<ScadenzaPagamentoInvalidaException>(
+            () => sut.EliminaAsync(evasa.IdScadenza));
+        Assert.Equal(ScadenzaPagamentoMotivoInvalido.RataEvasa, ex.Motivo);
+        Assert.True((await fakeRepo.GetByIdAsync(evasa.IdScadenza))!.IsAttivo);
+    }
+
+    // -------------------------------------------------------------------------
     // Elenco
     // -------------------------------------------------------------------------
 

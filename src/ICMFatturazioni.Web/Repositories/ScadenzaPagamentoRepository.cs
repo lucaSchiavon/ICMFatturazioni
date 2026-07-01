@@ -26,7 +26,11 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         public DateTime DataScadenza        { get; init; }
         public decimal  Importo             { get; init; }
         public string?  Nota               { get; init; }
+        public Guid?    IdAvvisoRiga        { get; init; }
         public bool     IsAttivo            { get; init; }
+        // Nav dell'avviso che ha evaso la rata (solo nella lettura per-dettaglio).
+        public DateTime? AvvisoDataEvasione    { get; init; }
+        public string?   AvvisoOggettoEvasione { get; init; }
     }
 
     private static ScadenzaPagamento ToEntity(ScadenzaPagamentoRow r) => new()
@@ -36,7 +40,10 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         DataScadenza        = DateOnly.FromDateTime(r.DataScadenza),
         Importo             = r.Importo,
         Nota                = r.Nota,
+        IdAvvisoRiga        = r.IdAvvisoRiga,
         IsAttivo            = r.IsAttivo,
+        AvvisoDataEvasione    = r.AvvisoDataEvasione is { } d ? DateOnly.FromDateTime(d) : null,
+        AvvisoOggettoEvasione = r.AvvisoOggettoEvasione,
     };
 
     // DataScadenza: DATE NOT NULL in SQL → DateTime in ToEntity, DateTime? in params.
@@ -44,12 +51,23 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         => d.ToDateTime(TimeOnly.MinValue);
 
     private const string SqlSelectBase = """
-        SELECT IdScadenza, IdAttivitaDettaglio, DataScadenza, Importo, Nota, IsAttivo
+        SELECT IdScadenza, IdAttivitaDettaglio, DataScadenza, Importo, Nota, IdAvvisoRiga, IsAttivo
         FROM fatt.SchedulazionePagamenti
         """;
 
-    private const string SqlSelectByDettaglio =
-        SqlSelectBase + " WHERE IdAttivitaDettaglio = @IdAttivitaDettaglio AND IsAttivo = 1 ORDER BY DataScadenza ASC;";
+    // Lettura per-dettaglio arricchita con l'avviso che ha evaso ciascuna rata
+    // (data + oggetto), per mostrare in Gestione Scadenze il lock a livello rata.
+    private const string SqlSelectByDettaglio = """
+        SELECT s.IdScadenza, s.IdAttivitaDettaglio, s.DataScadenza, s.Importo, s.Nota,
+               s.IdAvvisoRiga, s.IsAttivo,
+               a.DataAvviso AS AvvisoDataEvasione,
+               a.Oggetto    AS AvvisoOggettoEvasione
+        FROM fatt.SchedulazionePagamenti s
+        LEFT JOIN fatt.AvvisoFatturaRighe r ON r.IdRiga   = s.IdAvvisoRiga
+        LEFT JOIN fatt.AvvisiFattura      a ON a.IdAvviso = r.IdAvviso AND a.IsAttivo = 1
+        WHERE s.IdAttivitaDettaglio = @IdAttivitaDettaglio AND s.IsAttivo = 1
+        ORDER BY s.DataScadenza ASC;
+        """;
 
     public async Task<IReadOnlyList<ScadenzaPagamento>> GetByDettaglioAsync(Guid idAttivitaDettaglio, CancellationToken ct = default)
     {
@@ -126,6 +144,63 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
             GiaAllocatoAvvisiPrecedenti: r.GiaAllocatoAvvisiPrecedenti)).ToList();
     }
 
+    // -----------------------------------------------------------------------
+    // Attività con residuo da fatturare (per i filtri della maschera Avvisi).
+    // Criterio basato sull'IMPORTO, non sull'esistenza di scadenze: un'attività
+    // resta visibile finché esiste un dettaglio il cui importo eccede quanto già
+    // allocato in avvisi attivi. Così un dettaglio senza scadenze (allocato 0 <
+    // importo) NON fa sparire l'attività: il "buco" resta visibile.
+    // Tolleranza 0,005 per assorbire eventuale rumore di arrotondamento.
+    // -----------------------------------------------------------------------
+    private const string SqlSelectAttivitaConResiduo = """
+        SELECT DISTINCT a.IdAnagrafica, a.IdAttivita
+        FROM fatt.Attivita a
+        JOIN fatt.AttivitaDettaglio d ON d.IdAttivita = a.IdAttivita AND d.IsAttivo = 1
+        WHERE a.IsAttivo = 1
+          AND d.Importo > (
+              SELECT COALESCE(SUM(r.Importo), 0)
+              FROM fatt.AvvisoFatturaRighe r
+              JOIN fatt.AvvisiFattura av ON av.IdAvviso = r.IdAvviso AND av.IsAttivo = 1
+              WHERE r.IdAttivitaDettaglio = d.IdAttivitaDettaglio
+          ) + 0.005;
+        """;
+
+    public async Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConResiduoDaFatturareAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlSelectAttivitaConResiduo, cancellationToken: ct);
+        var rows = await conn.QueryAsync<AttivitaFatturabile>(cmd);
+        return rows.ToList();
+    }
+
+    // -----------------------------------------------------------------------
+    // Dettagli di un'attività non ancora interamente schedulati in scadenze
+    // (somma rate attive < importo, incluso zero scadenze): la quota mancante non
+    // è fatturabile finché non si pianificano le scadenze. Segnalati in maschera
+    // Avvisi per non lasciare importi "invisibili".
+    // -----------------------------------------------------------------------
+    private const string SqlSelectDettagliNonSchedulati = """
+        SELECT d.DescrizioneDettaglio AS Descrizione,
+               d.Importo - COALESCE((
+                   SELECT SUM(s.Importo) FROM fatt.SchedulazionePagamenti s
+                   WHERE s.IdAttivitaDettaglio = d.IdAttivitaDettaglio AND s.IsAttivo = 1), 0) AS ImportoNonSchedulato
+        FROM fatt.AttivitaDettaglio d
+        WHERE d.IdAttivita = @IdAttivita
+          AND d.IsAttivo = 1
+          AND d.Importo > COALESCE((
+                   SELECT SUM(s.Importo) FROM fatt.SchedulazionePagamenti s
+                   WHERE s.IdAttivitaDettaglio = d.IdAttivitaDettaglio AND s.IsAttivo = 1), 0) + 0.005
+        ORDER BY d.Ordine ASC;
+        """;
+
+    public async Task<IReadOnlyList<DettaglioDaSchedulare>> GetDettagliNonSchedulatiByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlSelectDettagliNonSchedulati, new { IdAttivita = idAttivita }, cancellationToken: ct);
+        var rows = await conn.QueryAsync<DettaglioDaSchedulare>(cmd);
+        return rows.ToList();
+    }
+
     private const string SqlSelectById =
         SqlSelectBase + " WHERE IdScadenza = @IdScadenza;";
 
@@ -151,12 +226,14 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         await conn.ExecuteAsync(cmd);
     }
 
+    // Sentinel di correttezza (doppia difesa, CLAUDE.md): una rata evasa da un
+    // avviso (IdAvvisoRiga valorizzato) è congelata → l'UPDATE non tocca righe.
     private const string SqlUpdate = """
         UPDATE fatt.SchedulazionePagamenti SET
             DataScadenza = @DataScadenza,
             Importo      = @Importo,
             Nota         = @Nota
-        WHERE IdScadenza = @IdScadenza;
+        WHERE IdScadenza = @IdScadenza AND IdAvvisoRiga IS NULL;
         """;
 
     public async Task UpdateAsync(ScadenzaPagamento scadenza, CancellationToken ct = default)
@@ -166,8 +243,9 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         await conn.ExecuteAsync(cmd);
     }
 
+    // Sentinel: non si soft-elimina una rata evasa (congelata finché l'avviso vive).
     private const string SqlDisattiva =
-        "UPDATE fatt.SchedulazionePagamenti SET IsAttivo = 0 WHERE IdScadenza = @IdScadenza;";
+        "UPDATE fatt.SchedulazionePagamenti SET IsAttivo = 0 WHERE IdScadenza = @IdScadenza AND IdAvvisoRiga IS NULL;";
 
     public async Task DisattivaAsync(Guid idScadenza, CancellationToken ct = default)
     {

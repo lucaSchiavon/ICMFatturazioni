@@ -24,6 +24,9 @@ public sealed class SpesaAnticipataManager : ISpesaAnticipataManager
     public Task<IReadOnlyList<SpesaAnticipata>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
         => _repo.GetByAttivitaAsync(idAttivita, ct);
 
+    public Task<IReadOnlyList<SpesaAnticipata>> ElencoFatturabiliPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+        => _repo.GetFatturabiliByAttivitaAsync(idAttivita, ct);
+
     /// <inheritdoc/>
     public async Task<Guid> CreaAsync(SpesaAnticipata spesa, CancellationToken ct = default)
     {
@@ -57,6 +60,13 @@ public sealed class SpesaAnticipataManager : ISpesaAnticipataManager
         ValidaCampi(spesa);
 
         var prima = await _repo.GetByIdAsync(spesa.IdSpesaAnticipata, ct);
+        // Lock: una spesa già associata a un avviso è congelata (si legge lo stato
+        // persistito: l'entità in arrivo dalla UI non porta il link).
+        if (prima is { IsInAvviso: true })
+            throw new SpesaAnticipataInvalidaException(
+                SpesaAnticipataMotivoInvalido.SpesaInAvviso,
+                "Spesa già associata a un avviso di fattura: annulla l'avviso per poterla modificare.");
+
         await _repo.UpdateAsync(spesa, ct);
 
         try
@@ -75,6 +85,12 @@ public sealed class SpesaAnticipataManager : ISpesaAnticipataManager
     {
         var spesa = await _repo.GetByIdAsync(idSpesaAnticipata, ct);
         if (spesa is null) return;
+
+        // Lock: una spesa già associata a un avviso non si elimina.
+        if (spesa.IsInAvviso)
+            throw new SpesaAnticipataInvalidaException(
+                SpesaAnticipataMotivoInvalido.SpesaInAvviso,
+                "Spesa già associata a un avviso di fattura: annulla l'avviso per poterla eliminare.");
 
         await _repo.DisattivaAsync(idSpesaAnticipata, ct);
 

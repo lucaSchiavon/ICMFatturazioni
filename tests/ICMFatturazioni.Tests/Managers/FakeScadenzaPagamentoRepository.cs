@@ -20,6 +20,18 @@ internal sealed class FakeScadenzaPagamentoRepository : IScadenzaPagamentoReposi
     public Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<ScadenzaFatturabile>>(Fatturabili.ToList());
 
+    /// <summary>Attività con residuo da fatturare seminate dai test (filtri maschera Avvisi).</summary>
+    public List<AttivitaFatturabile> AttivitaFatturabili { get; } = new();
+
+    public Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConResiduoDaFatturareAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AttivitaFatturabile>>(AttivitaFatturabili.ToList());
+
+    /// <summary>Dettagli da schedulare seminati dai test (segnalazione buchi in maschera Avvisi).</summary>
+    public List<DettaglioDaSchedulare> DettagliDaSchedulare { get; } = new();
+
+    public Task<IReadOnlyList<DettaglioDaSchedulare>> GetDettagliNonSchedulatiByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<DettaglioDaSchedulare>>(DettagliDaSchedulare.ToList());
+
     public Task<IReadOnlyList<ScadenzaPagamento>> GetByDettaglioAsync(Guid idAttivitaDettaglio, CancellationToken ct = default)
     {
         var result = _store

@@ -250,16 +250,39 @@
                         <MudTh Style="width:80px;"></MudTh>
                     </HeaderContent>
                     <RowTemplate>
-                        <MudTd>@context.Data.ToString("dd/MM/yyyy")</MudTd>
-                        <MudTd>@context.Descrizione</MudTd>
+                        <MudTd>
+                            @if (context.IsInAvviso)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small"
+                                         Color="Color.Warning" Class="mr-1" />
+                            }
+                            @context.Data.ToString("dd/MM/yyyy")
+                        </MudTd>
+                        <MudTd>
+                            @context.Descrizione
+                            @if (context.IsInAvviso)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block">
+                                    In avviso del @(context.AvvisoDataAssociazione?.ToString("dd/MM/yyyy"))@(!string.IsNullOrWhiteSpace(context.AvvisoOggettoAssociazione) ? $" — {context.AvvisoOggettoAssociazione}" : "")
+                                </MudText>
+                            }
+                        </MudTd>
                         <MudTd Style="text-align:right;font-weight:600;">@context.Importo.ToString("N2", _itCulture)</MudTd>
                         <MudTd Style="padding:2px 4px;">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Size="Size.Small" Ripple="false"
-                                           OnClick="@(() => AvviaModificaSpesa(context))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small" Ripple="false" Color="Color.Error"
-                                           OnClick="@(() => EliminaSpesaAsync(context))" />
+                            @if (context.IsInAvviso)
+                            {
+                                @* Spesa congelata: si sblocca solo annullando l'avviso che la consuma. *@
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Default" />
+                            }
+                            else
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small" Ripple="false"
+                                               OnClick="@(() => AvviaModificaSpesa(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small" Ripple="false" Color="Color.Error"
+                                               OnClick="@(() => EliminaSpesaAsync(context))" />
+                            }
                         </MudTd>
                     </RowTemplate>
                 </MudTable>
@@ -271,19 +294,38 @@
                 {
                     <MudPaper Elevation="0" Outlined="true" Class="pa-2 mb-2">
                         <div class="d-flex justify-space-between align-center mb-1">
-                            <MudText Typo="Typo.caption">@item.Data.ToString("dd/MM/yyyy")</MudText>
+                            <MudText Typo="Typo.caption">
+                                @if (item.IsInAvviso)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Warning" Class="mr-1" />
+                                }
+                                @item.Data.ToString("dd/MM/yyyy")
+                            </MudText>
                             <MudText Typo="Typo.subtitle2" Style="font-weight:700;">
                                 @item.Importo.ToString("N2", _itCulture) €
                             </MudText>
                         </div>
                         <MudText Typo="Typo.body2" Style="font-weight:600;" Class="mb-1">@item.Descrizione</MudText>
+                        @if (item.IsInAvviso)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block mb-1">
+                                In avviso del @(item.AvvisoDataAssociazione?.ToString("dd/MM/yyyy"))@(!string.IsNullOrWhiteSpace(item.AvvisoOggettoAssociazione) ? $" — {item.AvvisoOggettoAssociazione}" : "")
+                            </MudText>
+                        }
                         <div class="d-flex justify-end">
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Size="Size.Small" Ripple="false"
-                                           OnClick="@(() => AvviaModificaSpesa(item))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small" Ripple="false" Color="Color.Error"
-                                           OnClick="@(() => EliminaSpesaAsync(item))" />
+                            @if (item.IsInAvviso)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Default" />
+                            }
+                            else
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small" Ripple="false"
+                                               OnClick="@(() => AvviaModificaSpesa(item))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small" Ripple="false" Color="Color.Error"
+                                               OnClick="@(() => EliminaSpesaAsync(item))" />
+                            }
                         </div>
                     </MudPaper>
                 }

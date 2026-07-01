@@ -150,19 +150,42 @@
                     }
                 </HeaderContent>
                 <RowTemplate>
-                    <MudTd>@context.DataScadenza.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd>
+                        @if (context.IsEvasa)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small"
+                                     Color="Color.Warning" Class="mr-1" />
+                        }
+                        @context.DataScadenza.ToString("dd/MM/yyyy")
+                    </MudTd>
                     <MudTd Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
-                    <MudTd>@context.Nota</MudTd>
+                    <MudTd>
+                        @context.Nota
+                        @if (context.IsEvasa)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block">
+                                Evasa nell'avviso del @(context.AvvisoDataEvasione?.ToString("dd/MM/yyyy"))@(!string.IsNullOrWhiteSpace(context.AvvisoOggettoEvasione) ? $" — {context.AvvisoOggettoEvasione}" : "")
+                            </MudText>
+                        }
+                    </MudTd>
                     @if (!Dettaglio.HasFattura)
                     {
                         <MudTd>
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                           Size="Size.Small"
-                                           OnClick="@(() => AvviaModifica(context))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small"
-                                           Color="Color.Error"
-                                           OnClick="@(() => EliminaAsync(context))" />
+                            @if (context.IsEvasa)
+                            {
+                                @* Rata congelata: si sblocca solo annullando l'avviso che la consuma. *@
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Default" />
+                            }
+                            else
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small"
+                                               OnClick="@(() => AvviaModifica(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => EliminaAsync(context))" />
+                            }
                         </MudTd>
                     }
                 </RowTemplate>
@@ -392,7 +415,9 @@
         _salvataggio = true;
         try
         {
-            foreach (var s in _scadenze)
+            // Non si toccano le rate già evase da un avviso (congelate): si eliminano
+            // solo le scadenze non ancora messe in avviso.
+            foreach (var s in _scadenze.Where(s => !s.IsEvasa))
                 await ScadenzaPagamentoManager.EliminaAsync(s.IdScadenza);
 
             Snackbar.Add("Scadenze non salvate: il dettaglio resta da schedulare.", Severity.Info);

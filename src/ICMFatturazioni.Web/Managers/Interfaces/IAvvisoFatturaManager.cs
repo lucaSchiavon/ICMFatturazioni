@@ -25,6 +25,21 @@ public interface IAvvisoFatturaManager
     Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, CancellationToken ct = default);
 
     /// <summary>
+    /// Attività (con il rispettivo cliente) ancora fatturabili, cioè con importo
+    /// residuo non ancora messo in avviso (criterio sull'importo, non sull'esistenza
+    /// di scadenze). Alimenta i filtri della maschera: un'attività sparisce solo
+    /// quando ogni dettaglio è interamente coperto dagli avvisi.
+    /// </summary>
+    Task<IReadOnlyList<AttivitaFatturabile>> AttivitaFatturabiliAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Dettagli dell'attività non ancora interamente schedulati in scadenze: non
+    /// sono fatturabili finché non si pianificano le rate. Serve alla maschera per
+    /// segnalare gli importi "da schedulare" ed evitare buchi non fatturati.
+    /// </summary>
+    Task<IReadOnlyList<DettaglioDaSchedulare>> DettagliDaSchedulareAsync(Guid idAttivita, CancellationToken ct = default);
+
+    /// <summary>
     /// Emette un avviso in modo atomico: valida il comando, risolve gli snapshot
     /// fiscali (aliquote di sistema, IVA, ritenuta dal sostituto d'imposta) e di
     /// pagamento (dall'anagrafica, salvo override), costruisce le righe con importi

@@ -58,6 +58,12 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
     public Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, CancellationToken ct = default)
         => _scadenze.GetFatturabiliByAttivitaAsync(idAttivita, ct);
 
+    public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaFatturabiliAsync(CancellationToken ct = default)
+        => _scadenze.GetAttivitaConResiduoDaFatturareAsync(ct);
+
+    public Task<IReadOnlyList<DettaglioDaSchedulare>> DettagliDaSchedulareAsync(Guid idAttivita, CancellationToken ct = default)
+        => _scadenze.GetDettagliNonSchedulatiByAttivitaAsync(idAttivita, ct);
+
     // -----------------------------------------------------------------------
     // Emissione (atomica)
     // -----------------------------------------------------------------------

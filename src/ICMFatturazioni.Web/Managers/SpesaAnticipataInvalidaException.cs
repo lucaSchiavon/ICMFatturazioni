@@ -13,6 +13,9 @@ public enum SpesaAnticipataMotivoInvalido
 
     /// <summary>L'importo è ≤ 0.</summary>
     ImportoNonValido,
+
+    /// <summary>La spesa è già associata a un avviso di fattura: è congelata finché l'avviso non viene annullato.</summary>
+    SpesaInAvviso,
 }
 
 /// <summary>

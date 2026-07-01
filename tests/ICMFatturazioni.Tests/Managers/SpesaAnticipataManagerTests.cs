@@ -146,6 +146,50 @@ public class SpesaAnticipataManagerTests
     }
 
     // -------------------------------------------------------------------------
+    // Lock: spesa già associata a un avviso di fattura
+    // -------------------------------------------------------------------------
+
+    // Semina direttamente nel repo una spesa già associata (IdAvviso valorizzato).
+    private static SpesaAnticipata SpesaInAvviso() => new()
+    {
+        IdSpesaAnticipata = Guid.NewGuid(),
+        IdAttivita        = IdAttivita,
+        Data              = new DateOnly(2026, 6, 19),
+        Descrizione       = "BOLLO",
+        Importo           = 50m,
+        IdAvviso          = Guid.NewGuid(),
+    };
+
+    [Fact]
+    public async Task AggiornaAsync_SpesaInAvviso_LanciaSpesaInAvviso()
+    {
+        var (sut, repo, _) = NewSut();
+        var inAvviso = SpesaInAvviso();
+        await repo.InsertAsync(inAvviso);
+
+        var modifica = Spesa(importo: 99m);
+        modifica.IdSpesaAnticipata = inAvviso.IdSpesaAnticipata;
+
+        var ex = await Assert.ThrowsAsync<SpesaAnticipataInvalidaException>(
+            () => sut.AggiornaAsync(modifica));
+        Assert.Equal(SpesaAnticipataMotivoInvalido.SpesaInAvviso, ex.Motivo);
+        Assert.Equal(50m, (await repo.GetByIdAsync(inAvviso.IdSpesaAnticipata))!.Importo);
+    }
+
+    [Fact]
+    public async Task EliminaAsync_SpesaInAvviso_LanciaSpesaInAvviso()
+    {
+        var (sut, repo, _) = NewSut();
+        var inAvviso = SpesaInAvviso();
+        await repo.InsertAsync(inAvviso);
+
+        var ex = await Assert.ThrowsAsync<SpesaAnticipataInvalidaException>(
+            () => sut.EliminaAsync(inAvviso.IdSpesaAnticipata));
+        Assert.Equal(SpesaAnticipataMotivoInvalido.SpesaInAvviso, ex.Motivo);
+        Assert.True((await repo.GetByIdAsync(inAvviso.IdSpesaAnticipata))!.IsAttivo);
+    }
+
+    // -------------------------------------------------------------------------
     // Elenco
     // -------------------------------------------------------------------------
 

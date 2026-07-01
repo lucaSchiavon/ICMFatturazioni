@@ -137,13 +137,13 @@
                 {
                     <div class="icm-sellist-placeholder">Caricamento…</div>
                 }
-                else if (!_attivitaLista.Any())
+                else if (!AttivitaFiltrate.Any())
                 {
-                    <div class="icm-sellist-placeholder">Nessuna attività per questa selezione.</div>
+                    <div class="icm-sellist-placeholder">Nessuna attività fatturabile per questa selezione.</div>
                 }
                 else
                 {
-                    @foreach (var a in _attivitaLista)
+                    @foreach (var a in AttivitaFiltrate)
                     {
                         <div class="icm-sellist-item icm-sellist-item-2col @(a.IdAttivita == _attivitaSelezionata?.IdAttivita ? "selected" : "")"
                              @onclick="@(() => SelezionaAttivitaAsync(a))">
@@ -240,18 +240,21 @@
                                Date="_tData" DateChanged="@(d => _tData = d)"
                                DateFormat="dd/MM/yyyy" Culture="_itCulture" Editable="true"
                                Disabled="_wizardFase == WizardFase.Righe"
-                               Variant="Variant.Outlined" Margin="Margin.Dense" />
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               Class="campo-obbligatorio" />
             </MudItem>
             <MudItem xs="12" sm="8" md="5">
                 <MudTextField @bind-Value="_tNotaSintetica" Label="Nota sintetica *"
                               MaxLength="200" Immediate="true"
                               Disabled="_wizardFase == WizardFase.Righe"
-                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Class="campo-obbligatorio" />
             </MudItem>
             <MudItem xs="12" md="4">
                 <MudSelect T="Guid?" Label="Codice IVA *" @bind-Value="_idCodiceIvaSelezionato"
                            Disabled="_wizardFase == WizardFase.Righe"
-                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                           Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Class="campo-obbligatorio">
                     @foreach (var c in _codiciIva)
                     {
                         <MudSelectItem T="Guid?" Value="@c.IdCodiceIVA">@c.Descrizione (@c.Aliquota.ToString("0.##", _itCulture)%)</MudSelectItem>
@@ -301,6 +304,29 @@
                 Seleziona le rate da mettere in avviso. La rata si fattura intera: per cambiare la
                 suddivisione usa Gestione scadenze nella maschera Attività.
             </MudText>
+
+            @* Segnalazione "buchi": dettagli con importo non ancora schedulato in scadenze,
+               quindi non fatturabili da qui finché non si pianificano le rate. *@
+            @if (_dettagliDaSchedulare.Count > 0)
+            {
+                <MudAlert Severity="MudBlazor.Severity.Warning" Dense="true" Class="mb-3">
+                    <div class="mb-1">
+                        Alcuni dettagli non hanno scadenze schedulate e <strong>non sono fatturabili</strong>
+                        finché non pianifichi le rate in Gestione Attività:
+                    </div>
+                    <ul class="mb-1" style="margin:0;padding-left:1.2rem;">
+                        @foreach (var d in _dettagliDaSchedulare)
+                        {
+                            <li>@d.Descrizione (@d.ImportoNonSchedulato.ToString("N2", _itCulture) €)</li>
+                        }
+                    </ul>
+                    <MudButton Size="Size.Small" Ripple="false" Variant="Variant.Text"
+                               StartIcon="@Icons.Material.Filled.EditCalendar"
+                               OnClick="@(() => Nav.NavigateTo("/gest-attivita-studio"))">
+                        Vai a Gestione Attività
+                    </MudButton>
+                </MudAlert>
+            }
 
             @if (_caricamentoScadenze)
             {
@@ -433,7 +459,7 @@
                     <MudTextField @bind-Value="_descrizioneSpese" Label="Descrizione spese in avviso *"
                                   MaxLength="500" Lines="2" Immediate="true"
                                   HelperText="Testo art. 15 D.P.R. 633/72, obbligatorio quando si allegano spese."
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio mt-2" />
                 }
             }
 
@@ -520,6 +546,12 @@
     private List<AvvisoFattura>          _avvisiEmessi       = new();
     private List<ScadenzaFatturabile>    _scadenzeFatturabili = new();
     private List<SpesaAnticipata>        _speseAttivita      = new();
+    private List<DettaglioDaSchedulare>  _dettagliDaSchedulare = new();
+
+    // Universo "fatturabile" (per i filtri): attività con ≥1 scadenza non ancora
+    // in avviso; i clienti/attività coperti spariscono dai selettori.
+    private HashSet<Guid> _anagraficheFatturabili = new();
+    private HashSet<Guid> _attivitaFatturabili    = new();
 
     // ── Selezioni correnti ───────────────────────────────────────────────
     private Anagrafica?   _anagraficaSelezionata;
@@ -574,12 +606,18 @@
                 FiltroTipo.Privati => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Privato),
                 _                  => q,
             };
+            // Solo clienti con almeno un'attività ancora fatturabile.
+            q = q.Where(a => _anagraficheFatturabili.Contains(a.IdAnagrafica));
             if (!string.IsNullOrWhiteSpace(_filtroRagioneSociale))
                 q = q.Where(a => a.RagioneSociale.Contains(
                     _filtroRagioneSociale.Trim(), StringComparison.OrdinalIgnoreCase));
             return q;
         }
     }
+
+    // Attività della selezione (anagrafica+tipo) ancora fatturabili.
+    private IEnumerable<Attivita> AttivitaFiltrate
+        => _attivitaLista.Where(a => _attivitaFatturabili.Contains(a.IdAttivita));
 
     // Scadenze raggruppate per dettaglio (ordine dettaglio, poi data scadenza).
     private IEnumerable<IGrouping<Guid, ScadenzaFatturabile>> ScadenzeRaggruppate
@@ -600,13 +638,22 @@
         var t2 = TipoAttivitaManager.ElencoAsync();
         var t3 = CodiceIVAManager.ElencoAsync();
         var t4 = AliquotaManager.GetAliquoteAvvisoAsync();
-        await Task.WhenAll(t1, t2, t3, t4);
+        var t5 = AvvisoManager.AttivitaFatturabiliAsync();
+        await Task.WhenAll(t1, t2, t3, t4, t5);
         _anagrafiche     = t1.Result;
         _tipiAttivita    = t2.Result;
         _codiciIva       = t3.Result;
         _aliquoteFiscali = t4.Result;
+        AggiornaUniversoFatturabile(t5.Result);
         _caricamentoAnagrafica = false;
         _caricamentoTipi       = false;
+    }
+
+    // Ricalcola gli insiemi di clienti/attività ancora fatturabili.
+    private void AggiornaUniversoFatturabile(IReadOnlyList<AttivitaFatturabile> fatturabili)
+    {
+        _anagraficheFatturabili = fatturabili.Select(f => f.IdAnagrafica).ToHashSet();
+        _attivitaFatturabili    = fatturabili.Select(f => f.IdAttivita).ToHashSet();
     }
 
     // ── Selezione filtri ─────────────────────────────────────────────────
@@ -671,9 +718,10 @@
     private void ResetContestoAttivita()
     {
         _attivitaSelezionata = null;
-        _avvisiEmessi        = new();
-        _scadenzeFatturabili = new();
-        _speseAttivita       = new();
+        _avvisiEmessi         = new();
+        _scadenzeFatturabili  = new();
+        _speseAttivita        = new();
+        _dettagliDaSchedulare = new();
         ResetWizard();
     }
 
@@ -687,11 +735,15 @@
             var idAtt = _attivitaSelezionata.IdAttivita;
             var tAvvisi   = AvvisoManager.ElencoPerAttivitaAsync(idAtt);
             var tScadenze = AvvisoManager.ScadenzeFatturabiliAsync(idAtt);
-            var tSpese    = SpesaAnticipataManager.ElencoPerAttivitaAsync(idAtt);
-            await Task.WhenAll(tAvvisi, tScadenze, tSpese);
-            _avvisiEmessi        = tAvvisi.Result.ToList();
-            _scadenzeFatturabili = tScadenze.Result.ToList();
-            _speseAttivita       = tSpese.Result.ToList();
+            var tSpese    = SpesaAnticipataManager.ElencoFatturabiliPerAttivitaAsync(idAtt);  // solo spese non già in avviso
+            var tFatt     = AvvisoManager.AttivitaFatturabiliAsync();                         // coperture aggiornate
+            var tDaSched  = AvvisoManager.DettagliDaSchedulareAsync(idAtt);                   // dettagli senza scadenze complete
+            await Task.WhenAll(tAvvisi, tScadenze, tSpese, tFatt, tDaSched);
+            _avvisiEmessi         = tAvvisi.Result.ToList();
+            _scadenzeFatturabili  = tScadenze.Result.ToList();
+            _speseAttivita        = tSpese.Result.ToList();
+            _dettagliDaSchedulare = tDaSched.Result.ToList();
+            AggiornaUniversoFatturabile(tFatt.Result);
 
             // Default IVA dal codice del cliente (può essere null su anagrafica minimale).
             _idCodiceIvaSelezionato = _anagraficaSelezionata?.IdCodiciIVA;

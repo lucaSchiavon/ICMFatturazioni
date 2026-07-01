@@ -12,6 +12,13 @@ public interface ISpesaAnticipataManager
     Task<IReadOnlyList<SpesaAnticipata>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
 
     /// <summary>
+    /// Restituisce le spese attive di un'attività ancora <b>fatturabili</b> (non
+    /// collegate ad alcun avviso): quelle da proporre per l'allegato in un nuovo
+    /// avviso, escluse le già riaddebitate.
+    /// </summary>
+    Task<IReadOnlyList<SpesaAnticipata>> ElencoFatturabiliPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
+
+    /// <summary>
     /// Crea una nuova spesa anticipata. Assegna GUID v7.
     /// Lancia <see cref="SpesaAnticipataInvalidaException"/> se la validazione fallisce.
     /// </summary>

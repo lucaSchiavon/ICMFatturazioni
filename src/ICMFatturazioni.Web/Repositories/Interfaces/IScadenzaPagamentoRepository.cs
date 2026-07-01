@@ -21,6 +21,25 @@ public interface IScadenzaPagamentoRepository
     /// </summary>
     Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
 
+    /// <summary>
+    /// Restituisce le attività (con il rispettivo cliente) che hanno ancora
+    /// <b>importo residuo da fatturare</b>: esiste almeno un dettaglio attivo il
+    /// cui importo eccede quanto già allocato in avvisi attivi. Criterio basato
+    /// sull'<b>importo</b> (non sull'esistenza di scadenze): così un dettaglio
+    /// senza scadenze schedulate — che non è ancora fatturato — mantiene l'attività
+    /// visibile nei filtri Avvisi (evita "buchi"). Un'attività sparisce solo quando
+    /// ogni dettaglio è interamente coperto dagli avvisi.
+    /// </summary>
+    Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConResiduoDaFatturareAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Restituisce i dettagli di un'attività il cui importo non è ancora interamente
+    /// schedulato in scadenze (somma rate attive &lt; importo, incluso zero scadenze),
+    /// con la quota non schedulata. Alimenta la segnalazione in maschera Avvisi dei
+    /// dettagli da pianificare prima di poterli fatturare.
+    /// </summary>
+    Task<IReadOnlyList<DettaglioDaSchedulare>> GetDettagliNonSchedulatiByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
+
     /// <summary>Restituisce una scadenza per chiave primaria (incluse soft-deleted).</summary>
     Task<ScadenzaPagamento?> GetByIdAsync(Guid idScadenza, CancellationToken ct = default);
 
