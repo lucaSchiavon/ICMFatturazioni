@@ -299,10 +299,18 @@
             </div>
 
             <MudDivider Class="my-2" />
-            <MudText Typo="Typo.subtitle2" Class="mb-1" Style="font-weight:700;">Scadenze da fatturare</MudText>
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-1">
+                <MudText Typo="Typo.subtitle2" Style="font-weight:700;">Scadenze da fatturare</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Ripple="false"
+                           StartIcon="@Icons.Material.Filled.PlaylistAdd"
+                           Disabled="_scadenzeSelezionate.Count == 0"
+                           OnClick="AggiungiRigheSelezionate">
+                    Aggiungi le righe selezionate@(_scadenzeSelezionate.Count > 0 ? $" ({_scadenzeSelezionate.Count})" : "")
+                </MudButton>
+            </div>
             <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary);">
-                Seleziona le rate da mettere in avviso. La rata si fattura intera: per cambiare la
-                suddivisione usa Gestione scadenze nella maschera Attività.
+                Spunta le rate e premi «Aggiungi»: diventeranno righe dell'avviso qui sotto. La rata si fattura
+                intera: per cambiare la suddivisione usa Gestione scadenze nella maschera Attività.
             </MudText>
 
             @* Segnalazione "buchi": dettagli con importo non ancora schedulato in scadenze,
@@ -332,11 +340,17 @@
             {
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
             }
-            else if (_scadenzeFatturabili.Count == 0)
+            else if (!ScadenzeDisponibili.Any())
             {
                 <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Class="mb-2">
-                    Nessuna scadenza fatturabile: tutte le rate risultano già in avviso, oppure
-                    l'attività non ha ancora scadenze schedulate.
+                    @if (_scadenzeFatturabili.Count == 0)
+                    {
+                        <text>Nessuna scadenza fatturabile: tutte le rate risultano già in avviso, oppure l'attività non ha ancora scadenze schedulate.</text>
+                    }
+                    else
+                    {
+                        <text>Tutte le rate disponibili sono già nelle righe dell'avviso qui sotto.</text>
+                    }
                 </MudAlert>
             }
             else
@@ -463,25 +477,75 @@
                 }
             }
 
-            @* ── Righe descrittive ── *@
+            @* ══════════ Righe dell'avviso (bozza): diventeranno i dettagli della fattura ══════════ *@
             <MudDivider Class="my-3" />
-            <MudText Typo="Typo.subtitle2" Class="mb-1" Style="font-weight:700;">Righe descrittive (facoltative)</MudText>
-            <div class="d-flex gap-2 align-center mb-2">
-                <MudTextField @bind-Value="_nuovaDescrittiva" Placeholder="Testo della riga…"
+            <MudText Typo="Typo.subtitle2" Class="mb-1" Style="font-weight:700;">Righe dell'avviso</MudText>
+            <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary);">
+                Queste righe diventeranno i dettagli della fattura, nell'ordine mostrato. Usa le frecce per riordinarle.
+            </MudText>
+
+            @* Aggiunta di una riga puramente descrittiva (solo testo, senza importo). *@
+            <div class="d-flex gap-2 align-center mb-3">
+                <MudTextField @bind-Value="_nuovaDescrittiva" Placeholder="Testo di una riga descrittiva…"
                               MaxLength="200" Immediate="true"
                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-1" />
                 <MudButton Size="Size.Small" Ripple="false" Variant="Variant.Outlined"
-                           StartIcon="@Icons.Material.Filled.Add" OnClick="AggiungiDescrittiva">
-                    Aggiungi
+                           StartIcon="@Icons.Material.Filled.Notes" OnClick="AggiungiDescrittiva"
+                           Disabled="string.IsNullOrWhiteSpace(_nuovaDescrittiva)">
+                    Aggiungi riga descrittiva
                 </MudButton>
             </div>
-            @foreach (var (testo, i) in _righeDescrittive.Select((t, i) => (t, i)))
+
+            @if (_righeBozza.Count == 0)
             {
-                <div class="d-flex align-center gap-2">
-                    <MudIcon Icon="@Icons.Material.Filled.Notes" Size="Size.Small" />
-                    <MudText Typo="Typo.body2" Style="flex:1;">@testo</MudText>
-                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Ripple="false"
-                                   OnClick="@(() => _righeDescrittive.RemoveAt(i))" />
+                <MudAlert Severity="MudBlazor.Severity.Info" Dense="true" Class="mb-2">
+                    Nessuna riga: spunta le scadenze qui sopra e premi «Aggiungi», oppure aggiungi una riga descrittiva.
+                </MudAlert>
+            }
+            else
+            {
+                @for (var i = 0; i < _righeBozza.Count; i++)
+                {
+                    var idx  = i;   // cattura per le lambda
+                    var riga = _righeBozza[idx];
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-2 mb-1">
+                        <div class="d-flex align-center gap-2">
+                            <div class="d-flex flex-column">
+                                <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small" Ripple="false"
+                                               Disabled="idx == 0" aria-label="Sposta su"
+                                               OnClick="@(() => SpostaRiga(idx, -1))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small" Ripple="false"
+                                               Disabled="idx == _righeBozza.Count - 1" aria-label="Sposta giù"
+                                               OnClick="@(() => SpostaRiga(idx, +1))" />
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                @if (riga.IsDescrittiva)
+                                {
+                                    <MudText Typo="Typo.body2" Style="font-style:italic;">@riga.Descrizione</MudText>
+                                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">Riga descrittiva</MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2" Style="font-weight:600;">
+                                        @(string.IsNullOrWhiteSpace(riga.Tipo) ? "" : $"{riga.Tipo} — ")@riga.Descrizione
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
+                                        Rata del @riga.DataScadenza?.ToString("dd/MM/yyyy")
+                                    </MudText>
+                                }
+                            </div>
+                            <MudText Typo="Typo.body2" Style="font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;">
+                                @(riga.Importo is { } imp ? $"{imp.ToString("N2", _itCulture)} €" : "—")
+                            </MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Ripple="false" Color="Color.Error"
+                                           aria-label="Rimuovi riga" OnClick="@(() => RimuoviRigaBozza(idx))" />
+                        </div>
+                    </MudPaper>
+                }
+                <div class="d-flex justify-end mt-1">
+                    <MudText Typo="Typo.body2">
+                        Imponibile righe: <strong>@_righeBozza.Where(r => !r.IsDescrittiva).Sum(r => r.Importo ?? 0m).ToString("N2", _itCulture) €</strong>
+                    </MudText>
                 </div>
             }
 
@@ -520,7 +584,7 @@
                 </MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
                            StartIcon="@Icons.Material.Filled.Check"
-                           Disabled="_emissioneInCorso || _scadenzeSelezionate.Count == 0"
+                           Disabled="_emissioneInCorso || !_righeBozza.Any(r => !r.IsDescrittiva)"
                            OnClick="TerminaInserimentoAsync">
                     @(_emissioneInCorso ? "Emissione…" : "Termina inserimento")
                 </MudButton>
@@ -581,13 +645,25 @@
     private string    _erroreTestata  = string.Empty;
 
     // Righe (fase 2)
-    private readonly HashSet<Guid> _scadenzeSelezionate = new();
+    private readonly HashSet<Guid> _scadenzeSelezionate = new();   // checkbox nella griglia sorgente (pre-aggiunta)
     private readonly HashSet<Guid> _speseSelezionate    = new();
     private string        _descrizioneSpese = string.Empty;
-    private readonly List<string> _righeDescrittive = new();
+    private readonly List<RigaBozza> _righeBozza = new();          // righe dell'avviso, in ordine
     private string        _nuovaDescrittiva = string.Empty;
     private string        _erroreEmissione  = string.Empty;
     private bool          _emissioneInCorso;
+
+    // Riga della bozza avviso: reale (da una scadenza) o descrittiva (solo testo).
+    private sealed class RigaBozza
+    {
+        public Guid?     IdScadenza          { get; init; }   // null = descrittiva
+        public Guid?     IdAttivitaDettaglio { get; init; }
+        public string?   Tipo                { get; init; }
+        public string    Descrizione         { get; init; } = string.Empty;
+        public decimal?  Importo             { get; init; }   // null = descrittiva
+        public DateOnly? DataScadenza        { get; init; }
+        public bool      IsDescrittiva => IdScadenza is null;
+    }
 
     // Aliquota IVA risolta dal codice selezionato (0 se nessuno)
     private decimal _aliquotaIvaCorrente
@@ -619,17 +695,23 @@
     private IEnumerable<Attivita> AttivitaFiltrate
         => _attivitaLista.Where(a => _attivitaFatturabili.Contains(a.IdAttivita));
 
-    // Scadenze raggruppate per dettaglio (ordine dettaglio, poi data scadenza).
+    // Scadenze ancora disponibili nella griglia sorgente: fatturabili non ancora
+    // spostate nelle righe dell'avviso (bozza).
+    private IEnumerable<ScadenzaFatturabile> ScadenzeDisponibili
+        => _scadenzeFatturabili.Where(s => !_righeBozza.Any(r => r.IdScadenza == s.IdScadenza));
+
+    // Scadenze disponibili raggruppate per dettaglio (ordine dettaglio, poi data).
     private IEnumerable<IGrouping<Guid, ScadenzaFatturabile>> ScadenzeRaggruppate
-        => _scadenzeFatturabili
+        => ScadenzeDisponibili
             .OrderBy(s => s.OrdineDettaglio).ThenBy(s => s.DataScadenza)
             .GroupBy(s => s.IdAttivitaDettaglio);
 
     // "Già allocato" live per un dettaglio = avvisi precedenti + rate di questo
-    // dettaglio selezionate nell'avviso in bozza (opzione Y, avviso-fattura-design).
+    // dettaglio già messe nelle righe dell'avviso in bozza (opzione Y, avviso-fattura-design).
     private decimal GiaAllocatoLive(IGrouping<Guid, ScadenzaFatturabile> gruppo)
         => gruppo.First().GiaAllocatoAvvisiPrecedenti
-         + gruppo.Where(s => _scadenzeSelezionate.Contains(s.IdScadenza)).Sum(s => s.Importo);
+         + _righeBozza.Where(r => !r.IsDescrittiva && r.IdAttivitaDettaglio == gruppo.Key)
+                      .Sum(r => r.Importo ?? 0m);
 
     // ── Init ─────────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
@@ -773,7 +855,7 @@
         _scadenzeSelezionate.Clear();
         _speseSelezionate.Clear();
         _descrizioneSpese = string.Empty;
-        _righeDescrittive.Clear();
+        _righeBozza.Clear();
         _nuovaDescrittiva = string.Empty;
         _erroreEmissione  = string.Empty;
     }
@@ -817,19 +899,53 @@
             _speseSelezionate.Add(sp.IdSpesaAnticipata);
     }
 
+    // Sposta nelle righe dell'avviso (bozza) le scadenze spuntate nella sorgente.
+    private void AggiungiRigheSelezionate()
+    {
+        foreach (var s in ScadenzeDisponibili
+                     .Where(s => _scadenzeSelezionate.Contains(s.IdScadenza))
+                     .OrderBy(s => s.OrdineDettaglio).ThenBy(s => s.DataScadenza)
+                     .ToList())
+        {
+            _righeBozza.Add(new RigaBozza
+            {
+                IdScadenza          = s.IdScadenza,
+                IdAttivitaDettaglio = s.IdAttivitaDettaglio,
+                Tipo                = s.TipoDettaglioDescrizione,
+                Descrizione         = s.DescrizioneDettaglio,
+                Importo             = s.Importo,
+                DataScadenza        = s.DataScadenza,
+            });
+        }
+        _scadenzeSelezionate.Clear();
+    }
+
     private void AggiungiDescrittiva()
     {
         if (string.IsNullOrWhiteSpace(_nuovaDescrittiva)) return;
-        _righeDescrittive.Add(_nuovaDescrittiva.Trim());
+        _righeBozza.Add(new RigaBozza { Descrizione = _nuovaDescrittiva.Trim() });
         _nuovaDescrittiva = string.Empty;
+    }
+
+    private void RimuoviRigaBozza(int index)
+    {
+        if (index >= 0 && index < _righeBozza.Count)
+            _righeBozza.RemoveAt(index);
+    }
+
+    // Sposta una riga di uno step su (-1) o giù (+1) nell'ordine dell'avviso.
+    private void SpostaRiga(int index, int delta)
+    {
+        var nuovo = index + delta;
+        if (index < 0 || index >= _righeBozza.Count || nuovo < 0 || nuovo >= _righeBozza.Count) return;
+        (_righeBozza[index], _righeBozza[nuovo]) = (_righeBozza[nuovo], _righeBozza[index]);
     }
 
     // Anteprima cascata: costruisce un avviso "provvisorio" con gli snapshot
     // correnti e delega al calcolo puro del manager (stesso usato in emissione).
     private CalcoloFiscaleRisultato CalcolaAnteprima()
     {
-        var imponibile = _scadenzeFatturabili
-            .Where(s => _scadenzeSelezionate.Contains(s.IdScadenza)).Sum(s => s.Importo);
+        var imponibile = _righeBozza.Where(r => !r.IsDescrittiva).Sum(r => r.Importo ?? 0m);
         var speseArt15 = _speseAttivita
             .Where(sp => _speseSelezionate.Contains(sp.IdSpesaAnticipata)).Sum(sp => sp.Importo);
 
@@ -846,9 +962,9 @@
     private async Task TerminaInserimentoAsync()
     {
         _erroreEmissione = string.Empty;
-        if (_scadenzeSelezionate.Count == 0)
+        if (!_righeBozza.Any(r => !r.IsDescrittiva))
         {
-            _erroreEmissione = "Seleziona almeno una rata da fatturare.";
+            _erroreEmissione = "Aggiungi almeno una rata alle righe dell'avviso.";
             return;
         }
         if (_speseSelezionate.Count > 0 && string.IsNullOrWhiteSpace(_descrizioneSpese))
@@ -858,11 +974,9 @@
         }
         if (_attivitaSelezionata is null || _anagraficaSelezionata is null) return;
 
-        // Ordine scadenze coerente con la griglia (per dettaglio, poi data).
-        var idScadenzeOrdinate = ScadenzeRaggruppate
-            .SelectMany(g => g)
-            .Where(s => _scadenzeSelezionate.Contains(s.IdScadenza))
-            .Select(s => s.IdScadenza)
+        // Righe nell'ordine della bozza (scadenze e descrittive interlacciate).
+        var righe = _righeBozza
+            .Select(r => new RigaAvvisoInput(r.IdScadenza, r.IsDescrittiva ? r.Descrizione : null))
             .ToList();
 
         var request = new EmissioneAvvisoRequest(
@@ -870,13 +984,12 @@
             IdAnagrafica:             _anagraficaSelezionata.IdAnagrafica,
             DataAvviso:               DateOnly.FromDateTime(_tData!.Value),
             AliquotaIva:              _aliquotaIvaCorrente,
-            IdScadenzeSelezionate:    idScadenzeOrdinate,
+            Righe:                    righe,
             IdSpeseSelezionate:       _speseSelezionate.ToList(),
             Oggetto:                  string.IsNullOrWhiteSpace(_tOggetto) ? null : _tOggetto.Trim(),
             NotaSintetica:            string.IsNullOrWhiteSpace(_tNotaSintetica) ? null : _tNotaSintetica.Trim(),
             NotaTestata:              string.IsNullOrWhiteSpace(_tNotaTestata) ? null : _tNotaTestata.Trim(),
-            DescrizioneSpeseInAvviso: string.IsNullOrWhiteSpace(_descrizioneSpese) ? null : _descrizioneSpese.Trim(),
-            RigheDescrittive:         _righeDescrittive.Select(t => new RigaDescrittivaInput(t)).ToList());
+            DescrizioneSpeseInAvviso: string.IsNullOrWhiteSpace(_descrizioneSpese) ? null : _descrizioneSpese.Trim());
 
         _emissioneInCorso = true;
         try

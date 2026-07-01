@@ -77,7 +77,7 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
                 AvvisoFatturaMotivoInvalido.DataObbligatoria,
                 "La data dell'avviso è obbligatoria.");
 
-        if (request.IdScadenzeSelezionate.Count == 0)
+        if (!request.Righe.Any(r => r.IdScadenza is not null))
             throw new AvvisoFatturaInvalidaException(
                 AvvisoFatturaMotivoInvalido.NessunaScadenzaSelezionata,
                 "Seleziona almeno una rata da fatturare.");
@@ -98,39 +98,41 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
         var righe    = new List<AvvisoFatturaRiga>();
         var ordine   = 1;
 
-        // Righe reali: una per scadenza selezionata, importo/etichette dal DB.
-        foreach (var idScadenza in request.IdScadenzeSelezionate)
+        // Righe nell'ordine deciso dall'utente: reali (scadenza, importo/etichette
+        // autorevoli dal read-model) e descrittive (solo testo) possono alternarsi.
+        foreach (var riga in request.Righe)
         {
-            if (!fatturabili.TryGetValue(idScadenza, out var f))
-                throw new AvvisoFatturaInvalidaException(
-                    AvvisoFatturaMotivoInvalido.ScadenzaNonFatturabile,
-                    "Una rata selezionata non è più disponibile: ricarica l'elenco delle scadenze.");
-
-            righe.Add(new AvvisoFatturaRiga
+            if (riga.IdScadenza is { } idScadenza)
             {
-                IdRiga              = Guid.CreateVersion7(),
-                IdAvviso            = idAvviso,
-                Ordine              = ordine++,
-                IdAttivitaDettaglio = f.IdAttivitaDettaglio,
-                IdScadenza          = f.IdScadenza,
-                Tipo                = f.TipoDettaglioDescrizione,
-                Descrizione         = f.DescrizioneDettaglio,
-                Importo             = f.Importo,
-                IsDescrittiva       = false,
-            });
-        }
+                if (!fatturabili.TryGetValue(idScadenza, out var f))
+                    throw new AvvisoFatturaInvalidaException(
+                        AvvisoFatturaMotivoInvalido.ScadenzaNonFatturabile,
+                        "Una rata selezionata non è più disponibile: ricarica l'elenco delle scadenze.");
 
-        // Righe descrittive facoltative, accodate.
-        foreach (var descrittiva in request.RigheDescrittive ?? [])
-        {
-            righe.Add(new AvvisoFatturaRiga
+                righe.Add(new AvvisoFatturaRiga
+                {
+                    IdRiga              = Guid.CreateVersion7(),
+                    IdAvviso            = idAvviso,
+                    Ordine              = ordine++,
+                    IdAttivitaDettaglio = f.IdAttivitaDettaglio,
+                    IdScadenza          = f.IdScadenza,
+                    Tipo                = f.TipoDettaglioDescrizione,
+                    Descrizione         = f.DescrizioneDettaglio,
+                    Importo             = f.Importo,
+                    IsDescrittiva       = false,
+                });
+            }
+            else
             {
-                IdRiga        = Guid.CreateVersion7(),
-                IdAvviso      = idAvviso,
-                Ordine        = ordine++,
-                Descrizione   = descrittiva.Descrizione,
-                IsDescrittiva = true,
-            });
+                righe.Add(new AvvisoFatturaRiga
+                {
+                    IdRiga        = Guid.CreateVersion7(),
+                    IdAvviso      = idAvviso,
+                    Ordine        = ordine++,
+                    Descrizione   = riga.Descrizione ?? string.Empty,
+                    IsDescrittiva = true,
+                });
+            }
         }
 
         var testata = new AvvisoFattura

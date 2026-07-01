@@ -82,16 +82,22 @@ public class AvvisoFatturaManagerTests
         DateOnly?            data = null,
         Guid?                idCodicePagamento = null,
         Guid?                idBancaAppoggio = null,
-        IReadOnlyList<RigaDescrittivaInput>? descrittive = null) => new(
-        IdAttivita:               IdAttivita,
-        IdAnagrafica:             idAnagrafica,
-        DataAvviso:               data ?? new DateOnly(2026, 10, 1),
-        AliquotaIva:              aliquotaIva,
-        IdScadenzeSelezionate:    scadenze,
-        IdSpeseSelezionate:       spese ?? Array.Empty<Guid>(),
-        IdCodicePagamento:        idCodicePagamento,
-        IdBancaAppoggio:          idBancaAppoggio,
-        RigheDescrittive:         descrittive);
+        IReadOnlyList<string>? descrittive = null)
+    {
+        // Righe ordinate: prima le scadenze, poi le eventuali descrittive.
+        var righe = scadenze.Select(s => new RigaAvvisoInput(s))
+            .Concat((descrittive ?? Array.Empty<string>()).Select(d => new RigaAvvisoInput(null, d)))
+            .ToList();
+        return new(
+            IdAttivita:               IdAttivita,
+            IdAnagrafica:             idAnagrafica,
+            DataAvviso:               data ?? new DateOnly(2026, 10, 1),
+            AliquotaIva:              aliquotaIva,
+            Righe:                    righe,
+            IdSpeseSelezionate:       spese ?? Array.Empty<Guid>(),
+            IdCodicePagamento:        idCodicePagamento,
+            IdBancaAppoggio:          idBancaAppoggio);
+    }
 
     // =====================================================================
     // Emissione — happy path
@@ -198,7 +204,7 @@ public class AvvisoFatturaManagerTests
         sut.Scadenze.Fatturabili.Add(Fatturabile(s1));
 
         var id = await sut.Manager.EmettiAsync(Request(idAnag, new[] { s1 },
-            descrittive: new[] { new RigaDescrittivaInput("Nota a piè di elenco") }));
+            descrittive: new[] { "Nota a piè di elenco" }));
 
         var righe = await sut.Repo.GetRigheByAvvisoAsync(id);
         Assert.Equal(2, righe.Count);
@@ -206,6 +212,36 @@ public class AvvisoFatturaManagerTests
         Assert.Null(descr.Importo);
         Assert.Null(descr.IdScadenza);
         Assert.Equal("Nota a piè di elenco", descr.Descrizione);
+    }
+
+    [Fact]
+    public async Task EmettiAsync_PreservaOrdineRigheInterlacciate()
+    {
+        // Ordine bozza: scadenza s1, riga descrittiva, scadenza s2 → Ordine 1,2,3.
+        var sut = NewSut();
+        var idAnag = await SeedAnagraficaAsync(sut.Anag);
+        var s1 = Guid.NewGuid();
+        var s2 = Guid.NewGuid();
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s1, importo: 100m));
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s2, importo: 200m));
+
+        var request = new EmissioneAvvisoRequest(
+            IdAttivita:         IdAttivita,
+            IdAnagrafica:       idAnag,
+            DataAvviso:         new DateOnly(2026, 10, 1),
+            AliquotaIva:        22m,
+            Righe:              new[] { new RigaAvvisoInput(s1), new RigaAvvisoInput(null, "Nota in mezzo"), new RigaAvvisoInput(s2) },
+            IdSpeseSelezionate: Array.Empty<Guid>());
+
+        var id = await sut.Manager.EmettiAsync(request);
+
+        var righe = (await sut.Repo.GetRigheByAvvisoAsync(id)).OrderBy(r => r.Ordine).ToList();
+        Assert.Equal(3, righe.Count);
+        Assert.False(righe[0].IsDescrittiva);
+        Assert.True(righe[1].IsDescrittiva);
+        Assert.Equal("Nota in mezzo", righe[1].Descrizione);
+        Assert.False(righe[2].IsDescrittiva);
+        Assert.Equal(new[] { 1, 2, 3 }, righe.Select(r => r.Ordine));
     }
 
     [Fact]
