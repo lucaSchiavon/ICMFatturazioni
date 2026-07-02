@@ -365,12 +365,13 @@
                     </MudText>
                     <MudGrid Spacing="2">
                         <MudItem xs="12" sm="6" md="3">
-                            <MudSelect T="Guid" @bind-Value="_fDettIdTipo"
+                            <MudSelect T="Guid?" @bind-Value="_fDettIdTipo"
                                        Label="Tipo dettaglio *"
+                                       Placeholder="Seleziona…"
                                        Variant="Variant.Outlined" Margin="Margin.Dense">
                                 @foreach (var t in _tipiDettaglio)
                                 {
-                                    <MudSelectItem T="Guid" Value="@t.IdTipoDettaglioAttivita">
+                                    <MudSelectItem T="Guid?" Value="@((Guid?)t.IdTipoDettaglioAttivita)">
                                         @t.Descrizione
                                     </MudSelectItem>
                                 }
@@ -395,7 +396,7 @@
                         <MudItem xs="6" sm="3" md="3">
                             <MudNumericField T="decimal" @bind-Value="_fDettImporto"
                                              Label="Importo € *"
-                                             Min="0.01m" Format="N2" Culture="_itCulture"
+                                             Min="0m" Format="N2" Culture="_itCulture"
                                              Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                         <MudItem xs="12">
@@ -677,7 +678,9 @@
     private AttivitaDettaglio?                  _dettaglioInModifica;
 
     // Campi del form dettaglio inline
-    private Guid      _fDettIdTipo          = Guid.Empty;
+    // Tipo dettaglio nullable: la combo parte VUOTA (nessun GUID di zeri) e la
+    // selezione è obbligata dalla validazione in SalvaDettaglioAsync.
+    private Guid?     _fDettIdTipo          = null;
     private string    _fDettDescrizione     = string.Empty;
     private decimal   _fDettImporto;
     private DateTime? _fDettTermine;
@@ -992,7 +995,7 @@
     private void ResetFormDettaglio()
     {
         _dettaglioInModifica  = null;
-        _fDettIdTipo          = Guid.Empty;
+        _fDettIdTipo          = null;
         _fDettDescrizione     = string.Empty;
         _fDettImporto         = 0m;
         _fDettTermine         = null;
@@ -1003,7 +1006,7 @@
     private async Task SalvaDettaglioAsync()
     {
         _erroreFormDettaglio = string.Empty;
-        if (_fDettIdTipo == Guid.Empty)
+        if (_fDettIdTipo is null || _fDettIdTipo == Guid.Empty)
         {
             _erroreFormDettaglio = "Selezionare il tipo dettaglio.";
             return;
@@ -1027,7 +1030,7 @@
             {
                 IdAttivitaDettaglio     = _dettaglioInModifica?.IdAttivitaDettaglio ?? Guid.Empty,
                 IdAttivita              = _attivitaSelezionata.IdAttivita,
-                IdTipoDettaglioAttivita = _fDettIdTipo,
+                IdTipoDettaglioAttivita = _fDettIdTipo.Value,
                 Ordine                  = _dettaglioInModifica?.Ordine ?? 0,
                 DescrizioneDettaglio    = _fDettDescrizione.Trim(),
                 Importo                 = _fDettImporto,
