@@ -19,6 +19,13 @@ public interface ISpesaAnticipataRepository
     /// </summary>
     Task<IReadOnlyList<SpesaAnticipata>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
 
+    /// <summary>
+    /// Restituisce le spese attive collegate a un avviso (<c>IdAvviso = @IdAvviso</c>),
+    /// ordinate per Data ASC. Usata per riaddebitare le spese art.15 di un avviso
+    /// emesso (es. cascata fiscale del PDF).
+    /// </summary>
+    Task<IReadOnlyList<SpesaAnticipata>> GetByAvvisoAsync(Guid idAvviso, CancellationToken ct = default);
+
     /// <summary>Restituisce una spesa per chiave primaria (incluse soft-deleted).</summary>
     Task<SpesaAnticipata?> GetByIdAsync(Guid idSpesaAnticipata, CancellationToken ct = default);
 

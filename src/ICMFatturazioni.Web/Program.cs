@@ -100,6 +100,7 @@ builder.Services.AddScoped<IScadenzaPagamentoRepository, ScadenzaPagamentoReposi
 builder.Services.AddScoped<ISpesaAnticipataRepository, SpesaAnticipataRepository>();
 builder.Services.AddScoped<IAliquotaRepository, AliquotaRepository>();
 builder.Services.AddScoped<IAvvisoFatturaRepository, AvvisoFatturaRepository>();
+builder.Services.AddScoped<IAziendaRepository, AziendaRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -124,12 +125,17 @@ builder.Services.AddScoped<IScadenzaPagamentoManager, ScadenzaPagamentoManager>(
 builder.Services.AddScoped<ISpesaAnticipataManager, SpesaAnticipataManager>();
 builder.Services.AddScoped<IAliquotaManager, AliquotaManager>();
 builder.Services.AddScoped<IAvvisoFatturaManager, AvvisoFatturaManager>();
+builder.Services.AddScoped<IAziendaManager, AziendaManager>();
 
 // Servizio puro di calcolo scadenze (stateless) → singleton.
 builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();
 
 // Servizio puro di calcolo fiscale dell'avviso (cascata cap. 7) → singleton.
 builder.Services.AddSingleton<ICalcoloFiscaleAvviso, CalcoloFiscaleAvviso>();
+
+// Servizio di generazione del PDF dell'avviso di fattura (PDFsharp-MigraDoc).
+// Scoped: eredita lo scope dei Manager da cui carica i dati (mirror ICMVerbali).
+builder.Services.AddScoped<IAvvisoPdfService, AvvisoPdfService>();
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le
@@ -448,6 +454,48 @@ app.MapPost("/auth/forgot-password", async Task<IResult> (
 })
 .AllowAnonymous()
 .RequireRateLimiting("forgot-password");
+
+// ----------------------------------------------------------------------------
+// PDF di cortesia dell'Avviso di fattura (anteprima/stampa).
+// Blazor Server non può servire un file binario da un componente: si espone un
+// endpoint che la UI apre in una nuova scheda (mirror del pattern PDF di
+// ICMVerbali). Servito "inline" così il browser lo mostra come anteprima.
+// ----------------------------------------------------------------------------
+app.MapGet("/api/avvisi/{id:guid}/pdf", async Task<IResult> (
+    Guid id,
+    HttpContext httpContext,
+    IAvvisoPdfService pdfService,
+    IAvvisoFatturaManager avvisoManager,
+    ILogManager logManager,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var pdf = await pdfService.GeneraAsync(id, ct);
+
+        // Nome file leggibile dalla data dell'avviso (best-effort).
+        var dettaglio = await avvisoManager.GetDettaglioAsync(id, ct);
+        var nomeFile  = dettaglio is not null
+            ? $"Avviso_{dettaglio.Testata.DataAvviso:yyyy-MM-dd}.pdf"
+            : $"Avviso_{id:D}.pdf";
+
+        httpContext.Response.Headers.ContentDisposition = $"inline; filename=\"{nomeFile}\"";
+        return Results.File(pdf, "application/pdf");
+    }
+    catch (AvvisoPdfNonTrovatoException)
+    {
+        return Results.NotFound();
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Generazione del PDF dell'avviso fallita. Cause tipiche: font di sistema non " +
+            "risolto sull'host, dati azienda/cliente incoerenti.",
+            "AvvisoPdf.GeneraAsync", entityId: id, entityType: "AvvisoFattura", cancellationToken: ct);
+        return Results.Problem("Errore durante la generazione del PDF dell'avviso.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
 
 // Il seed degli utenti Admin/Superadmin è gestito da DatabaseSeeder
 // (IHostedService idempotente, registrato sopra): legge le password da

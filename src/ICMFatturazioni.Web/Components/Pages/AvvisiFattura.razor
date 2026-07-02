@@ -33,6 +33,7 @@
 @inject ISnackbar Snackbar
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Avvisi di fattura · ICM Fatturazioni</PageTitle>
 
@@ -201,13 +202,17 @@
                         <MudTh>Data</MudTh>
                         <MudTh>Oggetto</MudTh>
                         <MudTh Style="text-align:right;">Imponibile €</MudTh>
-                        <MudTh Style="width:60px;"></MudTh>
+                        <MudTh Style="width:96px;"></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Data">@context.DataAvviso.ToString("dd/MM/yyyy")</MudTd>
                         <MudTd DataLabel="Oggetto">@(string.IsNullOrWhiteSpace(context.Oggetto) ? "—" : context.Oggetto)</MudTd>
                         <MudTd DataLabel="Imponibile" Style="text-align:right;font-weight:600;">@context.TotaleRighe.ToString("N2", _itCulture)</MudTd>
-                        <MudTd Style="padding:2px 4px;">
+                        <MudTd Style="padding:2px 4px;white-space:nowrap;">
+                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
+                                           Size="Size.Small" Ripple="false" Color="Color.Primary"
+                                           aria-label="Anteprima PDF"
+                                           OnClick="@(() => AnteprimaPdfAsync(context))" />
                             <MudIconButton Icon="@Icons.Material.Filled.DeleteForever"
                                            Size="Size.Small" Ripple="false" Color="Color.Error"
                                            aria-label="Annulla avviso"
@@ -1009,6 +1014,21 @@
             _erroreEmissione = "Errore durante l'emissione dell'avviso. Riprovare.";
         }
         finally { _emissioneInCorso = false; }
+    }
+
+    // Apre il PDF di cortesia dell'avviso in una nuova scheda (anteprima inline).
+    // Il file è servito dall'endpoint /api/avvisi/{id}/pdf.
+    private async Task AnteprimaPdfAsync(AvvisoFattura a)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("open", $"/api/avvisi/{a.IdAvviso}/pdf", "_blank");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura anteprima PDF fallita.", "AvvisiFattura.AnteprimaPdfAsync");
+            Snackbar.Add("Impossibile aprire l'anteprima PDF.", MudBlazor.Severity.Error);
+        }
     }
 
     private async Task AnnullaAvvisoAsync(AvvisoFattura a)

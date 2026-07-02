@@ -16,6 +16,10 @@
     <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
     <PackageReference Include="MudBlazor" Version="9.4.0" />
+    <!-- PDFsharp-MigraDoc: generazione del PDF di cortesia dell'Avviso di fattura.
+         Stessa libreria e versione di ICMVerbali (VerbalePdfService), licenza MIT.
+         Usa i font di sistema Windows via GlobalFontSettings (nessun font embedded). -->
+    <PackageReference Include="PDFsharp-MigraDoc" Version="6.2.0" />
   </ItemGroup>
 
   <!-- Permette al progetto di test di accedere ai tipi internal sealed

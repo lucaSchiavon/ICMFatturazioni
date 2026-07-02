@@ -31,6 +31,15 @@ internal sealed class FakeSpesaAnticipataRepository : ISpesaAnticipataRepository
         return Task.FromResult<IReadOnlyList<SpesaAnticipata>>(result);
     }
 
+    public Task<IReadOnlyList<SpesaAnticipata>> GetByAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
+    {
+        var result = _store
+            .Where(s => s.IdAvviso == idAvviso && s.IsAttivo)
+            .OrderBy(s => s.Data)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<SpesaAnticipata>>(result);
+    }
+
     public Task<SpesaAnticipata?> GetByIdAsync(Guid idSpesaAnticipata, CancellationToken ct = default)
     {
         var s = _store.FirstOrDefault(x => x.IdSpesaAnticipata == idSpesaAnticipata);

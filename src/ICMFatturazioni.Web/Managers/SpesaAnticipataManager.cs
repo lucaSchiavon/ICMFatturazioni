@@ -27,6 +27,9 @@ public sealed class SpesaAnticipataManager : ISpesaAnticipataManager
     public Task<IReadOnlyList<SpesaAnticipata>> ElencoFatturabiliPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
         => _repo.GetFatturabiliByAttivitaAsync(idAttivita, ct);
 
+    public Task<IReadOnlyList<SpesaAnticipata>> ElencoPerAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
+        => _repo.GetByAvvisoAsync(idAvviso, ct);
+
     /// <inheritdoc/>
     public async Task<Guid> CreaAsync(SpesaAnticipata spesa, CancellationToken ct = default)
     {

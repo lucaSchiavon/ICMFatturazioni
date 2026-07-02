@@ -86,6 +86,18 @@ internal sealed class SpesaAnticipataRepository : ISpesaAnticipataRepository
         return rows.Select(ToEntity).ToList();
     }
 
+    // Spese riaddebitate in uno specifico avviso (attive), per la cascata art.15.
+    private const string SqlSelectByAvviso =
+        SqlSelectBase + " WHERE IdAvviso = @IdAvviso AND IsAttivo = 1 ORDER BY Data ASC;";
+
+    public async Task<IReadOnlyList<SpesaAnticipata>> GetByAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlSelectByAvviso, new { IdAvviso = idAvviso }, cancellationToken: ct);
+        var rows = await conn.QueryAsync<SpesaAnticipataRow>(cmd);
+        return rows.Select(ToEntity).ToList();
+    }
+
     private const string SqlSelectById =
         SqlSelectBase + " WHERE IdSpesaAnticipata = @IdSpesaAnticipata;";
 
