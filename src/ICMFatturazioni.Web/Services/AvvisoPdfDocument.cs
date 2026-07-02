@@ -78,7 +78,7 @@ internal sealed class AvvisoPdfDocument
         var section = doc.AddSection();
         section.PageSetup.PageFormat    = PageFormat.A4;
         section.PageSetup.Orientation   = Orientation.Portrait;
-        section.PageSetup.TopMargin     = Unit.FromCentimeter(1.5);
+        section.PageSetup.TopMargin     = Unit.FromCentimeter(2.4);
         section.PageSetup.BottomMargin  = Unit.FromCentimeter(1.8);
         section.PageSetup.LeftMargin    = Unit.FromCentimeter(1.5);
         section.PageSetup.RightMargin   = Unit.FromCentimeter(1.5);
@@ -302,7 +302,9 @@ internal sealed class AvvisoPdfDocument
         var ft = p.AddFormattedText(oggetto, TextFormat.Bold);
         ft.Size = 10;
 
-        AddSpacer(section, 8);
+        // Stacco ampio prima della tabella righe, come nel modello dello studio:
+        // l'oggetto resta "sospeso" e la sezione descrizione parte più in basso.
+        AddSpacer(section, 24);
     }
 
     // ── 5. Righe: DESCRIZIONE ... IMPORTO  IVA ────────────────────────────────
@@ -362,21 +364,31 @@ internal sealed class AvvisoPdfDocument
     {
         var c = _data.Calcolo;
 
+        // Le colonne "€", "importo" e "segno" ricalcano ESATTAMENTE le colonne
+        // €/IMPORTO/IVA della sezione righe (ComposeRighe): stesse larghezze e
+        // stessi offset, così simboli e cifre risultano incolonnati verticalmente
+        // fra le due sezioni (allineamento "a foglio Excel"). L'indentazione delle
+        // etichette è ottenuta spezzando la prima parte (indent 3.5 + etichetta 8.9)
+        // che sommate valgono i 12.4 cm della colonna DESCRIZIONE sopra.
         var table = section.AddTable();
         table.Borders.Visible = false;
         table.AddColumn(Unit.FromCentimeter(3.5));   // indentazione
-        table.AddColumn(Unit.FromCentimeter(7.3));   // etichetta
-        table.AddColumn(Unit.FromCentimeter(0.7));   // €
-        table.AddColumn(Unit.FromCentimeter(3.8));   // importo (destra)
-        table.AddColumn(Unit.FromCentimeter(1.7));   // segno
+        table.AddColumn(Unit.FromCentimeter(8.9));   // etichetta  (3.5+8.9 = 12.4 = DESCRIZIONE)
+        table.AddColumn(Unit.FromCentimeter(0.6));   // €          (= col € righe)
+        table.AddColumn(Unit.FromCentimeter(3.2));   // importo    (= col IMPORTO righe, destra)
+        table.AddColumn(Unit.FromCentimeter(1.8));   // segno      (= col IVA righe)
 
+        // Cascata "da estratto conto": ogni valore che è il risultato di una
+        // operazione con il rigo precedente (subtotale, TOTALE, TOTALE NOSTRO AVERE)
+        // porta una linea di chiusura sopra l'importo, come nel modello dello studio.
+        // Dal TOTALE IMPONIBILE in giù è tutto in grassetto (anche il subtotale).
         RigaCascata(table, "TOTALE IMPONIBILE", c.Imponibile, segno: null, bold: true);
         RigaCascata(table, $"Maggiorazione {Perc(_data.Testata.AliquotaCnpaia)}% C.N.P.A.I.A.",
             c.Cassa, segno: "+", bold: true);
-        RigaCascata(table, "", c.ImponibilePiuCassa, segno: null, bold: false);
+        RigaCascata(table, "", c.ImponibilePiuCassa, segno: null, bold: true, lineaSopra: true);
         RigaCascata(table, $"I.V.A. {Perc(_data.Testata.AliquotaIva)}% su € {Eur(c.ImponibilePiuCassa)}",
             c.Iva, segno: "+", bold: true);
-        RigaCascata(table, "TOTALE", c.Totale, segno: null, bold: true);
+        RigaCascata(table, "TOTALE", c.Totale, segno: null, bold: true, lineaSopra: true);
 
         if (c.Ritenuta > 0)
             RigaCascata(table, $"Ritenuta Acconto {Perc(_data.Testata.AliquotaRitenuta)}% su € {Eur(c.Imponibile)}",
@@ -390,16 +402,33 @@ internal sealed class AvvisoPdfDocument
         sep.Height = Unit.FromPoint(4);
         sep.HeightRule = RowHeightRule.Exactly;
 
-        RigaCascata(table, "TOTALE NOSTRO AVERE S.E.& O.", c.TotaleNostroAvere, segno: null, bold: true, evidenzia: true);
+        RigaCascata(table, "TOTALE NOSTRO AVERE S.E.& O.", c.TotaleNostroAvere, segno: null,
+            bold: true, evidenzia: true, lineaSopra: true);
 
         AddSpacer(section, 12);
     }
 
     private void RigaCascata(Table table, string etichetta, decimal importo,
-        string? segno, bool bold, bool evidenzia = false)
+        string? segno, bool bold, bool evidenzia = false, bool lineaSopra = false)
     {
         var r = table.AddRow();
         r.TopPadding = 1.5; r.BottomPadding = 1.5;
+
+        // Linea di chiusura sopra l'importo (convenzione contabile: separa gli
+        // addendi dal risultato). Copre la colonna "€" + la colonna importo,
+        // così la riga taglia esattamente sopra il valore come nel modello.
+        if (lineaSopra)
+        {
+            // Le proprietà si impostano in-place: MigraDoc rifiuta la stessa
+            // istanza Border condivisa fra due celle (va clonata), quindi niente
+            // oggetto Border riusato.
+            foreach (var cella in new[] { r.Cells[2], r.Cells[3] })
+            {
+                cella.Borders.Top.Color   = Nero;
+                cella.Borders.Top.Width   = 0.5;
+                cella.Borders.Top.Visible = true;
+            }
+        }
 
         if (!string.IsNullOrEmpty(etichetta))
         {
