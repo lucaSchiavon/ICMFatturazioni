@@ -262,9 +262,12 @@ h1:focus {
     font-variant-numeric: tabular-nums;
 }
 
-/* Sfondo tenue alternato per blocco/dettaglio */
-.icm-scad-blocco-0 > td { background-color: color-mix(in srgb, var(--mud-palette-primary) 5%, transparent); }
-.icm-scad-blocco-1 > td { background-color: color-mix(in srgb, var(--mud-palette-secondary) 6%, transparent); }
+/* Sfondo alternato per blocco/dettaglio. Due tinte del brand NETTAMENTE diverse
+   (blu istituzionale vs ambra warning) con opacità sufficiente a leggersi a colpo
+   d'occhio: la separazione fra dettagli deve saltare all'occhio. Il verde (success)
+   resta riservato alla riga selezionata, il rosso (danger) alla semantica d'errore. */
+.icm-scad-blocco-0 > td { background-color: color-mix(in srgb, var(--mud-palette-primary) 14%, transparent); }
+.icm-scad-blocco-1 > td { background-color: color-mix(in srgb, var(--mud-palette-warning) 18%, transparent); }
 
 /* Riga scadenza selezionata (rata inclusa nell'avviso in bozza) */
 .icm-scad-table tr.icm-scad-sel > td {
