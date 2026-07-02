@@ -27,6 +27,9 @@ internal sealed class FakeLogManager : ILogManager
     public Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default)
         => Task.FromResult(new LogRisultato(Array.Empty<Web.Entities.Log>(), 0));
 
+    public Task<IReadOnlyList<Web.Entities.Log>> EsportaAsync(LogFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Web.Entities.Log>>(Array.Empty<Web.Entities.Log>());
+
     public Task<int> PurgaPrecedentiAsync(int giorni, CancellationToken cancellationToken = default)
         => Task.FromResult(0);
 }

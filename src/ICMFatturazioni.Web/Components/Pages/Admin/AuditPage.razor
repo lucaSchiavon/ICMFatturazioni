@@ -9,6 +9,7 @@
 
 @using ICMFatturazioni.Web.Auditing
 @using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Export
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Manutenzione
 @using ICMFatturazioni.Web.Models
@@ -19,15 +20,23 @@
 @inject IOptions<AuditRetentionOptions> RetentionOptions
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 
 <PageTitle>Audit · ICM Fatturazioni</PageTitle>
 
 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
     <MudText Typo="Typo.h1">Audit operazioni</MudText>
-    <MudButton Variant="Variant.Outlined" Color="Color.Error"
-               StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="PurgaAsync">
-        Purga &gt; @MesiConservazione mesi
-    </MudButton>
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.FileDownload"
+                   OnClick="EsportaAsync" Disabled="_esportazioneInCorso">
+            Esporta CSV
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                   StartIcon="@Icons.Material.Filled.DeleteSweep" OnClick="PurgaAsync">
+            Purga &gt; @MesiConservazione mesi
+        </MudButton>
+    </MudStack>
 </MudStack>
 
 @* Sentinella dimensione DB: avviso visibile quando i file dati superano la
@@ -164,20 +173,71 @@
         await _grid.ReloadServerData();
     }
 
+    // Tetto di righe esportabili in un colpo: protegge da OOM/timeout su tabelle
+    // grandi. Oltre questa soglia l'export è troncato e l'utente viene avvisato.
+    private const int MaxExport = 50_000;
+    private bool _esportazioneInCorso;
+
     private async Task<GridData<Audit>> CaricaAsync(GridState<Audit> state, CancellationToken ct)
     {
-        var filtro = new AuditFiltro
-        {
-            DaUtc = _da?.Date,
-            AUtc = _a?.Date.AddDays(1),     // "Al" incluso
-            Operazione = _operazione,
-            EntityType = _entityType,
-            Testo = _testo,
-            Pagina = state.Page + 1,
-            Dimensione = state.PageSize,
-        };
+        var filtro = CostruisciFiltro(state.Page + 1, state.PageSize);
         var risultato = await AuditManager.CercaAsync(filtro, ct);
         return new GridData<Audit> { Items = risultato.Righe, TotalItems = risultato.TotaleRighe };
+    }
+
+    // Filtro condiviso fra griglia ed export: garantisce che il CSV rispecchi
+    // ESATTAMENTE i filtri applicati alla griglia.
+    private AuditFiltro CostruisciFiltro(int pagina, int dimensione) => new()
+    {
+        DaUtc = _da?.Date,
+        AUtc = _a?.Date.AddDays(1),     // "Al" incluso
+        Operazione = _operazione,
+        EntityType = _entityType,
+        Testo = _testo,
+        Pagina = pagina,
+        Dimensione = dimensione,
+    };
+
+    // Export CSV di TUTTE le righe che soddisfano i filtri correnti (non solo la
+    // pagina visibile). Read-only: fuori dal perimetro dell'audit (Regola 7).
+    private async Task EsportaAsync()
+    {
+        _esportazioneInCorso = true;
+        try
+        {
+            var dati = await AuditManager.EsportaAsync(CostruisciFiltro(1, MaxExport), MaxExport);
+            if (dati.Count == 0)
+            {
+                Snackbar.Add("Nessuna riga da esportare per i filtri correnti.", MudBlazor.Severity.Info);
+                return;
+            }
+
+            var intestazioni = new[] { "Data/ora", "Utente", "Operazione", "Tipo entità", "Descrizione", "EntityId" };
+            var righe = dati.Select(r => (IReadOnlyList<string?>)new string?[]
+            {
+                DataOra.Italiana(r.TimestampUtc),
+                r.UtenteNome,
+                r.Operazione.ToString(),
+                r.EntityType,
+                r.Descrizione,
+                r.EntityId?.ToString(),
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Audit_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+
+            // Raggiunto il tetto → probabile troncamento: avvisa di restringere i filtri.
+            if (dati.Count >= MaxExport)
+                Snackbar.Add($"Esportate {MaxExport} righe (limite massimo): il risultato potrebbe essere " +
+                             "troncato. Restringi i filtri per un export completo.", MudBlazor.Severity.Warning);
+            else
+                Snackbar.Add($"Esportate {dati.Count} righe.", MudBlazor.Severity.Success);
+        }
+        finally
+        {
+            _esportazioneInCorso = false;
+        }
     }
 
     private Task CercaAsync() => _grid.ReloadServerData();

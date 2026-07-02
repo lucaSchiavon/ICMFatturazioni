@@ -22,6 +22,13 @@ public interface ILogRepository
     /// <summary>Ricerca paginata, ordinata per timestamp decrescente.</summary>
     Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Tutte le righe che soddisfano il filtro (per l'export CSV), fino a
+    /// <paramref name="maxRighe"/>, ordinate per timestamp decrescente. Non
+    /// applica la paginazione della griglia.
+    /// </summary>
+    Task<IReadOnlyList<Log>> EsportaAsync(LogFiltro filtro, int maxRighe, CancellationToken cancellationToken = default);
+
     /// <summary>Elimina le righe con <c>TimestampUtc &lt; soglia</c>. Ritorna le righe eliminate.</summary>
     Task<int> PurgaPrecedentiAsync(DateTime sogliaUtc, CancellationToken cancellationToken = default);
 }

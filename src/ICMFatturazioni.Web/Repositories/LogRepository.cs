@@ -49,7 +49,14 @@ internal sealed class LogRepository : ILogRepository
             SqlInsert, entries.Select(ToParam), cancellationToken: cancellationToken));
     }
 
-    public async Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default)
+    // Colonne selezionate (condivise da ricerca ed export).
+    private const string ColonneSelect =
+        "Id, TimestampUtc, Livello, Sorgente, Messaggio, EccezioneTipo, StackTrace, " +
+        "SpiegazioneUtente, RequestId, UtenteId, EntityId, EntityType";
+
+    // Predicato WHERE + parametri, condiviso da CercaAsync (paginata) ed
+    // EsportaAsync (tutte le righe): unico punto di verità sui filtri.
+    private static (StringBuilder Where, DynamicParameters P) CostruisciFiltro(LogFiltro filtro)
     {
         var where = new StringBuilder("WHERE 1 = 1");
         var p = new DynamicParameters();
@@ -80,6 +87,13 @@ internal sealed class LogRepository : ILogRepository
             p.Add("Testo", $"%{SqlRicerca.EscapeLike(filtro.Testo)}%");
         }
 
+        return (where, p);
+    }
+
+    public async Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default)
+    {
+        var (where, p) = CostruisciFiltro(filtro);
+
         var (pagina, dimensione) = SqlRicerca.NormalizzaPaginazione(filtro.Pagina, filtro.Dimensione);
         p.Add("Offset", (pagina - 1) * dimensione);
         p.Add("Limit", dimensione);
@@ -87,8 +101,7 @@ internal sealed class LogRepository : ILogRepository
         var sql = $"""
             SELECT COUNT(*) FROM fatt.Log {where};
 
-            SELECT Id, TimestampUtc, Livello, Sorgente, Messaggio, EccezioneTipo, StackTrace,
-                   SpiegazioneUtente, RequestId, UtenteId, EntityId, EntityType
+            SELECT {ColonneSelect}
             FROM fatt.Log
             {where}
             ORDER BY TimestampUtc DESC
@@ -100,6 +113,25 @@ internal sealed class LogRepository : ILogRepository
         var totale = await grid.ReadSingleAsync<int>();
         var righe = (await grid.ReadAsync<Log>()).ToList();
         return new LogRisultato(righe, totale);
+    }
+
+    public async Task<IReadOnlyList<Log>> EsportaAsync(LogFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+    {
+        var (where, p) = CostruisciFiltro(filtro);
+        // Tetto via TOP: NON passa dal cap 200 della paginazione (quello serve
+        // alla griglia); l'export deve restituire TUTTE le righe filtrate.
+        p.Add("Limit", maxRighe < 1 ? 1 : maxRighe);
+
+        var sql = $"""
+            SELECT TOP (@Limit) {ColonneSelect}
+            FROM fatt.Log
+            {where}
+            ORDER BY TimestampUtc DESC;
+            """;
+
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var righe = await conn.QueryAsync<Log>(new CommandDefinition(sql, p, cancellationToken: cancellationToken));
+        return righe.ToList();
     }
 
     public async Task<int> PurgaPrecedentiAsync(DateTime sogliaUtc, CancellationToken cancellationToken = default)

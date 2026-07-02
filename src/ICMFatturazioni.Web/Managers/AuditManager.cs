@@ -81,6 +81,9 @@ internal sealed class AuditManager : IAuditManager
     public Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default)
         => _repository.CercaAsync(filtro, cancellationToken);
 
+    public Task<IReadOnlyList<Audit>> EsportaAsync(AuditFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+        => _repository.EsportaAsync(filtro, maxRighe, cancellationToken);
+
     public Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default)
         => _repository.GetEntityTypesAsync(cancellationToken);
 

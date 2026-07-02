@@ -37,6 +37,9 @@ internal sealed class FakeAuditManager : IAuditManager
     public Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default)
         => Task.FromResult(new AuditRisultato(Array.Empty<Audit>(), 0));
 
+    public Task<IReadOnlyList<Audit>> EsportaAsync(AuditFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Audit>>(Array.Empty<Audit>());
+
     public Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 

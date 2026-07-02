@@ -33,7 +33,7 @@ internal sealed class FakeLogRepository : ILogRepository
         return Task.CompletedTask;
     }
 
-    public Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default)
+    private List<Log> Filtra(LogFiltro filtro)
     {
         IEnumerable<Log> q = Inseriti;
         if (filtro.DaUtc is { } da) q = q.Where(l => l.TimestampUtc >= da);
@@ -45,12 +45,21 @@ internal sealed class FakeLogRepository : ILogRepository
             q = q.Where(l => l.Messaggio.Contains(filtro.Testo, StringComparison.OrdinalIgnoreCase)
                 || (l.SpiegazioneUtente?.Contains(filtro.Testo, StringComparison.OrdinalIgnoreCase) ?? false));
 
-        var ordinati = q.OrderByDescending(l => l.TimestampUtc).ToList();
+        return q.OrderByDescending(l => l.TimestampUtc).ToList();
+    }
+
+    public Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default)
+    {
+        var ordinati = Filtra(filtro);
         var pagina = filtro.Pagina < 1 ? 1 : filtro.Pagina;
         var dim = filtro.Dimensione is < 1 or > 200 ? 25 : filtro.Dimensione;
         var righe = ordinati.Skip((pagina - 1) * dim).Take(dim).ToList();
         return Task.FromResult(new LogRisultato(righe, ordinati.Count));
     }
+
+    public Task<IReadOnlyList<Log>> EsportaAsync(LogFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Log>>(
+            Filtra(filtro).Take(maxRighe < 1 ? 1 : maxRighe).ToList());
 
     public Task<int> PurgaPrecedentiAsync(DateTime sogliaUtc, CancellationToken cancellationToken = default)
     {

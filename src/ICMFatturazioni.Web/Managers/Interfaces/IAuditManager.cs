@@ -1,3 +1,4 @@
+using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Web.Managers.Interfaces;
@@ -20,6 +21,12 @@ public interface IAuditManager
 
     /// <summary>Ricerca paginata dell'audit (pagina di amministrazione <c>/admin/audit</c>).</summary>
     Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tutte le righe che soddisfano il filtro (export CSV), fino a
+    /// <paramref name="maxRighe"/>. Ignora la paginazione della griglia.
+    /// </summary>
+    Task<IReadOnlyList<Audit>> EsportaAsync(AuditFiltro filtro, int maxRighe, CancellationToken cancellationToken = default);
 
     /// <summary>Tipi di entità distinti presenti, per popolare il filtro UI.</summary>
     Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default);

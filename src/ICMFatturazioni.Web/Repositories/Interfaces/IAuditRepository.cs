@@ -14,6 +14,13 @@ public interface IAuditRepository
     /// <summary>Ricerca paginata, ordinata per timestamp decrescente.</summary>
     Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Tutte le righe che soddisfano il filtro (per l'export CSV), fino a
+    /// <paramref name="maxRighe"/>, ordinate per timestamp decrescente. Non
+    /// applica la paginazione della griglia.
+    /// </summary>
+    Task<IReadOnlyList<Audit>> EsportaAsync(AuditFiltro filtro, int maxRighe, CancellationToken cancellationToken = default);
+
     /// <summary>Tipi di entità distinti presenti in tabella (per popolare il filtro UI).</summary>
     Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default);
 

@@ -41,7 +41,13 @@ internal sealed class AuditRepository : IAuditRepository
         }, cancellationToken: cancellationToken));
     }
 
-    public async Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default)
+    // Colonne selezionate (condivise da ricerca ed export).
+    private const string ColonneSelect =
+        "Id, TimestampUtc, UtenteId, UtenteNome, Operazione, EntityType, EntityId, Descrizione, Dati";
+
+    // Costruzione del predicato WHERE + parametri, condivisa da CercaAsync (paginata)
+    // ed EsportaAsync (tutte le righe): un solo punto di verità sui filtri.
+    private static (StringBuilder Where, DynamicParameters P) CostruisciFiltro(AuditFiltro filtro)
     {
         var where = new StringBuilder("WHERE 1 = 1");
         var p = new DynamicParameters();
@@ -72,6 +78,13 @@ internal sealed class AuditRepository : IAuditRepository
             p.Add("Testo", $"%{SqlRicerca.EscapeLike(filtro.Testo)}%");
         }
 
+        return (where, p);
+    }
+
+    public async Task<AuditRisultato> CercaAsync(AuditFiltro filtro, CancellationToken cancellationToken = default)
+    {
+        var (where, p) = CostruisciFiltro(filtro);
+
         var (pagina, dimensione) = SqlRicerca.NormalizzaPaginazione(filtro.Pagina, filtro.Dimensione);
         p.Add("Offset", (pagina - 1) * dimensione);
         p.Add("Limit", dimensione);
@@ -79,7 +92,7 @@ internal sealed class AuditRepository : IAuditRepository
         var sql = $"""
             SELECT COUNT(*) FROM fatt.Audit {where};
 
-            SELECT Id, TimestampUtc, UtenteId, UtenteNome, Operazione, EntityType, EntityId, Descrizione, Dati
+            SELECT {ColonneSelect}
             FROM fatt.Audit
             {where}
             ORDER BY TimestampUtc DESC
@@ -91,6 +104,25 @@ internal sealed class AuditRepository : IAuditRepository
         var totale = await grid.ReadSingleAsync<int>();
         var righe = (await grid.ReadAsync<Audit>()).ToList();
         return new AuditRisultato(righe, totale);
+    }
+
+    public async Task<IReadOnlyList<Audit>> EsportaAsync(AuditFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+    {
+        var (where, p) = CostruisciFiltro(filtro);
+        // Tetto di sicurezza applicato in SQL con TOP: NON passa dal cap dei 200
+        // della paginazione (quello serve alla griglia), qui servono TUTTE le righe.
+        p.Add("Limit", maxRighe < 1 ? 1 : maxRighe);
+
+        var sql = $"""
+            SELECT TOP (@Limit) {ColonneSelect}
+            FROM fatt.Audit
+            {where}
+            ORDER BY TimestampUtc DESC;
+            """;
+
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var righe = await conn.QueryAsync<Audit>(new CommandDefinition(sql, p, cancellationToken: cancellationToken));
+        return righe.ToList();
     }
 
     public async Task<IReadOnlyList<string>> GetEntityTypesAsync(CancellationToken cancellationToken = default)

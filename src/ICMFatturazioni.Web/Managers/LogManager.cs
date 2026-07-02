@@ -71,6 +71,9 @@ internal sealed class LogManager : ILogManager
     public Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default)
         => _repository.CercaAsync(filtro, cancellationToken);
 
+    public Task<IReadOnlyList<Log>> EsportaAsync(LogFiltro filtro, int maxRighe, CancellationToken cancellationToken = default)
+        => _repository.EsportaAsync(filtro, maxRighe, cancellationToken);
+
     public Task<int> PurgaPrecedentiAsync(int giorni, CancellationToken cancellationToken = default)
     {
         // Soglia calcolata col TimeProvider (testabile). |giorni| per tollerare

@@ -1,3 +1,4 @@
+using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Web.Managers.Interfaces;
@@ -41,6 +42,12 @@ public interface ILogManager
 
     /// <summary>Ricerca paginata dei log (pagina di amministrazione <c>/admin/log</c>).</summary>
     Task<LogRisultato> CercaAsync(LogFiltro filtro, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tutte le righe che soddisfano il filtro (export CSV), fino a
+    /// <paramref name="maxRighe"/>. Ignora la paginazione della griglia.
+    /// </summary>
+    Task<IReadOnlyList<Log>> EsportaAsync(LogFiltro filtro, int maxRighe, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Elimina i log più vecchi di <paramref name="giorni"/> giorni. Ritorna le

@@ -21,6 +21,30 @@ public class AuditManagerTests
         => new(repo, new FakeCurrentUserAccessor(utenteId, utenteNome), log ?? new FakeLogManager(), TimeProvider.System);
 
     [Fact]
+    public async Task EsportaAsync_RestituisceTutteLeRigheOltreIlCapDellaPaginazione()
+    {
+        // Regressione: l'export deve superare il limite dei 200 della paginazione
+        // (bug: passando Dimensione fuori range CercaAsync ricadeva a 25 righe).
+        var repo = new FakeAuditRepository();
+        for (var i = 0; i < 250; i++)
+        {
+            repo.Inseriti.Add(new Audit
+            {
+                Id = Guid.NewGuid(),
+                TimestampUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMinutes(i),
+                Operazione = AuditOperazione.Creazione,
+                EntityType = "Anagrafica",
+                Descrizione = $"riga {i}",
+            });
+        }
+        var sut = NewSut(repo);
+
+        var esportate = await sut.EsportaAsync(new AuditFiltro(), maxRighe: 50_000);
+
+        Assert.Equal(250, esportate.Count);   // tutte, non 200 né 25
+    }
+
+    [Fact]
     public async Task RegistraCreazioneAsync_CatturaSnapshotUtenteEOperazione()
     {
         var repo = new FakeAuditRepository();
