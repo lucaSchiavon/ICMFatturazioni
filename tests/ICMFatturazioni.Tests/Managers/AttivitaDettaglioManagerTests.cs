@@ -28,8 +28,16 @@ public class AttivitaDettaglioManagerTests
 
     private static AttivitaDettaglioManager NewSut(
         FakeAttivitaDettaglioRepository fake,
-        FakeAuditManager? audit = null)
-        => new(fake, audit ?? new FakeAuditManager());
+        FakeAuditManager? audit = null,
+        FakeScadenzaPagamentoRepository? scadenzeRepo = null)
+    {
+        audit ??= new FakeAuditManager();
+        // ScadenzaPagamentoManager reale con fake: condivide lo stesso repo dettagli
+        // (per il check HasFattura) e lo stesso audit del manager sotto test.
+        var scadenzeMgr = new ScadenzaPagamentoManager(
+            scadenzeRepo ?? new FakeScadenzaPagamentoRepository(), fake, audit);
+        return new AttivitaDettaglioManager(fake, scadenzeMgr, audit);
+    }
 
     // -------------------------------------------------------------------------
     // Creazione e ordine automatico
@@ -95,10 +103,28 @@ public class AttivitaDettaglioManagerTests
 
         var id = await sut.CreaAsync(Det());
 
-        var voce = Assert.Single(audit.Voci);
+        // La creazione genera due voci di audit: il dettaglio e la scadenza di default.
+        var voce = Assert.Single(audit.Voci, v => v.EntityType == "AttivitaDettaglio");
         Assert.Equal(AuditOperazione.Creazione, voce.Operazione);
-        Assert.Equal("AttivitaDettaglio", voce.EntityType);
         Assert.Equal(id, voce.EntityId);
+    }
+
+    // La creazione di un dettaglio deve generare automaticamente una scadenza di default
+    // che copre l'intero importo, con data = termine previsto (screenshot A3.png).
+    [Fact]
+    public async Task CreaAsync_GeneraScadenzaDiDefaultPariAllImporto()
+    {
+        var fake     = new FakeAttivitaDettaglioRepository();
+        var scadRepo = new FakeScadenzaPagamentoRepository();
+        var sut      = NewSut(fake, scadenzeRepo: scadRepo);
+        var termine  = new DateOnly(2026, 7, 31);
+
+        var id = await sut.CreaAsync(Det(importo: 600m, termine: termine));
+
+        var scadenze = await scadRepo.GetByDettaglioAsync(id);
+        var s = Assert.Single(scadenze);
+        Assert.Equal(600m, s.Importo);
+        Assert.Equal(termine, s.DataScadenza);
     }
 
     // -------------------------------------------------------------------------

@@ -9,6 +9,9 @@ namespace ICMFatturazioni.Web.Managers;
 /// Implementazione di <see cref="IAttivitaDettaglioManager"/>.
 /// Regole business:
 ///   • Ordine assegnato dal Manager (max attivo + 1).
+///   • Alla creazione, il dettaglio nasce già con una scadenza di default che copre
+///     l'intero importo (data = termine previsto): l'utente trova la ripartizione già
+///     completa e può poi frazionarla. Delegata a <see cref="IScadenzaPagamentoManager"/>.
 ///   • HasFattura = true blocca modifiche ed eliminazione.
 ///   • Sposta Su/Giù: carica la lista e scambia tramite Repository.
 ///   • Audit best-effort su ogni scrittura.
@@ -16,12 +19,17 @@ namespace ICMFatturazioni.Web.Managers;
 public sealed class AttivitaDettaglioManager : IAttivitaDettaglioManager
 {
     private readonly IAttivitaDettaglioRepository _repo;
+    private readonly IScadenzaPagamentoManager    _scadenze;
     private readonly IAuditManager                _audit;
 
-    public AttivitaDettaglioManager(IAttivitaDettaglioRepository repo, IAuditManager audit)
+    public AttivitaDettaglioManager(
+        IAttivitaDettaglioRepository repo,
+        IScadenzaPagamentoManager    scadenze,
+        IAuditManager                audit)
     {
-        _repo  = repo;
-        _audit = audit;
+        _repo     = repo;
+        _scadenze = scadenze;
+        _audit    = audit;
     }
 
     public Task<IReadOnlyList<AttivitaDettaglio>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
@@ -49,6 +57,17 @@ public sealed class AttivitaDettaglioManager : IAttivitaDettaglioManager
                 cancellationToken: ct);
         }
         catch { /* audit best-effort */ }
+
+        // Scadenza di default: copre l'intero importo del dettaglio con data = termine
+        // previsto (obbligatorio, quindi sempre valorizzato). Così il dettaglio nasce con
+        // la ripartizione già completa; l'utente potrà poi frazionarla in Gestione Scadenze.
+        // La creazione riusa la validazione e l'audit di ScadenzaPagamentoManager.
+        await _scadenze.CreaAsync(new ScadenzaPagamento
+        {
+            IdAttivitaDettaglio = dettaglio.IdAttivitaDettaglio,
+            DataScadenza        = dettaglio.TerminePrevisto!.Value,
+            Importo             = dettaglio.Importo,
+        }, ct);
 
         return dettaglio.IdAttivitaDettaglio;
     }
