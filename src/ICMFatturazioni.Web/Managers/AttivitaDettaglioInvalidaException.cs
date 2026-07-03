@@ -16,6 +16,9 @@ public enum AttivitaDettaglioMotivoInvalido
     /// <summary>La descrizione del dettaglio è vuota o blank.</summary>
     DescrizioneObbligatoria,
 
+    /// <summary>Il termine previsto non è stato indicato.</summary>
+    TerminePrevistoObbligatorio,
+
     /// <summary>L'importo è ≤ 0.</summary>
     ImportoNonValido,
 }

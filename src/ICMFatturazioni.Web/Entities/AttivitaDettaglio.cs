@@ -29,7 +29,8 @@ public sealed class AttivitaDettaglio
     /// <summary>Nota libera — es. "(QUOTA PARTE DI € 1.000,00)". Mostrata in griglia.</summary>
     public string? NotaDettaglio { get; init; }
 
-    /// <summary>Data di scadenza prevista per questa voce. Facoltativa.</summary>
+    /// <summary>Data di scadenza prevista per questa voce. Obbligatoria
+    /// (validata nel Manager; il tipo resta nullable perché il form parte vuoto).</summary>
     public DateOnly? TerminePrevisto { get; init; }
 
     /// <summary>

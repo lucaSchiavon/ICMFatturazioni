@@ -149,6 +149,11 @@ public sealed class AttivitaDettaglioManager : IAttivitaDettaglioManager
                 AttivitaDettaglioMotivoInvalido.DescrizioneObbligatoria,
                 "La descrizione del dettaglio è obbligatoria.");
 
+        if (d.TerminePrevisto is null)
+            throw new AttivitaDettaglioInvalidaException(
+                AttivitaDettaglioMotivoInvalido.TerminePrevistoObbligatorio,
+                "Il termine previsto è obbligatorio.");
+
         if (d.Importo <= 0)
             throw new AttivitaDettaglioInvalidaException(
                 AttivitaDettaglioMotivoInvalido.ImportoNonValido,

@@ -13,15 +13,17 @@ public class AttivitaDettaglioManagerTests
     private static readonly Guid IdTipoDettaglio  = Guid.NewGuid();
 
     private static AttivitaDettaglio Det(
-        string   descr      = "Disciplinare",
-        decimal  importo    = 1000m,
-        Guid?    idAttivita = null,
-        Guid?    idTipo     = null) => new()
+        string     descr      = "Disciplinare",
+        decimal    importo    = 1000m,
+        Guid?      idAttivita = null,
+        Guid?      idTipo     = null,
+        DateOnly?  termine    = null) => new()
     {
         IdAttivita              = idAttivita ?? IdAttivita,
         IdTipoDettaglioAttivita = idTipo     ?? IdTipoDettaglio,
         DescrizioneDettaglio    = descr,
         Importo                 = importo,
+        TerminePrevisto         = termine ?? new DateOnly(2026, 7, 31),
     };
 
     private static AttivitaDettaglioManager NewSut(
@@ -121,6 +123,23 @@ public class AttivitaDettaglioManagerTests
         var ex  = await Assert.ThrowsAsync<AttivitaDettaglioInvalidaException>(
             () => sut.CreaAsync(Det(descr: descr)));
         Assert.Equal(AttivitaDettaglioMotivoInvalido.DescrizioneObbligatoria, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task CreaAsync_TermineNullo_LanciaTerminePrevistoObbligatorio()
+    {
+        var sut       = NewSut(new FakeAttivitaDettaglioRepository());
+        var dettaglio = new AttivitaDettaglio
+        {
+            IdAttivita              = IdAttivita,
+            IdTipoDettaglioAttivita = IdTipoDettaglio,
+            DescrizioneDettaglio    = "Disciplinare",
+            Importo                 = 1000m,
+            TerminePrevisto         = null,
+        };
+        var ex = await Assert.ThrowsAsync<AttivitaDettaglioInvalidaException>(
+            () => sut.CreaAsync(dettaglio));
+        Assert.Equal(AttivitaDettaglioMotivoInvalido.TerminePrevistoObbligatorio, ex.Motivo);
     }
 
     [Theory]
