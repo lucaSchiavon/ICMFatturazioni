@@ -100,6 +100,7 @@ builder.Services.AddScoped<IScadenzaPagamentoRepository, ScadenzaPagamentoReposi
 builder.Services.AddScoped<ISpesaAnticipataRepository, SpesaAnticipataRepository>();
 builder.Services.AddScoped<IAliquotaRepository, AliquotaRepository>();
 builder.Services.AddScoped<IAvvisoFatturaRepository, AvvisoFatturaRepository>();
+builder.Services.AddScoped<IFattureRepository, FattureRepository>();
 builder.Services.AddScoped<IAziendaRepository, AziendaRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
@@ -125,6 +126,7 @@ builder.Services.AddScoped<IScadenzaPagamentoManager, ScadenzaPagamentoManager>(
 builder.Services.AddScoped<ISpesaAnticipataManager, SpesaAnticipataManager>();
 builder.Services.AddScoped<IAliquotaManager, AliquotaManager>();
 builder.Services.AddScoped<IAvvisoFatturaManager, AvvisoFatturaManager>();
+builder.Services.AddScoped<IFattureManager, FattureManager>();
 builder.Services.AddScoped<IAziendaManager, AziendaManager>();
 
 // Servizio puro di calcolo scadenze (stateless) → singleton.
@@ -133,9 +135,16 @@ builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();
 // Servizio puro di calcolo fiscale dell'avviso (cascata cap. 7) → singleton.
 builder.Services.AddSingleton<ICalcoloFiscaleAvviso, CalcoloFiscaleAvviso>();
 
-// Servizio di generazione del PDF dell'avviso di fattura (PDFsharp-MigraDoc).
-// Scoped: eredita lo scope dei Manager da cui carica i dati (mirror ICMVerbali).
-builder.Services.AddScoped<IAvvisoPdfService, AvvisoPdfService>();
+// Servizi di generazione PDF (PDFsharp-MigraDoc). Scoped: ereditano lo scope dei
+// Manager da cui caricano i dati (mirror ICMVerbali). Il builder dati è condiviso
+// tra avviso e fattura; i servizi hanno tipi/costruttori interni → registrazione a
+// factory (il container non richiede un costruttore pubblico).
+builder.Services.AddScoped<AvvisoPdfDataBuilder>();
+builder.Services.AddScoped<IAvvisoPdfService>(sp =>
+    new AvvisoPdfService(sp.GetRequiredService<AvvisoPdfDataBuilder>()));
+builder.Services.AddScoped<IFatturaPdfService>(sp =>
+    new FatturaPdfService(sp.GetRequiredService<AvvisoPdfDataBuilder>(),
+                          sp.GetRequiredService<IFattureManager>()));
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le
@@ -493,6 +502,50 @@ app.MapGet("/api/avvisi/{id:guid}/pdf", async Task<IResult> (
             "risolto sull'host, dati azienda/cliente incoerenti.",
             "AvvisoPdf.GeneraAsync", entityId: id, entityType: "AvvisoFattura", cancellationToken: ct);
         return Results.Problem("Errore durante la generazione del PDF dell'avviso.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
+
+// ----------------------------------------------------------------------------
+// PDF di cortesia della Fattura (anteprima/stampa da maschera Emissione Fatture).
+// Stesso pattern dell'avviso; il documento riporta "NON VALIDO AI FINI FISCALI".
+// ----------------------------------------------------------------------------
+app.MapGet("/api/fatture/{id:guid}/pdf", async Task<IResult> (
+    Guid id,
+    HttpContext httpContext,
+    IFatturaPdfService pdfService,
+    IFattureManager fattureManager,
+    ILogManager logManager,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var pdf = await pdfService.GeneraAsync(id, ct);
+
+        // Nome file leggibile "Fattura_<numero>-<anno>.pdf" (best-effort).
+        var fattura  = await fattureManager.GetByIdAsync(id, ct);
+        var nomeFile = fattura is not null
+            ? $"Fattura_{fattura.NumeroFattura}-{fattura.Anno}.pdf"
+            : $"Fattura_{id:D}.pdf";
+
+        httpContext.Response.Headers.ContentDisposition = $"inline; filename=\"{nomeFile}\"";
+        return Results.File(pdf, "application/pdf");
+    }
+    catch (FatturaPdfNonTrovatoException)
+    {
+        return Results.NotFound();
+    }
+    catch (AvvisoPdfNonTrovatoException)
+    {
+        return Results.NotFound();
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Generazione del PDF della fattura fallita. Cause tipiche: font di sistema non " +
+            "risolto sull'host, dati azienda/cliente incoerenti.",
+            "FatturaPdf.GeneraAsync", entityId: id, entityType: "Fattura", cancellationToken: ct);
+        return Results.Problem("Errore durante la generazione del PDF della fattura.", statusCode: 500);
     }
 })
 .RequireAuthorization();

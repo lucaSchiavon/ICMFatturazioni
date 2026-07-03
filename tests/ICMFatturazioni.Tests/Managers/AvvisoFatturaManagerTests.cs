@@ -550,6 +550,202 @@ public class AvvisoFatturaManagerTests
         Assert.Null(await sut.Manager.GetDettaglioAsync(Guid.NewGuid()));
     }
 
+    // =====================================================================
+    // Modifica dettagli (righe) di un avviso esistente
+    // =====================================================================
+
+    // Emette un avviso con due rate (s1=1000, s2=500) e una descrittiva finale.
+    private static async Task<(Guid id, Guid s1, Guid s2)> EmettiConDueRateAsync(Sut sut)
+    {
+        var idAnag = await SeedAnagraficaAsync(sut.Anag);
+        var s1 = Guid.NewGuid();
+        var s2 = Guid.NewGuid();
+        var dett = Guid.NewGuid();
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s1, importo: 1000m, idDettaglio: dett));
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s2, importo: 500m, idDettaglio: dett));
+        var id = await sut.Manager.EmettiAsync(Request(idAnag, new[] { s1, s2 }));
+        return (id, s1, s2);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_RiordinaEModificaDescrizioneReale()
+    {
+        var sut = NewSut();
+        var (id, s1, s2) = await EmettiConDueRateAsync(sut);
+        sut.Audit.Voci.Clear();
+
+        // Ordine invertito + descrizione di s1 modificata; importo resta autorevole.
+        await sut.Manager.AggiornaDettagliAsync(id, new[]
+        {
+            new ModificaRigaAvvisoInput(s2, "PRESTAZIONE"),
+            new ModificaRigaAvvisoInput(s1, "Descrizione modificata"),
+        }, Array.Empty<Guid>());
+
+        var righe = (await sut.Repo.GetRigheByAvvisoAsync(id)).OrderBy(r => r.Ordine).ToList();
+        Assert.Equal(2, righe.Count);
+        Assert.Equal(s2, righe[0].IdScadenza);
+        Assert.Equal(500m, righe[0].Importo);
+        Assert.Equal(s1, righe[1].IdScadenza);
+        Assert.Equal(1000m, righe[1].Importo);                 // importo NON alterato
+        Assert.Equal("Descrizione modificata", righe[1].Descrizione);
+        var voce = Assert.Single(sut.Audit.Voci);
+        Assert.Equal(AuditOperazione.Modifica, voce.Operazione);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_RimuoveUnaRata_LaSblocca()
+    {
+        var sut = NewSut();
+        var (id, s1, s2) = await EmettiConDueRateAsync(sut);
+
+        // Tiene solo s1: s2 esce dalle righe e torna fatturabile.
+        await sut.Manager.AggiornaDettagliAsync(id, new[] { new ModificaRigaAvvisoInput(s1, "PRESTAZIONE") }, Array.Empty<Guid>());
+
+        Assert.Contains(s1, sut.Repo.ScadenzeConsumate.Keys);
+        Assert.DoesNotContain(s2, sut.Repo.ScadenzeConsumate.Keys);
+        Assert.Single(await sut.Repo.GetRigheByAvvisoAsync(id));
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_AggiungeRigaDescrittiva()
+    {
+        var sut = NewSut();
+        var (id, s1, s2) = await EmettiConDueRateAsync(sut);
+
+        await sut.Manager.AggiornaDettagliAsync(id, new[]
+        {
+            new ModificaRigaAvvisoInput(s1, "PRESTAZIONE"),
+            new ModificaRigaAvvisoInput(s2, "PRESTAZIONE"),
+            new ModificaRigaAvvisoInput(null, "Nota aggiunta in coda"),
+        }, Array.Empty<Guid>());
+
+        var righe = await sut.Repo.GetRigheByAvvisoAsync(id);
+        var descr = Assert.Single(righe, r => r.IsDescrittiva);
+        Assert.Equal("Nota aggiunta in coda", descr.Descrizione);
+        Assert.Null(descr.Importo);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_AggiungeNuovaRataDalPool()
+    {
+        // Modifica = stessa interazione dell'emissione: si possono AGGIUNGERE rate
+        // dal pool fatturabili (importo autorevole dal read-model).
+        var sut = NewSut();
+        var (id, s1, s2) = await EmettiConDueRateAsync(sut);
+        var s3 = Guid.NewGuid();
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s3, importo: 250m, descrizione: "NUOVA RATA"));
+
+        await sut.Manager.AggiornaDettagliAsync(id, new[]
+        {
+            new ModificaRigaAvvisoInput(s1, "PRESTAZIONE"),
+            new ModificaRigaAvvisoInput(s2, "PRESTAZIONE"),
+            new ModificaRigaAvvisoInput(s3, "NUOVA RATA"),
+        }, Array.Empty<Guid>());
+
+        var righe = (await sut.Repo.GetRigheByAvvisoAsync(id)).OrderBy(r => r.Ordine).ToList();
+        Assert.Equal(3, righe.Count);
+        Assert.Equal(s3, righe[2].IdScadenza);
+        Assert.Equal(250m, righe[2].Importo);
+        Assert.Contains(s3, sut.Repo.ScadenzeConsumate.Keys);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_RiconciliaSpese()
+    {
+        var sut = NewSut();
+        var (id, s1, _) = await EmettiConDueRateAsync(sut);
+        var spesa = Guid.NewGuid();
+
+        await sut.Manager.AggiornaDettagliAsync(
+            id, new[] { new ModificaRigaAvvisoInput(s1, "PRESTAZIONE") }, new[] { spesa });
+
+        Assert.Equal(new[] { spesa }, sut.Repo.SpeseCollegate[id]);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_SoloSpeseSenzaRate_Ammesso()
+    {
+        // Togliere tutte le rate è ammesso se resta almeno una spesa (avviso art.15).
+        var sut = NewSut();
+        var (id, _, _) = await EmettiConDueRateAsync(sut);
+        var spesa = Guid.NewGuid();
+
+        await sut.Manager.AggiornaDettagliAsync(
+            id, new[] { new ModificaRigaAvvisoInput(null, "Solo spese") }, new[] { spesa });
+
+        Assert.Empty((await sut.Repo.GetRigheByAvvisoAsync(id)).Where(r => !r.IsDescrittiva));
+        Assert.Equal(new[] { spesa }, sut.Repo.SpeseCollegate[id]);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_RataNonFatturabile_Lancia()
+    {
+        var sut = NewSut();
+        var (id, _, _) = await EmettiConDueRateAsync(sut);
+
+        var ex = await Assert.ThrowsAsync<AvvisoFatturaInvalidaException>(
+            () => sut.Manager.AggiornaDettagliAsync(id, new[]
+            {
+                new ModificaRigaAvvisoInput(Guid.NewGuid(), "rata mai vista"),
+            }, Array.Empty<Guid>()));
+        Assert.Equal(AvvisoFatturaMotivoInvalido.ScadenzaNonFatturabile, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_SvuotaSenzaSpese_Lancia()
+    {
+        var sut = NewSut();
+        var (id, _, _) = await EmettiConDueRateAsync(sut);
+
+        var ex = await Assert.ThrowsAsync<AvvisoFatturaInvalidaException>(
+            () => sut.Manager.AggiornaDettagliAsync(id, new[]
+            {
+                new ModificaRigaAvvisoInput(null, "solo una nota"),
+            }, Array.Empty<Guid>()));
+        Assert.Equal(AvvisoFatturaMotivoInvalido.NessunaScadenzaSelezionata, ex.Motivo);
+    }
+
+    // =====================================================================
+    // Guardie "avviso già fatturato" (testata/dettagli/annullo congelati)
+    // =====================================================================
+
+    [Fact]
+    public async Task AggiornaDettagliAsync_AvvisoFatturato_Lancia()
+    {
+        var sut = NewSut();
+        var (id, s1, _) = await EmettiConDueRateAsync(sut);
+        sut.Repo.MarkFatturato(id, Guid.NewGuid(), 1, 2026);
+
+        var ex = await Assert.ThrowsAsync<AvvisoFatturaInvalidaException>(
+            () => sut.Manager.AggiornaDettagliAsync(id, new[] { new ModificaRigaAvvisoInput(s1, "x") }, Array.Empty<Guid>()));
+        Assert.Equal(AvvisoFatturaMotivoInvalido.AvvisoGiaFatturato, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task AggiornaTestataAsync_AvvisoFatturato_Lancia()
+    {
+        var sut = NewSut();
+        var (id, _, _) = await EmettiConDueRateAsync(sut);
+        sut.Repo.MarkFatturato(id, Guid.NewGuid(), 1, 2026);
+        var testata = (await sut.Repo.GetByIdAsync(id))!;
+
+        var ex = await Assert.ThrowsAsync<AvvisoFatturaInvalidaException>(
+            () => sut.Manager.AggiornaTestataAsync(testata));
+        Assert.Equal(AvvisoFatturaMotivoInvalido.AvvisoGiaFatturato, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task AnnullaAsync_AvvisoFatturato_Lancia()
+    {
+        var sut = NewSut();
+        var (id, _, _) = await EmettiConDueRateAsync(sut);
+        sut.Repo.MarkFatturato(id, Guid.NewGuid(), 1, 2026);
+
+        var ex = await Assert.ThrowsAsync<AvvisoFatturaInvalidaException>(
+            () => sut.Manager.AnnullaAsync(id));
+        Assert.Equal(AvvisoFatturaMotivoInvalido.AvvisoGiaFatturato, ex.Motivo);
+    }
+
     [Fact]
     public async Task ElencoPerAttivitaAsync_SoloAttiviDellAttivita()
     {

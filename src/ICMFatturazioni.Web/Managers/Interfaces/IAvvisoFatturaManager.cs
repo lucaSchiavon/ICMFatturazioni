@@ -15,14 +15,29 @@ public interface IAvvisoFatturaManager
     /// <summary>Elenco degli avvisi attivi di un'attività (più recenti prima).</summary>
     Task<IReadOnlyList<AvvisoFattura>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
 
+    /// <summary>
+    /// Coppie (cliente, attività) con almeno un avviso attivo non ancora fatturato.
+    /// Alimenta i filtri della maschera Emissione Fatture.
+    /// </summary>
+    Task<IReadOnlyList<AttivitaFatturabile>> AttivitaConAvvisiNonFatturatiAsync(CancellationToken ct = default);
+
     /// <summary>Avviso con le sue righe; <c>null</c> se inesistente.</summary>
     Task<AvvisoDettaglio?> GetDettaglioAsync(Guid idAvviso, CancellationToken ct = default);
 
     /// <summary>
+    /// Le quattro grandezze informative ("Dettagli Attività") per i dettagli
+    /// presenti nell'avviso selezionato (importo dettaglio, altri avvisi, avviso
+    /// attuale, residuo).
+    /// </summary>
+    Task<IReadOnlyList<DettaglioAvvisoGrandezze>> DettagliGrandezzeAsync(Guid idAvviso, CancellationToken ct = default);
+
+    /// <summary>
     /// Scadenze ancora fatturabili di un'attività, per la griglia di selezione
     /// dell'avviso (raggruppate per dettaglio, quanto già allocato incluso).
+    /// In <b>modifica</b> passare <paramref name="idAvvisoEscluso"/> per non contare
+    /// due volte le rate dell'avviso in corso di modifica (già ricaricate in bozza).
     /// </summary>
-    Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, CancellationToken ct = default);
+    Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default);
 
     /// <summary>
     /// Attività (con il rispettivo cliente) ancora fatturabili, cioè con importo
@@ -59,8 +74,26 @@ public interface IAvvisoFatturaManager
     /// Aggiorna i campi editabili della testata (data, oggetto, note, pagamento,
     /// banca, testo spese art.15). Gli snapshot fiscali non sono modificabili.
     /// </summary>
-    /// <exception cref="AvvisoFatturaInvalidaException">Se la validazione fallisce.</exception>
+    /// <exception cref="AvvisoFatturaInvalidaException">Se la validazione fallisce o l'avviso è già fatturato.</exception>
     Task AggiornaTestataAsync(AvvisoFattura avviso, CancellationToken ct = default);
+
+    /// <summary>
+    /// Modifica i dettagli di un avviso esistente (stessa interazione della fase-2 di
+    /// emissione): riordino, testo delle righe, aggiunta/rimozione di righe descrittive,
+    /// aggiunta di NUOVE rate dal pool fatturabili e rimozione di rate (che tornano
+    /// fatturabili), più la riconciliazione delle spese collegate. Le righe reali
+    /// mantengono importo/tipo/dettaglio autorevoli (dalla riga originale se mantenuta,
+    /// dal read-model fatturabile se aggiunta); l'operazione è atomica (replace-all).
+    /// </summary>
+    /// <exception cref="AvvisoFatturaInvalidaException">
+    /// Se l'avviso non esiste, è già fatturato, una rata non è fatturabile, o il
+    /// risultato non avrebbe né rate né spese (avviso vuoto).
+    /// </exception>
+    Task AggiornaDettagliAsync(
+        Guid idAvviso,
+        IReadOnlyList<ModificaRigaAvvisoInput> righe,
+        IReadOnlyList<Guid> idSpeseSelezionate,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Applica la cascata fiscale usando gli snapshot congelati sull'avviso. Adatta

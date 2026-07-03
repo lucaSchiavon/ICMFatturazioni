@@ -113,7 +113,10 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
                FROM fatt.AvvisoFatturaRighe r
                JOIN fatt.AvvisiFattura a ON a.IdAvviso = r.IdAvviso
               WHERE r.IdAttivitaDettaglio = d.IdAttivitaDettaglio
-                AND a.IsAttivo = 1) AS GiaAllocatoAvvisiPrecedenti
+                AND a.IsAttivo = 1
+                -- In modifica, l'avviso corrente è escluso: le sue rate sono già
+                -- ricaricate nella bozza, contarle qui le conterebbe due volte.
+                AND (@IdAvvisoEscluso IS NULL OR a.IdAvviso <> @IdAvvisoEscluso)) AS GiaAllocatoAvvisiPrecedenti
         FROM fatt.SchedulazionePagamenti s
         JOIN fatt.AttivitaDettaglio d ON d.IdAttivitaDettaglio = s.IdAttivitaDettaglio
         LEFT JOIN fatt.TipiDettaglioAttivita td
@@ -125,10 +128,10 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         ORDER BY d.Ordine ASC, s.DataScadenza ASC;
         """;
 
-    public async Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
-        var cmd  = new CommandDefinition(SqlSelectFatturabili, new { IdAttivita = idAttivita }, cancellationToken: ct);
+        var cmd  = new CommandDefinition(SqlSelectFatturabili, new { IdAttivita = idAttivita, IdAvvisoEscluso = idAvvisoEscluso }, cancellationToken: ct);
         var rows = await conn.QueryAsync<ScadenzaFatturabileRow>(cmd);
         return rows.Select(r => new ScadenzaFatturabile(
             IdScadenza:                  r.IdScadenza,

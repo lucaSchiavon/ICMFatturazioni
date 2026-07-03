@@ -278,6 +278,12 @@ h1:focus {
 .icm-scad-desc { font-weight: 600; }
 .icm-scad-residuo-zero { color: var(--mud-palette-success-darken); font-weight: 700; }
 
+/* Riga descrittiva nella tabella righe avviso (solo testo, attenuata) */
+.icm-riga-descrittiva { font-style: italic; color: var(--mud-palette-text-secondary); font-weight: 400; }
+
+/* Riga selezionata nella tabella "Avvisi non fatturati" (Emissione Fatture) */
+.icm-row-selected > td { background: var(--mud-palette-primary-hover); }
+
 /* Card mobile per una scadenza */
 .icm-scad-card {
     border: 1px solid var(--mud-palette-lines-default);

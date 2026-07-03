@@ -17,7 +17,7 @@ internal sealed class FakeScadenzaPagamentoRepository : IScadenzaPagamentoReposi
     /// </summary>
     public List<ScadenzaFatturabile> Fatturabili { get; } = new();
 
-    public Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    public Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<ScadenzaFatturabile>>(Fatturabili.ToList());
 
     /// <summary>Attività con residuo da fatturare seminate dai test (filtri maschera Avvisi).</summary>

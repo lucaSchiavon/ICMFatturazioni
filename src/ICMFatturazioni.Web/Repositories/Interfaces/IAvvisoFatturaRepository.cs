@@ -25,11 +25,25 @@ public interface IAvvisoFatturaRepository
     /// <summary>Restituisce gli avvisi attivi di un'attività, ordinati per DataAvviso DESC.</summary>
     Task<IReadOnlyList<AvvisoFattura>> GetByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
 
+    /// <summary>
+    /// Coppie (cliente, attività) distinte per cui esiste almeno un avviso attivo
+    /// <b>non ancora fatturato</b>. Alimenta i filtri della maschera Emissione
+    /// Fatture: solo i clienti/attività con avvisi da gestire compaiono nei selettori.
+    /// </summary>
+    Task<IReadOnlyList<Models.AttivitaFatturabile>> GetAttivitaConAvvisiNonFatturatiAsync(CancellationToken ct = default);
+
     /// <summary>Restituisce un avviso per chiave primaria (incluse le testate soft-deleted).</summary>
     Task<AvvisoFattura?> GetByIdAsync(Guid idAvviso, CancellationToken ct = default);
 
     /// <summary>Restituisce le righe di un avviso, ordinate per Ordine ASC.</summary>
     Task<IReadOnlyList<AvvisoFatturaRiga>> GetRigheByAvvisoAsync(Guid idAvviso, CancellationToken ct = default);
+
+    /// <summary>
+    /// Per i dettagli presenti nelle righe reali dell'avviso, le quattro grandezze
+    /// informative (importo dettaglio, allocato in altri avvisi, allocato in questo
+    /// avviso, residuo) del pannello "Dettagli Attività".
+    /// </summary>
+    Task<IReadOnlyList<Models.DettaglioAvvisoGrandezze>> GetDettagliGrandezzeByAvvisoAsync(Guid idAvviso, CancellationToken ct = default);
 
     /// <summary>
     /// Emissione atomica dell'avviso. In un'unica transazione: inserisce la testata,
@@ -65,4 +79,22 @@ public interface IAvvisoFatturaRepository
     /// all'emissione.
     /// </summary>
     Task UpdateAsync(AvvisoFattura avviso, CancellationToken ct = default);
+
+    /// <summary>
+    /// Sostituisce atomicamente le righe e le spese collegate di un avviso esistente
+    /// (modifica dettagli). In un'unica transazione: sblocca le rate attualmente
+    /// puntate dalle righe di questo avviso, elimina le vecchie righe, inserisce le
+    /// nuove (con <c>Ordine</c> e <c>IdRiga</c> già assegnati app-side), ri-blocca le
+    /// rate delle righe reali, e riconcilia i link delle spese (scollega tutte quelle
+    /// dell'avviso e ricollega le selezionate). Le rate/spese rimosse restano libere.
+    /// </summary>
+    /// <exception cref="Managers.AvvisoFatturaInvalidaException">
+    /// Con motivo <c>ScadenzaGiaInAvviso</c> se una rata risultasse consumata da un
+    /// altro avviso (violazione dell'indice univoco): la transazione è annullata.
+    /// </exception>
+    Task AggiornaRigheAsync(
+        Guid idAvviso,
+        IReadOnlyList<AvvisoFatturaRiga> nuoveRighe,
+        IReadOnlyList<Guid> idSpeseCollegate,
+        CancellationToken ct = default);
 }

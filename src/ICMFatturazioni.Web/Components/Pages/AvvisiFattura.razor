@@ -23,6 +23,7 @@
 @using System.Globalization
 
 @inject IAvvisoFatturaManager AvvisoManager
+@inject IFattureManager FattureManager
 @inject IAttivitaManager AttivitaManager
 @inject IAnagraficaManager AnagraficaManager
 @inject ITipoAttivitaManager TipoAttivitaManager
@@ -202,7 +203,7 @@
                         <MudTh>Data</MudTh>
                         <MudTh>Oggetto</MudTh>
                         <MudTh Style="text-align:right;">Imponibile €</MudTh>
-                        <MudTh Style="width:96px;"></MudTh>
+                        <MudTh Style="width:160px;"></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Data">@context.DataAvviso.ToString("dd/MM/yyyy")</MudTd>
@@ -216,18 +217,41 @@
                                     Solo spese @context.TotaleSpese.ToString("N2", _itCulture) €
                                 </MudChip>
                             }
+                            @if (context.IsFatturato)
+                            {
+                                @* Avviso già fatturato: congelato (read-only), non modificabile/annullabile. *@
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled"
+                                         Icon="@Icons.Material.Filled.Receipt" Class="ma-0 mr-1"
+                                         title="Avviso già fatturato">
+                                    Fatturato @context.NumeroFattura/@context.AnnoFattura
+                                </MudChip>
+                            }
                             @(string.IsNullOrWhiteSpace(context.Oggetto) ? "—" : context.Oggetto)
                         </MudTd>
                         <MudTd DataLabel="Imponibile" Style="text-align:right;font-weight:600;">@context.TotaleRighe.ToString("N2", _itCulture)</MudTd>
                         <MudTd Style="padding:2px 4px;white-space:nowrap;">
-                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
-                                           Size="Size.Small" Ripple="false" Color="Color.Primary"
-                                           aria-label="Anteprima PDF"
-                                           OnClick="@(() => AnteprimaPdfAsync(context))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.DeleteForever"
-                                           Size="Size.Small" Ripple="false" Color="Color.Error"
-                                           aria-label="Annulla avviso"
-                                           OnClick="@(() => AnnullaAvvisoAsync(context))" />
+                            @if (context.IsFatturato)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
+                                               Size="Size.Small" Ripple="false" Color="Color.Success"
+                                               aria-label="PDF fattura" title="Anteprima fattura"
+                                               OnClick="@(() => AnteprimaFatturaAsync(context))" />
+                            }
+                            else
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small" Ripple="false" Color="Color.Primary"
+                                               aria-label="Modifica avviso" title="Modifica / crea fattura"
+                                               OnClick="@(() => ModificaAvvisoAsync(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
+                                               Size="Size.Small" Ripple="false" Color="Color.Primary"
+                                               aria-label="Anteprima avviso PDF" title="Anteprima avviso"
+                                               OnClick="@(() => AnteprimaPdfAsync(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.DeleteForever"
+                                               Size="Size.Small" Ripple="false" Color="Color.Error"
+                                               aria-label="Elimina avviso" title="Elimina avviso"
+                                               OnClick="@(() => AnnullaAvvisoAsync(context))" />
+                            }
                         </MudTd>
                     </RowTemplate>
                 </MudTable>
@@ -239,9 +263,19 @@
     <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
 
         <div class="d-flex align-center gap-2 mb-3">
-            <MudIcon Icon="@Icons.Material.Filled.RequestQuote" Color="Color.Primary" />
-            <MudText Typo="Typo.subtitle1" Style="font-weight:700;">Nuovo avviso di fattura</MudText>
-            @if (_wizardFase == WizardFase.Righe)
+            <MudIcon Icon="@(_idAvvisoInModifica is null ? Icons.Material.Filled.RequestQuote : Icons.Material.Filled.Edit)" Color="Color.Primary" />
+            <MudText Typo="Typo.subtitle1" Style="font-weight:700;">
+                @(_idAvvisoInModifica is null ? "Nuovo avviso di fattura" : $"Modifica avviso del {_tData?.ToString("dd/MM/yyyy")}")
+            </MudText>
+            @if (_idAvvisoInModifica is not null)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Class="ma-0">In modifica</MudChip>
+                <MudSpacer />
+                <MudButton Size="Size.Small" Ripple="false" StartIcon="@Icons.Material.Filled.Close" OnClick="ChiudiEditAsync">
+                    Chiudi modifica
+                </MudButton>
+            }
+            else if (_wizardFase == WizardFase.Righe)
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text" Class="ma-0">
                     Testata confermata
@@ -546,7 +580,7 @@
                                         @(string.IsNullOrWhiteSpace(riga.Tipo) ? "" : $"{riga.Tipo} — ")@riga.Descrizione
                                     </MudText>
                                     <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
-                                        Rata del @riga.DataScadenza?.ToString("dd/MM/yyyy")
+                                        @(riga.DataScadenza is { } ds ? $"Rata del {ds:dd/MM/yyyy}" : "Rata")
                                     </MudText>
                                 }
                             </div>
@@ -572,13 +606,13 @@
                 @{ var calc = CalcolaAnteprima(); }
                 <div class="d-flex flex-column gap-1" style="max-width:360px;">
                     @RigaImporto("Imponibile", calc.Imponibile, false, false)
-                    @RigaImporto($"C.N.P.A.I.A. {_aliquoteFiscali.Cnpaia.ToString("0.##", _itCulture)}%", calc.Cassa, false, false)
+                    @RigaImporto($"C.N.P.A.I.A. {_cnpaiaEff.ToString("0.##", _itCulture)}%", calc.Cassa, false, false)
                     @RigaImporto($"IVA {_aliquotaIvaCorrente.ToString("0.##", _itCulture)}%", calc.Iva, false, false)
                     <MudDivider Class="my-1" />
                     @RigaImporto("Totale", calc.Totale, true, false)
                     @if (calc.Ritenuta > 0)
                     {
-                        @RigaImporto($"− Ritenuta {_aliquoteFiscali.Ritenuta.ToString("0.##", _itCulture)}%", -calc.Ritenuta, false, false)
+                        @RigaImporto($"− Ritenuta {_ritenutaEff.ToString("0.##", _itCulture)}%", -calc.Ritenuta, false, false)
                     }
                     @if (calc.SpeseArt15 > 0)
                     {
@@ -595,16 +629,52 @@
             }
 
             <div class="d-flex justify-end gap-2 mt-3 flex-wrap">
-                <MudButton Ripple="false" StartIcon="@Icons.Material.Filled.Cancel" OnClick="ResetWizard">
-                    Annulla bozza
+                <MudButton Ripple="false" StartIcon="@Icons.Material.Filled.Cancel" OnClick="ChiudiEditAsync">
+                    @(_idAvvisoInModifica is null ? "Annulla bozza" : "Chiudi modifica")
                 </MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
                            StartIcon="@Icons.Material.Filled.Check"
                            Disabled="_emissioneInCorso || !(_righeBozza.Any(r => !r.IsDescrittiva) || _speseSelezionate.Count > 0)"
                            OnClick="TerminaInserimentoAsync">
-                    @(_emissioneInCorso ? "Emissione…" : "Termina inserimento")
+                    @(_emissioneInCorso
+                        ? (_idAvvisoInModifica is null ? "Emissione…" : "Salvataggio…")
+                        : (_idAvvisoInModifica is null ? "Termina inserimento" : "Salva modifiche"))
                 </MudButton>
             </div>
+
+            @* ══════════ Creazione fattura (solo in modifica di un avviso esistente) ══════════ *@
+            @if (_idAvvisoInModifica is not null)
+            {
+                <MudDivider Class="my-3" />
+                <MudPaper Elevation="0" Class="mud-background-gray rounded pa-3">
+                    <div class="d-flex align-center gap-2 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Receipt" Color="Color.Success" />
+                        <MudText Typo="Typo.subtitle2" Style="font-weight:700;">Crea la fattura da questo avviso</MudText>
+                    </div>
+                    <MudGrid Spacing="2" Class="align-center">
+                        <MudItem xs="6" sm="3">
+                            <MudNumericField T="int" @bind-Value="_numeroFattura" Label="Numero fattura *" Min="1"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio" />
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudDatePicker Label="Data fattura *" Date="_dataFattura" DateChanged="OnDataFatturaChangedAsync"
+                                           DateFormat="dd/MM/yyyy" Culture="_itCulture" Editable="true"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" Class="d-flex justify-end align-center">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Ripple="false"
+                                       StartIcon="@Icons.Material.Filled.PictureAsPdf" Disabled="_emissioneInCorso"
+                                       OnClick="SviluppaFatturaAsync">
+                                @(_emissioneInCorso ? "Creazione…" : "Crea fattura")
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+                    <MudText Typo="Typo.caption" Class="mt-1" Style="color:var(--mud-palette-text-secondary);">
+                        «Crea fattura» salva prima le modifiche correnti, poi genera la fattura (numero = ultima dell'anno + 1)
+                        e apre il PDF di cortesia. Creata la fattura, l'avviso diventa read-only.
+                    </MudText>
+                </MudPaper>
+            }
         }
     </MudPaper>
 }
@@ -669,6 +739,15 @@
     private string        _erroreEmissione  = string.Empty;
     private bool          _emissioneInCorso;
 
+    // ── Modalità modifica di un avviso esistente ─────────────────────────
+    // null = nuovo avviso; valorizzato = si sta modificando quell'avviso.
+    private Guid?         _idAvvisoInModifica;
+    private AvvisoFattura? _avvisoOrig;   // snapshot originale (per copiare gli immutabili)
+
+    // ── Creazione fattura (in modifica) ──────────────────────────────────
+    private int       _numeroFattura;
+    private DateTime? _dataFattura = DateTime.Today;
+
     // Riga della bozza avviso: reale (da una scadenza) o descrittiva (solo testo).
     private sealed class RigaBozza
     {
@@ -684,6 +763,14 @@
     // Aliquota IVA risolta dal codice selezionato (0 se nessuno)
     private decimal _aliquotaIvaCorrente
         => _codiciIva.FirstOrDefault(c => c.IdCodiceIVA == _idCodiceIvaSelezionato)?.Aliquota ?? 0m;
+
+    // Aliquote "effettive" per l'anteprima cascata: in emissione = aliquote di
+    // sistema + sostituto d'imposta dell'anagrafica; in modifica = snapshot congelati
+    // sull'avviso (CNPAIA/Ritenuta non sono modificabili qui).
+    private bool _inModifica => _idAvvisoInModifica is not null && _avvisoOrig is not null;
+    private decimal _cnpaiaEff   => _inModifica ? _avvisoOrig!.AliquotaCnpaia   : _aliquoteFiscali.Cnpaia;
+    private decimal _ritenutaEff => _inModifica ? _avvisoOrig!.AliquotaRitenuta : _aliquoteFiscali.Ritenuta;
+    private bool _applicaRitenutaEff => _inModifica ? _avvisoOrig!.ApplicaRitenuta : (_anagraficaSelezionata?.SostitutoImposta ?? false);
 
     // ── Computed ─────────────────────────────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -874,6 +961,22 @@
         _righeBozza.Clear();
         _nuovaDescrittiva = string.Empty;
         _erroreEmissione  = string.Empty;
+        // Stato modifica / fattura
+        _idAvvisoInModifica = null;
+        _avvisoOrig         = null;
+        _numeroFattura      = 0;
+        _dataFattura        = DateTime.Today;
+    }
+
+    // Esce dalla modalità modifica: azzera la bozza e ricarica il contesto
+    // dell'attività (scadenze/spese senza esclusioni). Per il "nuovo avviso" è un
+    // semplice reset (nessun ricarico necessario).
+    private async Task ChiudiEditAsync()
+    {
+        var eraModifica = _inModifica;
+        ResetWizard();
+        if (eraModifica)
+            await CaricaContestoAttivitaAsync();
     }
 
     private void ConfermaTestata()
@@ -968,15 +1071,18 @@
         var preview = new AvvisoFattura
         {
             AliquotaIva      = _aliquotaIvaCorrente,
-            AliquotaCnpaia   = _aliquoteFiscali.Cnpaia,
-            AliquotaRitenuta = _aliquoteFiscali.Ritenuta,
-            ApplicaRitenuta  = _anagraficaSelezionata?.SostitutoImposta ?? false,
+            AliquotaCnpaia   = _cnpaiaEff,
+            AliquotaRitenuta = _ritenutaEff,
+            ApplicaRitenuta  = _applicaRitenutaEff,
         };
         return AvvisoManager.Calcola(preview, imponibile, speseArt15);
     }
 
     private async Task TerminaInserimentoAsync()
     {
+        // In modifica di un avviso esistente il pulsante salva le modifiche.
+        if (_idAvvisoInModifica is not null) { await SalvaModificheAsync(); return; }
+
         _erroreEmissione = string.Empty;
         // Contenuto minimo: almeno una rata reale nelle righe OPPURE almeno una spesa
         // anticipata selezionata (avviso con sole spese art. 15 ammesso).
@@ -1027,6 +1133,223 @@
             _erroreEmissione = "Errore durante l'emissione dell'avviso. Riprovare.";
         }
         finally { _emissioneInCorso = false; }
+    }
+
+    // ── Modifica di un avviso esistente ──────────────────────────────────
+    // Carica l'avviso nel wizard (fase Righe), pre-popolando testata, righe e spese.
+    private async Task ModificaAvvisoAsync(AvvisoFattura a)
+    {
+        if (a.IsFatturato) return;  // gli avvisi fatturati sono congelati
+        if (_attivitaSelezionata is null) return;
+
+        _erroreEmissione = string.Empty;
+        try
+        {
+            var idAtt   = _attivitaSelezionata.IdAttivita;
+            var tDett   = AvvisoManager.GetDettaglioAsync(a.IdAvviso);
+            var tScad   = AvvisoManager.ScadenzeFatturabiliAsync(idAtt, idAvvisoEscluso: a.IdAvviso);
+            var tSpFatt = SpesaAnticipataManager.ElencoFatturabiliPerAttivitaAsync(idAtt);
+            var tSpAvv  = SpesaAnticipataManager.ElencoPerAvvisoAsync(a.IdAvviso);
+            var tNum    = FattureManager.ProponiNumeroAsync(DateTime.Today.Year);
+            await Task.WhenAll(tDett, tScad, tSpFatt, tSpAvv, tNum);
+
+            var dettaglio = tDett.Result;
+            if (dettaglio is null) { Snackbar.Add("Avviso non trovato.", MudBlazor.Severity.Warning); return; }
+
+            _idAvvisoInModifica = a.IdAvviso;
+            _avvisoOrig         = dettaglio.Testata;
+
+            // Testata (fase 1) pre-popolata.
+            _tData          = dettaglio.Testata.DataAvviso.ToDateTime(TimeOnly.MinValue);
+            _tOggetto       = dettaglio.Testata.Oggetto ?? string.Empty;
+            _tNotaSintetica = dettaglio.Testata.NotaSintetica ?? string.Empty;
+            _tNotaTestata   = dettaglio.Testata.NotaTestata ?? string.Empty;
+            _descrizioneSpese = dettaglio.Testata.DescrizioneSpeseInAvviso ?? string.Empty;
+            // Codice IVA che corrisponde allo snapshot dell'avviso (per aliquota).
+            _idCodiceIvaSelezionato =
+                _codiciIva.FirstOrDefault(c => c.Aliquota == dettaglio.Testata.AliquotaIva)?.IdCodiceIVA
+                ?? _anagraficaSelezionata?.IdCodiciIVA;
+
+            // Scadenze disponibili per aggiungere altre rate (esclusa questa dell'avviso).
+            _scadenzeFatturabili = tScad.Result.ToList();
+
+            // Spese: fatturabili (libere) + quelle già in questo avviso, deduplicate;
+            // le spese dell'avviso partono spuntate.
+            var speseAvviso = tSpAvv.Result.ToList();
+            _speseAttivita = tSpFatt.Result
+                .Concat(speseAvviso)
+                .GroupBy(s => s.IdSpesaAnticipata)
+                .Select(g => g.First())
+                .OrderBy(s => s.Data)
+                .ToList();
+            _speseSelezionate.Clear();
+            foreach (var sp in speseAvviso) _speseSelezionate.Add(sp.IdSpesaAnticipata);
+
+            // Righe dell'avviso (bozza) nell'ordine salvato.
+            _righeBozza.Clear();
+            foreach (var r in dettaglio.Righe.OrderBy(r => r.Ordine))
+            {
+                _righeBozza.Add(new RigaBozza
+                {
+                    IdScadenza          = r.IdScadenza,
+                    IdAttivitaDettaglio = r.IdAttivitaDettaglio,
+                    Tipo                = r.Tipo,
+                    Descrizione         = r.Descrizione,
+                    Importo             = r.Importo,
+                    DataScadenza        = null,   // la data della rata non è sulla riga
+                });
+            }
+
+            // Proposta numero fattura + data odierna.
+            _numeroFattura    = tNum.Result;
+            _dataFattura      = DateTime.Today;
+            _scadenzeSelezionate.Clear();
+            _nuovaDescrittiva = string.Empty;
+            _wizardFase       = WizardFase.Righe;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura avviso in modifica fallita.", "AvvisiFattura.ModificaAvvisoAsync");
+            Snackbar.Add("Errore nel caricamento dell'avviso.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // Persiste testata + dettagli (righe) + spese dell'avviso in modifica.
+    // Restituisce true se salvato; false se una validazione ha bloccato l'operazione.
+    private async Task<bool> SalvaModificheAsync()
+    {
+        _erroreEmissione = string.Empty;
+        if (_idAvvisoInModifica is null || _avvisoOrig is null) return false;
+
+        if (!_righeBozza.Any(r => !r.IsDescrittiva) && _speseSelezionate.Count == 0)
+        {
+            _erroreEmissione = "L'avviso deve avere almeno una rata o una spesa.";
+            return false;
+        }
+        if (_speseSelezionate.Count > 0 && string.IsNullOrWhiteSpace(_descrizioneSpese))
+        {
+            _erroreEmissione = "Compila la descrizione spese in avviso (obbligatoria quando si allegano spese).";
+            return false;
+        }
+        if (!_tData.HasValue)
+        {
+            _erroreEmissione = "La data dell'avviso è obbligatoria.";
+            return false;
+        }
+
+        // Testata: copia gli immutabili dall'originale, aggiorna i campi editabili
+        // (data/oggetto/note) e l'IVA (unica aliquota modificabile in modifica).
+        var testata = new AvvisoFattura
+        {
+            IdAvviso                 = _avvisoOrig.IdAvviso,
+            IdAttivita               = _avvisoOrig.IdAttivita,
+            IdAnagrafica             = _avvisoOrig.IdAnagrafica,
+            DataAvviso               = DateOnly.FromDateTime(_tData.Value),
+            Oggetto                  = string.IsNullOrWhiteSpace(_tOggetto) ? null : _tOggetto.Trim(),
+            NotaSintetica            = string.IsNullOrWhiteSpace(_tNotaSintetica) ? null : _tNotaSintetica.Trim(),
+            NotaTestata              = string.IsNullOrWhiteSpace(_tNotaTestata) ? null : _tNotaTestata.Trim(),
+            IdCodicePagamento        = _avvisoOrig.IdCodicePagamento,
+            IdBancaAppoggio          = _avvisoOrig.IdBancaAppoggio,
+            AliquotaIva              = _aliquotaIvaCorrente,
+            AliquotaCnpaia           = _avvisoOrig.AliquotaCnpaia,
+            AliquotaRitenuta         = _avvisoOrig.AliquotaRitenuta,
+            ApplicaRitenuta          = _avvisoOrig.ApplicaRitenuta,
+            DescrizioneSpeseInAvviso = string.IsNullOrWhiteSpace(_descrizioneSpese) ? null : _descrizioneSpese.Trim(),
+            IsAttivo                 = true,
+        };
+
+        // Righe nell'ordine della bozza (reali + descrittive interlacciate).
+        var righe = _righeBozza
+            .Select(r => new ModificaRigaAvvisoInput(r.IdScadenza, r.Descrizione))
+            .ToList();
+
+        _emissioneInCorso = true;
+        try
+        {
+            await AvvisoManager.AggiornaTestataAsync(testata);
+            await AvvisoManager.AggiornaDettagliAsync(_avvisoOrig.IdAvviso, righe, _speseSelezionate.ToList());
+            Snackbar.Add("Modifiche salvate.", MudBlazor.Severity.Success);
+            // Ricarica l'avviso aggiornato mantenendo la modalità modifica.
+            var aggiornato = await AvvisoManager.GetDettaglioAsync(_avvisoOrig.IdAvviso);
+            if (aggiornato is not null) _avvisoOrig = aggiornato.Testata;
+            return true;
+        }
+        catch (AvvisoFatturaInvalidaException ex)
+        {
+            _erroreEmissione = ex.Message;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Salvataggio modifiche avviso fallito.", "AvvisiFattura.SalvaModificheAsync");
+            _erroreEmissione = "Errore durante il salvataggio delle modifiche.";
+            return false;
+        }
+        finally { _emissioneInCorso = false; }
+    }
+
+    // Ripropone il numero quando cambia l'anno della data fattura.
+    private async Task OnDataFatturaChangedAsync(DateTime? data)
+    {
+        _dataFattura = data;
+        if (data.HasValue)
+        {
+            try { _numeroFattura = await FattureManager.ProponiNumeroAsync(data.Value.Year); }
+            catch { /* mantiene il numero corrente */ }
+        }
+    }
+
+    // Salva le modifiche correnti, crea la fattura e ne apre il PDF di cortesia.
+    private async Task SviluppaFatturaAsync()
+    {
+        if (_idAvvisoInModifica is null) return;
+        _erroreEmissione = string.Empty;
+        if (!_dataFattura.HasValue)
+        {
+            _erroreEmissione = "La data della fattura è obbligatoria.";
+            return;
+        }
+
+        // Prima persiste ciò che è a video, così la fattura riflette la revisione.
+        if (!await SalvaModificheAsync()) return;
+
+        _emissioneInCorso = true;
+        try
+        {
+            var idFattura = await FattureManager.CreaAsync(new CreaFatturaRequest(
+                _idAvvisoInModifica.Value, _numeroFattura, DateOnly.FromDateTime(_dataFattura.Value)));
+            Snackbar.Add($"Fattura {_numeroFattura}/{_dataFattura.Value.Year} creata.", MudBlazor.Severity.Success);
+            await JS.InvokeVoidAsync("open", $"/api/fatture/{idFattura}/pdf", "_blank");
+
+            // L'avviso è ora fatturato (congelato): esci dalla modifica e ricarica.
+            ResetWizard();
+            await CaricaContestoAttivitaAsync();
+        }
+        catch (FatturaInvalidaException ex)
+        {
+            _erroreEmissione = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Creazione fattura fallita.", "AvvisiFattura.SviluppaFatturaAsync");
+            _erroreEmissione = "Errore durante la creazione della fattura.";
+        }
+        finally { _emissioneInCorso = false; }
+    }
+
+    // Apre il PDF della fattura collegata a un avviso già fatturato.
+    private async Task AnteprimaFatturaAsync(AvvisoFattura a)
+    {
+        if (a.IdFattura is not { } idFattura) return;
+        try
+        {
+            await JS.InvokeVoidAsync("open", $"/api/fatture/{idFattura}/pdf", "_blank");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura PDF fattura fallita.", "AvvisiFattura.AnteprimaFatturaAsync");
+            Snackbar.Add("Impossibile aprire il PDF della fattura.", MudBlazor.Severity.Error);
+        }
     }
 
     // Apre il PDF di cortesia dell'avviso in una nuova scheda (anteprima inline).

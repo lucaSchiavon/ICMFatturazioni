@@ -34,6 +34,22 @@ internal sealed class FakeAvvisoFatturaRepository : IAvvisoFatturaRepository
     public Task<AvvisoFattura?> GetByIdAsync(Guid idAvviso, CancellationToken ct = default)
         => Task.FromResult(_testate.TryGetValue(idAvviso, out var a) ? WithTotale(a) : null);
 
+    public Task<IReadOnlyList<ICMFatturazioni.Web.Models.AttivitaFatturabile>> GetAttivitaConAvvisiNonFatturatiAsync(CancellationToken ct = default)
+    {
+        var result = _testate.Values
+            .Where(a => a.IsAttivo && a.IdFattura is null)
+            .Select(a => new ICMFatturazioni.Web.Models.AttivitaFatturabile(a.IdAnagrafica, a.IdAttivita))
+            .Distinct()
+            .ToList();
+        return Task.FromResult<IReadOnlyList<ICMFatturazioni.Web.Models.AttivitaFatturabile>>(result);
+    }
+
+    // Stub: le grandezze cross-avviso derivano da dati non modellati nel fake
+    // (importo totale del dettaglio). Nessun test le esercita → lista vuota.
+    public Task<IReadOnlyList<ICMFatturazioni.Web.Models.DettaglioAvvisoGrandezze>> GetDettagliGrandezzeByAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ICMFatturazioni.Web.Models.DettaglioAvvisoGrandezze>>(
+            Array.Empty<ICMFatturazioni.Web.Models.DettaglioAvvisoGrandezze>());
+
     public Task<IReadOnlyList<AvvisoFatturaRiga>> GetRigheByAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
     {
         var righe = _righe.TryGetValue(idAvviso, out var list)
@@ -86,6 +102,46 @@ internal sealed class FakeAvvisoFatturaRepository : IAvvisoFatturaRepository
         if (_testate.ContainsKey(avviso.IdAvviso))
             _testate[avviso.IdAvviso] = avviso;
         return Task.CompletedTask;
+    }
+
+    public Task AggiornaRigheAsync(
+        Guid idAvviso,
+        IReadOnlyList<AvvisoFatturaRiga> nuoveRighe,
+        IReadOnlyList<Guid> idSpeseCollegate,
+        CancellationToken ct = default)
+    {
+        // Sblocca le rate correnti dell'avviso (replace-all).
+        if (_righe.TryGetValue(idAvviso, out var vecchie))
+            foreach (var r in vecchie.Where(x => x.IdScadenza.HasValue))
+                ScadenzeConsumate.Remove(r.IdScadenza!.Value);
+
+        // Guardia indice univoco: le nuove rate non devono essere di altri avvisi.
+        foreach (var r in nuoveRighe.Where(x => x.IdScadenza.HasValue))
+            if (ScadenzeConsumate.ContainsKey(r.IdScadenza!.Value))
+                throw new AvvisoFatturaInvalidaException(
+                    AvvisoFatturaMotivoInvalido.ScadenzaGiaInAvviso, "Rata già in un altro avviso.");
+
+        _righe[idAvviso] = nuoveRighe.ToList();
+        foreach (var r in nuoveRighe.Where(x => x.IdScadenza.HasValue))
+            ScadenzeConsumate[r.IdScadenza!.Value] = r.IdRiga;
+
+        // Riconcilia le spese collegate (replace-all).
+        SpeseCollegate[idAvviso] = idSpeseCollegate.ToList();
+        return Task.CompletedTask;
+    }
+
+    // ── Helper di test ──────────────────────────────────────────────────────
+
+    /// <summary>Inserisce direttamente una testata (per i test che non emettono).</summary>
+    public void Seed(AvvisoFattura a) => _testate[a.IdAvviso] = a;
+
+    /// <summary>Simula la fatturazione di un avviso valorizzandone le nav-prop fattura.</summary>
+    public void MarkFatturato(Guid idAvviso, Guid idFattura, int numero, int anno)
+    {
+        if (!_testate.TryGetValue(idAvviso, out var a)) return;
+        a.IdFattura     = idFattura;
+        a.NumeroFattura = numero;
+        a.AnnoFattura   = anno;
     }
 
     // La somma delle righe è una nav-prop calcolata: la valorizziamo in lettura.

@@ -24,6 +24,10 @@ internal sealed class AvvisoPdfDocument
 
     public AvvisoPdfDocument(AvvisoPdfData data) => _data = data;
 
+    // Il documento è una FATTURA (nata da un avviso) anziché l'avviso di parcella:
+    // cambia titolo, barra (numero+data fattura), note finali e footer.
+    private bool IsFattura => _data.Fattura is not null;
+
     static AvvisoPdfDocument()
     {
         // PdfSharp 6.x non risolve i font di sistema senza un resolver esplicito.
@@ -69,9 +73,18 @@ internal sealed class AvvisoPdfDocument
     private Document BuildDocument()
     {
         var doc = new Document();
-        doc.Info.Title   = $"Avviso di fattura {_data.Testata.DataAvviso:dd-MM-yyyy}";
+        if (IsFattura)
+        {
+            var f = _data.Fattura!;
+            doc.Info.Title   = $"Fattura {f.NumeroFattura}-{f.Anno}";
+            doc.Info.Subject = "Fattura (documento di cortesia)";
+        }
+        else
+        {
+            doc.Info.Title   = $"Avviso di fattura {_data.Testata.DataAvviso:dd-MM-yyyy}";
+            doc.Info.Subject = "Avviso di fattura (avviso di parcella)";
+        }
         doc.Info.Author  = _data.Studio.RagioneSociale;
-        doc.Info.Subject = "Avviso di fattura (avviso di parcella)";
 
         SetupStyles(doc);
 
@@ -118,9 +131,18 @@ internal sealed class AvvisoPdfDocument
 
         var a = _data.Attivita;
         var testo = a is null
-            ? "Avviso di fattura"
+            ? (IsFattura ? "Fattura" : "Avviso di fattura")
             : $"Attività: {a.Numero}{(string.IsNullOrWhiteSpace(a.Descrizione) ? "" : $" - {a.Descrizione}")}";
         p.AddText(testo);
+
+        // Sulla fattura, a destra il riferimento all'avviso di origine (tab a destra).
+        if (IsFattura)
+        {
+            p.Format.TabStops.ClearAll();
+            p.Format.AddTabStop(Unit.FromCentimeter(ContentWidthCm), TabAlignment.Right);
+            p.AddTab();
+            p.AddText($"Riferimento Avviso del {_data.Testata.DataAvviso:dd/MM/yyyy}");
+        }
     }
 
     // ── 1. Intestazione a 2 colonne: studio (sx) / cliente (dx) ───────────────
@@ -222,8 +244,61 @@ internal sealed class AvvisoPdfDocument
             cell.AddParagraph($"P. Iva: {c.PIVA}").Format.Font.Size = 10;
     }
 
-    // ── 2. Barra titolo: AVVISO DI FATTURA | Data | Pagina | Valuta ───────────
+    // ── 2. Barra titolo ───────────────────────────────────────────────────────
     private void ComposeBarraTitolo(Section section)
+    {
+        if (IsFattura) ComposeBarraTitoloFattura(section);
+        else           ComposeBarraTitoloAvviso(section);
+    }
+
+    // Barra fattura: FATTURA | Numero Fattura | Data Fattura | Pagina | Valuta
+    private void ComposeBarraTitoloFattura(Section section)
+    {
+        var f = _data.Fattura!;
+
+        var table = section.AddTable();
+        table.Borders.Width  = BordoPt;
+        table.Borders.Color  = Nero;
+        table.Borders.Visible = true;
+        table.AddColumn(Unit.FromCentimeter(9.0));   // titolo
+        table.AddColumn(Unit.FromCentimeter(2.8));   // numero fattura
+        table.AddColumn(Unit.FromCentimeter(3.0));   // data fattura
+        table.AddColumn(Unit.FromCentimeter(1.6));   // pagina
+        table.AddColumn(Unit.FromCentimeter(1.6));   // valuta
+
+        var rh = table.AddRow();
+        rh.TopPadding = 3; rh.BottomPadding = 3;
+        rh.VerticalAlignment = VerticalAlignment.Center;
+
+        var titolo = rh.Cells[0].AddParagraph("FATTURA");
+        titolo.Format.Alignment = ParagraphAlignment.Center;
+        titolo.Format.Font.Bold = true;
+        titolo.Format.Font.Size = 20;
+        rh.Cells[0].MergeDown = 1;
+
+        AddTestoCentrato(rh.Cells[1], "Numero Fattura", 8, bold: true, bg: GrigioHead);
+        AddTestoCentrato(rh.Cells[2], "Data Fattura",   8, bold: true, bg: GrigioHead);
+        AddTestoCentrato(rh.Cells[3], "Pagina",         8, bold: true, bg: GrigioHead);
+        AddTestoCentrato(rh.Cells[4], "Valuta",         8, bold: true, bg: GrigioHead);
+
+        var rv = table.AddRow();
+        rv.TopPadding = 3; rv.BottomPadding = 3;
+        rv.VerticalAlignment = VerticalAlignment.Center;
+        AddTestoCentrato(rv.Cells[1], $"{f.NumeroFattura}/{f.Anno}",          10, bold: true);
+        AddTestoCentrato(rv.Cells[2], f.DataFattura.ToString("dd/MM/yyyy"), 10, bold: true);
+
+        var pagCell = rv.Cells[3].AddParagraph();
+        pagCell.Format.Alignment = ParagraphAlignment.Center;
+        pagCell.Format.Font.Size = 10;
+        pagCell.AddPageField();
+
+        AddTestoCentrato(rv.Cells[4], "EUR", 10, bold: false);
+
+        AddSpacer(section, 6);
+    }
+
+    // Barra avviso: AVVISO DI FATTURA | Data | Pagina | Valuta
+    private void ComposeBarraTitoloAvviso(Section section)
     {
         var table = section.AddTable();
         table.Borders.Width  = BordoPt;
@@ -467,6 +542,29 @@ internal sealed class AvvisoPdfDocument
             p.Format.Font.Size = 8;
             p.AddFormattedText("Spese anticipate art. 15 D.P.R. 633/72: ", TextFormat.Italic);
             p.AddText(spese!);
+        }
+
+        if (IsFattura)
+        {
+            // Fattura di cortesia: blocco firma "PAGATO / studio" + banner esplicito
+            // che il documento non ha valore fiscale (l'emissione vera è XML/SdI).
+            AddSpacer(section, 8);
+            var pPag = section.AddParagraph("PAGATO");
+            pPag.Format.Alignment = ParagraphAlignment.Center;
+            pPag.Format.Font.Bold = true;
+            pPag.Format.Font.Size = 11;
+
+            var pFirma = section.AddParagraph(_data.Studio.RagioneSociale);
+            pFirma.Format.Alignment = ParagraphAlignment.Center;
+            pFirma.Format.Font.Bold = true;
+            pFirma.Format.Font.Size = 10;
+
+            AddSpacer(section, 18);
+            var banner = section.AddParagraph("------  DOCUMENTO NON VALIDO AI FINI FISCALI  ------");
+            banner.Format.Alignment = ParagraphAlignment.Center;
+            banner.Format.Font.Bold = true;
+            banner.Format.Font.Size = 14;
+            return;
         }
 
         var nota = section.AddParagraph(NotaLegale);

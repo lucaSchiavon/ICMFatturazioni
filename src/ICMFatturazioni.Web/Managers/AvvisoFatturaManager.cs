@@ -47,6 +47,9 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
     public Task<IReadOnlyList<AvvisoFattura>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
         => _repo.GetByAttivitaAsync(idAttivita, ct);
 
+    public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaConAvvisiNonFatturatiAsync(CancellationToken ct = default)
+        => _repo.GetAttivitaConAvvisiNonFatturatiAsync(ct);
+
     public async Task<AvvisoDettaglio?> GetDettaglioAsync(Guid idAvviso, CancellationToken ct = default)
     {
         var testata = await _repo.GetByIdAsync(idAvviso, ct);
@@ -55,8 +58,11 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
         return new AvvisoDettaglio(testata, righe);
     }
 
-    public Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, CancellationToken ct = default)
-        => _scadenze.GetFatturabiliByAttivitaAsync(idAttivita, ct);
+    public Task<IReadOnlyList<DettaglioAvvisoGrandezze>> DettagliGrandezzeAsync(Guid idAvviso, CancellationToken ct = default)
+        => _repo.GetDettagliGrandezzeByAvvisoAsync(idAvviso, ct);
+
+    public Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default)
+        => _scadenze.GetFatturabiliByAttivitaAsync(idAttivita, idAvvisoEscluso, ct);
 
     public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaFatturabiliAsync(CancellationToken ct = default)
         => _scadenze.GetAttivitaConResiduoDaFatturareAsync(ct);
@@ -92,7 +98,7 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
 
         // Snapshot autorevole delle rate: la fatturabilità (esiste, attiva, non
         // consumata, dell'attività) è garantita dalla presenza in questa mappa.
-        var fatturabili = (await _scadenze.GetFatturabiliByAttivitaAsync(request.IdAttivita, ct))
+        var fatturabili = (await _scadenze.GetFatturabiliByAttivitaAsync(request.IdAttivita, ct: ct))
             .ToDictionary(f => f.IdScadenza);
 
         var aliquote = await _aliquote.GetAliquoteAvvisoAsync(ct);
@@ -194,6 +200,13 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
         var avviso = await _repo.GetByIdAsync(idAvviso, ct);
         if (avviso is null || !avviso.IsAttivo) return; // idempotente
 
+        // Un avviso già fatturato non è annullabile: si orfanerebbe la fattura e si
+        // sbloccherebbero rate che risultano su una fattura. Prima si annulla la fattura.
+        if (avviso.IsFatturato)
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.AvvisoGiaFatturato,
+                "L'avviso è già stato fatturato: annulla prima la fattura per poterlo eliminare.");
+
         await _repo.AnnullaAsync(idAvviso, ct);
 
         try
@@ -225,6 +238,16 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
                 "La data dell'avviso è obbligatoria.");
 
         var prima = await _repo.GetByIdAsync(avviso.IdAvviso, ct);
+        if (prima is null || !prima.IsAttivo)
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.AvvisoNonTrovato,
+                "L'avviso non esiste più o è stato annullato.");
+        // Un avviso fatturato è congelato: la fattura legge live testata/righe/snapshot.
+        if (prima.IsFatturato)
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.AvvisoGiaFatturato,
+                "L'avviso è già stato fatturato: annulla prima la fattura per modificarlo.");
+
         await _repo.UpdateAsync(avviso, ct);
 
         try
@@ -233,6 +256,120 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
                 "AvvisoFattura", avviso.IdAvviso,
                 DescrizioneAudit(avviso),
                 prima is not null ? AuditDettaglio.Diff(prima, avviso) : null,
+                cancellationToken: ct);
+        }
+        catch { /* audit best-effort */ }
+    }
+
+    // -----------------------------------------------------------------------
+    // Modifica dettagli (righe) di un avviso esistente (atomica)
+    // -----------------------------------------------------------------------
+
+    /// <inheritdoc/>
+    public async Task AggiornaDettagliAsync(
+        Guid idAvviso,
+        IReadOnlyList<ModificaRigaAvvisoInput> righe,
+        IReadOnlyList<Guid> idSpeseSelezionate,
+        CancellationToken ct = default)
+    {
+        var avviso = await _repo.GetByIdAsync(idAvviso, ct);
+        if (avviso is null || !avviso.IsAttivo)
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.AvvisoNonTrovato,
+                "L'avviso non esiste più o è stato annullato.");
+        if (avviso.IsFatturato)
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.AvvisoGiaFatturato,
+                "L'avviso è già stato fatturato: annulla prima la fattura per modificarlo.");
+
+        // Fonti autorevoli per le righe reali:
+        //   • rate MANTENUTE → riga corrente dell'avviso (tipo/importo/dettaglio);
+        //   • rate AGGIUNTE  → read-model fatturabili dell'attività, escludendo questo
+        //     avviso (le sue rate sono nella bozza, non nel pool disponibile).
+        var correnti = (await _repo.GetRigheByAvvisoAsync(idAvviso, ct))
+            .Where(r => !r.IsDescrittiva && r.IdScadenza is not null)
+            .ToDictionary(r => r.IdScadenza!.Value);
+        var fatturabili = (await _scadenze.GetFatturabiliByAttivitaAsync(avviso.IdAttivita, avviso.IdAvviso, ct))
+            .ToDictionary(f => f.IdScadenza);
+
+        var nuove  = new List<AvvisoFatturaRiga>();
+        var ordine = 1;
+        foreach (var input in righe)
+        {
+            if (input.IdScadenza is { } idScad)
+            {
+                if (correnti.TryGetValue(idScad, out var orig))
+                {
+                    nuove.Add(new AvvisoFatturaRiga
+                    {
+                        IdRiga              = Guid.CreateVersion7(),
+                        IdAvviso            = idAvviso,
+                        Ordine              = ordine++,
+                        IdAttivitaDettaglio = orig.IdAttivitaDettaglio,
+                        IdScadenza          = orig.IdScadenza,
+                        Tipo                = orig.Tipo,
+                        // Importo e tipo restano autorevoli; la descrizione è editabile.
+                        Descrizione         = string.IsNullOrWhiteSpace(input.Descrizione) ? orig.Descrizione : input.Descrizione.Trim(),
+                        Importo             = orig.Importo,
+                        IsDescrittiva       = false,
+                    });
+                }
+                else if (fatturabili.TryGetValue(idScad, out var f))
+                {
+                    nuove.Add(new AvvisoFatturaRiga
+                    {
+                        IdRiga              = Guid.CreateVersion7(),
+                        IdAvviso            = idAvviso,
+                        Ordine              = ordine++,
+                        IdAttivitaDettaglio = f.IdAttivitaDettaglio,
+                        IdScadenza          = f.IdScadenza,
+                        Tipo                = f.TipoDettaglioDescrizione,
+                        Descrizione         = string.IsNullOrWhiteSpace(input.Descrizione) ? f.DescrizioneDettaglio : input.Descrizione.Trim(),
+                        Importo             = f.Importo,
+                        IsDescrittiva       = false,
+                    });
+                }
+                else
+                {
+                    throw new AvvisoFatturaInvalidaException(
+                        AvvisoFatturaMotivoInvalido.ScadenzaNonFatturabile,
+                        "Una rata selezionata non è più disponibile: ricarica l'elenco delle scadenze.");
+                }
+            }
+            else
+            {
+                nuove.Add(new AvvisoFatturaRiga
+                {
+                    IdRiga        = Guid.CreateVersion7(),
+                    IdAvviso      = idAvviso,
+                    Ordine        = ordine++,
+                    Descrizione   = input.Descrizione?.Trim() ?? string.Empty,
+                    IsDescrittiva = true,
+                });
+            }
+        }
+
+        // Un avviso deve avere contenuto reale: almeno una rata OPPURE una spesa
+        // (stessa regola dell'emissione: è ammesso l'avviso di sole spese art. 15).
+        var realiNuove = nuove.Count(r => !r.IsDescrittiva);
+        if (realiNuove == 0 && idSpeseSelezionate.Count == 0)
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.NessunaScadenzaSelezionata,
+                "L'avviso deve avere almeno una rata o una spesa. Per svuotarlo del tutto, annullalo.");
+
+        await _repo.AggiornaRigheAsync(idAvviso, nuove, idSpeseSelezionate, ct);
+
+        try
+        {
+            await _audit.RegistraModificaAsync(
+                "AvvisoFattura", idAvviso,
+                DescrizioneAudit(avviso),
+                AuditDettaglio.Snapshot(new
+                {
+                    RigheReali       = realiNuove,
+                    RigheDescrittive = nuove.Count - realiNuove,
+                    Spese            = idSpeseSelezionate.Count,
+                }),
                 cancellationToken: ct);
         }
         catch { /* audit best-effort */ }

@@ -46,6 +46,10 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         public bool     IsAttivo                 { get; init; }
         public decimal  TotaleRighe              { get; init; }
         public decimal  TotaleSpese              { get; init; }
+        public Guid?    IdFattura                { get; init; }
+        public int?     NumeroFattura            { get; init; }
+        public int?     AnnoFattura              { get; init; }
+        public DateTime? DataFattura             { get; init; }
     }
 
     private static AvvisoFattura ToEntity(AvvisoFatturaRow r) => new()
@@ -67,6 +71,10 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         IsAttivo                 = r.IsAttivo,
         TotaleRighe              = r.TotaleRighe,
         TotaleSpese              = r.TotaleSpese,
+        IdFattura                = r.IdFattura,
+        NumeroFattura            = r.NumeroFattura,
+        AnnoFattura              = r.AnnoFattura,
+        DataFattura              = r.DataFattura is { } d ? DateOnly.FromDateTime(d) : null,
     };
 
     // DataAvviso: DATE NOT NULL in SQL → DateTime in params.
@@ -86,8 +94,11 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
               WHERE r.IdAvviso = a.IdAvviso) AS TotaleRighe,
             (SELECT COALESCE(SUM(s.Importo), 0)
                FROM fatt.SpeseAnticipate s
-              WHERE s.IdAvviso = a.IdAvviso) AS TotaleSpese
+              WHERE s.IdAvviso = a.IdAvviso) AS TotaleSpese,
+            -- Stato di fatturazione: LEFT JOIN sulla fattura ATTIVA collegata.
+            f.IdFattura, f.NumeroFattura, f.Anno AS AnnoFattura, f.DataFattura
         FROM fatt.AvvisiFattura a
+        LEFT JOIN fatt.Fatture f ON f.IdAvviso = a.IdAvviso AND f.IsAttivo = 1
         """;
 
     private const string SqlSelectByAttivita =
@@ -99,6 +110,24 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         var cmd  = new CommandDefinition(SqlSelectByAttivita, new { IdAttivita = idAttivita }, cancellationToken: ct);
         var rows = await conn.QueryAsync<AvvisoFatturaRow>(cmd);
         return rows.Select(ToEntity).ToList();
+    }
+
+    // Coppie (cliente, attività) con almeno un avviso attivo non ancora fatturato.
+    private const string SqlAttivitaConAvvisiNonFatturati = """
+        SELECT DISTINCT a.IdAnagrafica, a.IdAttivita
+        FROM fatt.AvvisiFattura a
+        WHERE a.IsAttivo = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM fatt.Fatture f
+              WHERE f.IdAvviso = a.IdAvviso AND f.IsAttivo = 1);
+        """;
+
+    public async Task<IReadOnlyList<Models.AttivitaFatturabile>> GetAttivitaConAvvisiNonFatturatiAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlAttivitaConAvvisiNonFatturati, cancellationToken: ct);
+        var rows = await conn.QueryAsync<Models.AttivitaFatturabile>(cmd);
+        return rows.ToList();
     }
 
     private const string SqlSelectById =
@@ -156,6 +185,66 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         var cmd  = new CommandDefinition(SqlSelectRigheByAvviso, new { IdAvviso = idAvviso }, cancellationToken: ct);
         var rows = await conn.QueryAsync<AvvisoFatturaRigaRow>(cmd);
         return rows.Select(ToEntity).ToList();
+    }
+
+    // =====================================================================
+    // Grandezze "Dettagli Attività" per l'avviso selezionato
+    // =====================================================================
+
+    private sealed class DettaglioGrandezzeRow
+    {
+        public Guid      IdAttivitaDettaglio { get; init; }
+        public string?   Tipo                { get; init; }
+        public string    Descrizione         { get; init; } = string.Empty;
+        public DateTime? DataScadenza        { get; init; }
+        public decimal   ImportoDettaglio    { get; init; }
+        public decimal   AltriAvvisi         { get; init; }
+        public decimal   AvvisoAttuale       { get; init; }
+    }
+
+    private const string SqlDettagliGrandezze = """
+        SELECT
+            d.IdAttivitaDettaglio,
+            td.TipoDettaglioAttivita AS Tipo,
+            d.DescrizioneDettaglio   AS Descrizione,
+            d.Importo                AS ImportoDettaglio,
+            (SELECT MIN(sp.DataScadenza)
+               FROM fatt.SchedulazionePagamenti sp
+               JOIN fatt.AvvisoFatturaRighe rr ON rr.IdRiga = sp.IdAvvisoRiga
+              WHERE rr.IdAvviso = @IdAvviso
+                AND sp.IdAttivitaDettaglio = d.IdAttivitaDettaglio) AS DataScadenza,
+            (SELECT COALESCE(SUM(r2.Importo), 0)
+               FROM fatt.AvvisoFatturaRighe r2
+               JOIN fatt.AvvisiFattura a2 ON a2.IdAvviso = r2.IdAvviso AND a2.IsAttivo = 1
+              WHERE r2.IdAttivitaDettaglio = d.IdAttivitaDettaglio
+                AND r2.IdAvviso <> @IdAvviso) AS AltriAvvisi,
+            (SELECT COALESCE(SUM(r3.Importo), 0)
+               FROM fatt.AvvisoFatturaRighe r3
+              WHERE r3.IdAttivitaDettaglio = d.IdAttivitaDettaglio
+                AND r3.IdAvviso = @IdAvviso) AS AvvisoAttuale
+        FROM fatt.AttivitaDettaglio d
+        LEFT JOIN fatt.TipiDettaglioAttivita td
+               ON td.IdTipoDettaglioAttivita = d.IdTipoDettaglioAttivita
+        WHERE d.IdAttivitaDettaglio IN (
+            SELECT DISTINCT r.IdAttivitaDettaglio
+            FROM fatt.AvvisoFatturaRighe r
+            WHERE r.IdAvviso = @IdAvviso AND r.IdAttivitaDettaglio IS NOT NULL)
+        ORDER BY d.Ordine ASC;
+        """;
+
+    public async Task<IReadOnlyList<Models.DettaglioAvvisoGrandezze>> GetDettagliGrandezzeByAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlDettagliGrandezze, new { IdAvviso = idAvviso }, cancellationToken: ct);
+        var rows = await conn.QueryAsync<DettaglioGrandezzeRow>(cmd);
+        return rows.Select(r => new Models.DettaglioAvvisoGrandezze(
+            IdAttivitaDettaglio: r.IdAttivitaDettaglio,
+            Tipo:                r.Tipo,
+            Descrizione:         r.Descrizione,
+            DataScadenza:        r.DataScadenza is { } d ? DateOnly.FromDateTime(d) : null,
+            ImportoDettaglio:    r.ImportoDettaglio,
+            AltriAvvisi:         r.AltriAvvisi,
+            AvvisoAttuale:       r.AvvisoAttuale)).ToList();
     }
 
     // =====================================================================
@@ -312,6 +401,9 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
     // Update testata (single-table, snapshot fiscali immutabili)
     // =====================================================================
 
+    // IVA aggiornabile in modifica (il selettore Codice IVA resta disponibile);
+    // AliquotaCnpaia/AliquotaRitenuta/ApplicaRitenuta NON sono qui: restano snapshot
+    // congelati all'emissione (dipendono da aliquote di sistema e sostituto d'imposta).
     private const string SqlUpdate = """
         UPDATE fatt.AvvisiFattura SET
             DataAvviso               = @DataAvviso,
@@ -320,6 +412,7 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
             NotaTestata              = @NotaTestata,
             IdCodicePagamento        = @IdCodicePagamento,
             IdBancaAppoggio          = @IdBancaAppoggio,
+            AliquotaIva              = @AliquotaIva,
             DescrizioneSpeseInAvviso = @DescrizioneSpeseInAvviso
         WHERE IdAvviso = @IdAvviso;
         """;
@@ -329,6 +422,72 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
         var cmd = new CommandDefinition(SqlUpdate, ToParams(avviso), cancellationToken: ct);
         await conn.ExecuteAsync(cmd);
+    }
+
+    // =====================================================================
+    // Aggregate write — modifica dettagli (righe) di un avviso esistente
+    // Stessa meccanica di lock dell'emissione, ma "replace-all": si sbloccano
+    // le rate correnti, si eliminano le righe, si reinseriscono quelle nuove e
+    // si ri-bloccano le rate delle righe reali sopravvissute.
+    // =====================================================================
+
+    public async Task AggiornaRigheAsync(
+        Guid idAvviso,
+        IReadOnlyList<AvvisoFatturaRiga> nuoveRighe,
+        IReadOnlyList<Guid> idSpeseCollegate,
+        CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        using var tx   = conn.BeginTransaction();
+        try
+        {
+            var p = new { IdAvviso = idAvviso };
+
+            // 1) Sblocca TUTTE le rate correnti dell'avviso (prima del delete: FK).
+            await conn.ExecuteAsync(new CommandDefinition(SqlUnlockScadenze, p, transaction: tx, cancellationToken: ct));
+            // 2) Elimina le vecchie righe (libera l'indice univoco sulle scadenze).
+            await conn.ExecuteAsync(new CommandDefinition(SqlDeleteRighe, p, transaction: tx, cancellationToken: ct));
+            // 3) Reinserisce le nuove righe (Ordine/IdRiga già assegnati dal manager).
+            if (nuoveRighe.Count > 0)
+                await conn.ExecuteAsync(new CommandDefinition(
+                    SqlInsertRiga, nuoveRighe.Select(ToRigaParams), transaction: tx, cancellationToken: ct));
+
+            // 4) Ri-blocca le rate delle righe reali sopravvissute.
+            var lockParams = nuoveRighe
+                .Where(r => r.IdScadenza.HasValue)
+                .Select(r => new { IdAvvisoRiga = r.IdRiga, IdScadenza = r.IdScadenza!.Value })
+                .ToList();
+            if (lockParams.Count > 0)
+                await conn.ExecuteAsync(new CommandDefinition(
+                    SqlLockScadenza, lockParams, transaction: tx, cancellationToken: ct));
+
+            // 5) Riconcilia le spese: scollega tutte quelle dell'avviso, poi ricollega
+            //    le selezionate (SqlLinkSpesa aggancia solo le spese ancora libere).
+            await conn.ExecuteAsync(new CommandDefinition(SqlUnlinkSpese, p, transaction: tx, cancellationToken: ct));
+            if (idSpeseCollegate.Count > 0)
+            {
+                var spesaParams = idSpeseCollegate
+                    .Select(id => new { IdAvviso = idAvviso, IdSpesaAnticipata = id })
+                    .ToList();
+                await conn.ExecuteAsync(new CommandDefinition(
+                    SqlLinkSpesa, spesaParams, transaction: tx, cancellationToken: ct));
+            }
+
+            tx.Commit();
+        }
+        // Una rata risulta consumata da un altro avviso: indice univoco → dominio.
+        catch (SqlException ex) when (ex.Number is 2627 or 2601)
+        {
+            tx.Rollback();
+            throw new AvvisoFatturaInvalidaException(
+                AvvisoFatturaMotivoInvalido.ScadenzaGiaInAvviso,
+                "Una delle rate dell'avviso risulta ora in un altro avviso. Ricarica la maschera e riprova.");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 
     // =====================================================================

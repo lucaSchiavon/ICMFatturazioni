@@ -18,6 +18,20 @@ namespace ICMFatturazioni.Web.Models;
 public sealed record RigaAvvisoInput(Guid? IdScadenza, string? Descrizione = null);
 
 /// <summary>
+/// Una riga durante la <b>modifica dettagli</b> di un avviso esistente (maschera
+/// Emissione Fatture). Rispetto a <see cref="RigaAvvisoInput"/>, la
+/// <see cref="Descrizione"/> è editabile <b>anche per le righe reali</b> (è lo
+/// snapshot "Descrizione in Avviso" che finirà sulla fattura). Tipo, importo e
+/// dettaglio delle righe reali restano autorevoli: il Manager li risolve dalla
+/// riga originale (identificata da <see cref="IdScadenza"/>), non dall'input.
+/// L'ordine nella lista determina il nuovo <c>Ordine</c>; le rate omesse tornano
+/// fatturabili. Non è possibile aggiungere NUOVE rate da qui (solo tenere/togliere).
+/// </summary>
+/// <param name="IdScadenza">Rata della riga reale; <c>null</c> per una riga descrittiva.</param>
+/// <param name="Descrizione">Testo mostrato in avviso/fattura (editabile).</param>
+public sealed record ModificaRigaAvvisoInput(Guid? IdScadenza, string Descrizione);
+
+/// <summary>
 /// Comando di emissione di un avviso di fattura, prodotto dalla UI (fase di bozza)
 /// e passato al Manager. Il Manager risolve gli snapshot fiscali/pagamento e
 /// costruisce righe e testata; l'<paramref name="AliquotaIva"/> è già risolta a

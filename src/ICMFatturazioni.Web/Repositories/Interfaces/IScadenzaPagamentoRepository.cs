@@ -19,7 +19,12 @@ public interface IScadenzaPagamentoRepository
     /// avvisi attivi. Radicata sulla scadenza (join di arricchimento read-only).
     /// Ordinata per <c>Ordine</c> del dettaglio, poi <c>DataScadenza</c>.
     /// </summary>
-    Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
+    /// <param name="idAvvisoEscluso">
+    /// Se valorizzato, esclude quell'avviso dal calcolo di
+    /// <c>GiaAllocatoAvvisiPrecedenti</c>: serve in <b>modifica</b> di un avviso, dove
+    /// le sue rate sono già ricaricate nella bozza e non vanno contate una seconda volta.
+    /// </param>
+    Task<IReadOnlyList<ScadenzaFatturabile>> GetFatturabiliByAttivitaAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default);
 
     /// <summary>
     /// Restituisce le attività (con il rispettivo cliente) che hanno ancora

@@ -23,11 +23,20 @@ public enum AvvisoFatturaMotivoInvalido
     /// <summary>Il cliente (anagrafica) indicato non esiste.</summary>
     AnagraficaNonTrovata,
 
+    /// <summary>L'avviso indicato non esiste o è stato annullato.</summary>
+    AvvisoNonTrovato,
+
     /// <summary>
     /// Una rata selezionata non è (più) fatturabile: non esiste, è disattivata,
     /// appartiene a un'altra attività o è già stata consumata. Ricaricare l'elenco.
     /// </summary>
     ScadenzaNonFatturabile,
+
+    /// <summary>
+    /// L'avviso è già stato fatturato: testata e dettagli sono congelati (la fattura
+    /// legge live dall'avviso). Per modificarlo occorre prima annullare la fattura.
+    /// </summary>
+    AvvisoGiaFatturato,
 }
 
 /// <summary>

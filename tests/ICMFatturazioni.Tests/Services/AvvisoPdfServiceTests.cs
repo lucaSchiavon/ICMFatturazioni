@@ -85,6 +85,32 @@ public class AvvisoPdfServiceTests
         AssertPdfValido(pdf);
     }
 
+    [Fact]
+    public void Render_ModalitaFattura_ProducePdf()
+    {
+        // Documento reso come FATTURA: copre la barra "FATTURA" (numero/data fattura),
+        // il banner "non valido ai fini fiscali" e il footer "Riferimento Avviso del…".
+        var testata = CostruisciTestata(applicaRitenuta: true);
+        var righe = new List<AvvisoFatturaRiga>
+        {
+            new() { IdRiga = Guid.NewGuid(), IdAvviso = testata.IdAvviso, Ordine = 1,
+                    Tipo = "det1", Descrizione = "det1", Importo = 1000m, IsDescrittiva = false },
+        };
+        var fattura = new Fattura
+        {
+            IdFattura = Guid.NewGuid(), IdAvviso = testata.IdAvviso,
+            NumeroFattura = 37, Anno = 2026, DataFattura = new DateOnly(2026, 7, 30), IsAttivo = true,
+        };
+        var data = new AvvisoPdfData(
+            CostruisciStudio(), CostruisciCliente(), CostruisciAttivita(), testata, righe,
+            "A VISTA", "Banca Esempio - IBAN: IT00X0000000000000000000000",
+            Calcola(testata, 1000m, 300m), fattura);
+
+        var pdf = new AvvisoPdfDocument(data).Render();
+
+        AssertPdfValido(pdf);
+    }
+
     // -------------------------------------------------------------------------
     // Servizio: guardie e happy path
     // -------------------------------------------------------------------------
@@ -241,17 +267,14 @@ public class AvvisoPdfServiceTests
     }
 
     private static AvvisoPdfService CostruisciService(FakeAvvisoManager avvisi, bool azienda = true)
-        => new(
-            avvisi,
-            new FakeAnagraficaManager(CostruisciCliente()),
-            new FakeAttivitaManager(CostruisciAttivita()),
-            new FakeCodicePagamentoManager(),
-            new FakeBancaAppoggioManager(),
-            new FakeSpesaAnticipataManager(),
-            new FakeAziendaManager(azienda ? CostruisciStudio() : null));
+        => new(CostruisciBuilder(avvisi, azienda ? CostruisciStudio() : null));
 
     // Overload per il test "azienda nulla".
     private static AvvisoPdfService CostruisciService(FakeAvvisoManager avvisi, Azienda? azienda)
+        => new(CostruisciBuilder(avvisi, azienda));
+
+    // Builder condiviso: assembla i dati dai fake dei 7 manager.
+    private static AvvisoPdfDataBuilder CostruisciBuilder(FakeAvvisoManager avvisi, Azienda? azienda)
         => new(
             avvisi,
             new FakeAnagraficaManager(CostruisciCliente()),
@@ -272,16 +295,20 @@ public class AvvisoPdfServiceTests
         public Task<AvvisoDettaglio?> GetDettaglioAsync(Guid idAvviso, CancellationToken ct = default)
             => Task.FromResult(Dettaglio);
 
+        public Task<IReadOnlyList<DettaglioAvvisoGrandezze>> DettagliGrandezzeAsync(Guid idAvviso, CancellationToken ct = default) => throw new NotImplementedException();
+
         public CalcoloFiscaleRisultato Calcola(AvvisoFattura avviso, decimal imponibile, decimal speseArt15)
             => AvvisoPdfServiceTests.Calcola(avviso, imponibile, speseArt15);
 
         public Task<IReadOnlyList<AvvisoFattura>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken ct = default) => throw new NotImplementedException();
-        public Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaConAvvisiNonFatturatiAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaFatturabiliAsync(CancellationToken ct = default) => throw new NotImplementedException();
         public Task<IReadOnlyList<DettaglioDaSchedulare>> DettagliDaSchedulareAsync(Guid idAttivita, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<Guid> EmettiAsync(EmissioneAvvisoRequest request, CancellationToken ct = default) => throw new NotImplementedException();
         public Task AnnullaAsync(Guid idAvviso, CancellationToken ct = default) => throw new NotImplementedException();
         public Task AggiornaTestataAsync(AvvisoFattura avviso, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task AggiornaDettagliAsync(Guid idAvviso, IReadOnlyList<ModificaRigaAvvisoInput> righe, IReadOnlyList<Guid> idSpeseSelezionate, CancellationToken ct = default) => throw new NotImplementedException();
     }
 
     private sealed class FakeAnagraficaManager : IAnagraficaManager

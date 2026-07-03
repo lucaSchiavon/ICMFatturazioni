@@ -4,9 +4,9 @@ using ICMFatturazioni.Web.Managers.Interfaces;
 namespace ICMFatturazioni.Web.Services;
 
 /// <summary>
-/// Dati pre-risolti che alimentano 1:1 il rendering del PDF di avviso. Immutabile:
-/// una volta costruito, <see cref="AvvisoPdfDocument"/> lo trasforma in byte senza
-/// alcun accesso a Manager/Repository/HTTP (rendering puro e testabile).
+/// Dati pre-risolti che alimentano 1:1 il rendering del PDF (avviso o fattura).
+/// Immutabile: una volta costruito, <see cref="AvvisoPdfDocument"/> lo trasforma in
+/// byte senza alcun accesso a Manager/Repository/HTTP (rendering puro e testabile).
 /// </summary>
 internal sealed record AvvisoPdfData(
     Azienda Studio,
@@ -16,16 +16,21 @@ internal sealed record AvvisoPdfData(
     IReadOnlyList<AvvisoFatturaRiga> Righe,
     string? DescrizionePagamento,
     string? DescrizioneBanca,
-    CalcoloFiscaleRisultato Calcolo);
+    CalcoloFiscaleRisultato Calcolo,
+    // Se valorizzato, il documento è la FATTURA nata da questo avviso (numero/data
+    // fattura in barra titolo, banner "non valido ai fini fiscali", riferimento
+    // avviso nel footer). Null → documento = avviso di parcella (comportamento base).
+    Fattura? Fattura = null);
 
 /// <summary>
-/// Implementazione di <see cref="IAvvisoPdfService"/>. Orchestrazione asincrona:
-/// legge testata + righe, risolve gli snapshot di riferimento (cliente, azienda,
-/// attività, pagamento, banca), ricalcola la cascata fiscale dagli snapshot
-/// congelati sull'avviso e delega il layout a <see cref="AvvisoPdfDocument"/>.
-/// La UI non chiama mai i Repository: qui si passa solo dai Manager.
+/// Costruisce l'<see cref="AvvisoPdfData"/> a partire dall'Id di un avviso: legge
+/// testata + righe, risolve gli snapshot di riferimento (cliente, azienda, attività,
+/// pagamento, banca), ricalcola la cascata fiscale dagli snapshot congelati e (per la
+/// fattura) allega l'entità <see cref="Fattura"/>. È il punto UNICO di assemblaggio
+/// dati, condiviso da <see cref="AvvisoPdfService"/> e <c>FatturaPdfService</c>: la
+/// UI non chiama mai i Repository, qui si passa solo dai Manager.
 /// </summary>
-public sealed class AvvisoPdfService : IAvvisoPdfService
+internal sealed class AvvisoPdfDataBuilder
 {
     private readonly IAvvisoFatturaManager   _avvisi;
     private readonly IAnagraficaManager       _anagrafiche;
@@ -35,7 +40,7 @@ public sealed class AvvisoPdfService : IAvvisoPdfService
     private readonly ISpesaAnticipataManager  _spese;
     private readonly IAziendaManager          _azienda;
 
-    public AvvisoPdfService(
+    public AvvisoPdfDataBuilder(
         IAvvisoFatturaManager avvisi,
         IAnagraficaManager anagrafiche,
         IAttivitaManager attivita,
@@ -53,8 +58,13 @@ public sealed class AvvisoPdfService : IAvvisoPdfService
         _azienda     = azienda;
     }
 
-    /// <inheritdoc/>
-    public async Task<byte[]> GeneraAsync(Guid idAvviso, CancellationToken ct = default)
+    /// <summary>
+    /// Assembla i dati del documento per l'avviso indicato. <paramref name="fattura"/>
+    /// non null → il documento sarà reso come fattura.
+    /// </summary>
+    /// <exception cref="AvvisoPdfNonTrovatoException">Avviso inesistente o annullato.</exception>
+    /// <exception cref="AvvisoPdfDatiMancantiException">Dati azienda/cliente mancanti.</exception>
+    public async Task<AvvisoPdfData> CostruisciAsync(Guid idAvviso, Fattura? fattura, CancellationToken ct = default)
     {
         var dettaglio = await _avvisi.GetDettaglioAsync(idAvviso, ct);
         if (dettaglio is null || !dettaglio.Testata.IsAttivo)
@@ -71,9 +81,9 @@ public sealed class AvvisoPdfService : IAvvisoPdfService
 
         var studio = studioT.Result
             ?? throw new AvvisoPdfDatiMancantiException(
-                "Dati dell'azienda emittente non configurati: impossibile generare l'avviso.");
+                "Dati dell'azienda emittente non configurati: impossibile generare il documento.");
         var cliente = clienteT.Result
-            ?? throw new AvvisoPdfDatiMancantiException("Cliente dell'avviso non trovato.");
+            ?? throw new AvvisoPdfDatiMancantiException("Cliente del documento non trovato.");
 
         // Descrizioni pagamento/banca: snapshot di soli id sulla testata → lookup.
         string? descrizionePagamento = null;
@@ -90,7 +100,7 @@ public sealed class AvvisoPdfService : IAvvisoPdfService
         var speseArt15 = speseT.Result.Sum(s => s.Importo);
         var calcolo    = _avvisi.Calcola(testata, imponibile, speseArt15);
 
-        var data = new AvvisoPdfData(
+        return new AvvisoPdfData(
             Studio:               studio,
             Cliente:              cliente,
             Attivita:             attivT.Result,
@@ -98,11 +108,8 @@ public sealed class AvvisoPdfService : IAvvisoPdfService
             Righe:                dettaglio.Righe,
             DescrizionePagamento: descrizionePagamento,
             DescrizioneBanca:     descrizioneBanca,
-            Calcolo:              calcolo);
-
-        // MigraDoc lavora in modo sincrono: nessun Task.Run (una richiesta, niente
-        // parallelismo da sfruttare), coerente con VerbalePdfService.
-        return new AvvisoPdfDocument(data).Render();
+            Calcolo:              calcolo,
+            Fattura:              fattura);
     }
 
     // "Banca - Agenzia - IBAN: xxx", omettendo le parti mancanti.
@@ -113,5 +120,25 @@ public sealed class AvvisoPdfService : IAvvisoPdfService
         if (!string.IsNullOrWhiteSpace(ba.AgenziaNome)) parti.Add(ba.AgenziaNome!);
         if (!string.IsNullOrWhiteSpace(ba.IBAN))        parti.Add($"IBAN: {ba.IBAN}");
         return string.Join(" - ", parti);
+    }
+}
+
+/// <summary>
+/// Implementazione di <see cref="IAvvisoPdfService"/>. Delega l'assemblaggio dati al
+/// <see cref="AvvisoPdfDataBuilder"/> condiviso e il layout ad <see cref="AvvisoPdfDocument"/>.
+/// MigraDoc lavora in modo sincrono: nessun Task.Run (una richiesta, niente
+/// parallelismo da sfruttare), coerente con VerbalePdfService di ICMVerbali.
+/// </summary>
+public sealed class AvvisoPdfService : IAvvisoPdfService
+{
+    private readonly AvvisoPdfDataBuilder _builder;
+
+    internal AvvisoPdfService(AvvisoPdfDataBuilder builder) => _builder = builder;
+
+    /// <inheritdoc/>
+    public async Task<byte[]> GeneraAsync(Guid idAvviso, CancellationToken ct = default)
+    {
+        var data = await _builder.CostruisciAsync(idAvviso, fattura: null, ct);
+        return new AvvisoPdfDocument(data).Render();
     }
 }

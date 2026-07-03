@@ -91,4 +91,24 @@ public sealed class AvvisoFattura
     /// è un avviso di "sole spese art. 15". Derivato dalle due subquery di elenco.
     /// </summary>
     public bool IsSoloSpese => TotaleRighe <= 0.005m && TotaleSpese > 0.005m;
+
+    // ── Stato di fatturazione (LEFT JOIN su fatt.Fatture attiva) ────────────
+    // Popolati dalle letture per riconoscere gli avvisi già fatturati (che escono
+    // dalla lista "Avvisi non fatturati" e diventano read-only nella maschera
+    // Emissione Fatture). Null = avviso non ancora fatturato.
+
+    /// <summary>Id della fattura attiva collegata, se l'avviso è stato fatturato.</summary>
+    public Guid? IdFattura { get; set; }
+
+    /// <summary>Numero della fattura attiva collegata, se fatturato.</summary>
+    public int? NumeroFattura { get; set; }
+
+    /// <summary>Anno della fattura attiva collegata, se fatturato.</summary>
+    public int? AnnoFattura { get; set; }
+
+    /// <summary>Data della fattura attiva collegata, se fatturato.</summary>
+    public DateOnly? DataFattura { get; set; }
+
+    /// <summary>True se all'avviso è già associata una fattura attiva.</summary>
+    public bool IsFatturato => IdFattura is not null;
 }
