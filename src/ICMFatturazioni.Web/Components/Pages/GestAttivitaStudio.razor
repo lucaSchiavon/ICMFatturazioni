@@ -1135,15 +1135,16 @@
         {
             { x => x.Dettaglio, d },
         };
-        // ESC e click sul backdrop disabilitati: la maschera scadenze si chiude
-        // SOLO dal pulsante Chiudi, che a sua volta compare solo quando le scadenze
-        // ripartiscono l'intero importo del dettaglio (regola di completezza).
+        // La chiusura della maschera scadenze è NON distruttiva: le scadenze sono già
+        // persistite a ogni azione e restano salvate anche se la ripartizione è parziale
+        // (il residuo è gestito a valle in fase di avviso). Quindi ESC e click sul backdrop
+        // possono chiudere liberamente senza rischio di perdere il pregresso.
         var o = new DialogOptions
         {
             MaxWidth         = MaxWidth.Medium,
             FullWidth        = true,
-            CloseOnEscapeKey = false,
-            BackdropClick    = false,
+            CloseOnEscapeKey = true,
+            BackdropClick    = true,
         };
         var dialog = await DialogService.ShowAsync<ScadenzeDettaglioDialog>("Scadenze pagamento", p, o);
         await dialog.Result;

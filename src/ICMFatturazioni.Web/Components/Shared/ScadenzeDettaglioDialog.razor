@@ -47,13 +47,15 @@
 
         <MudDivider Class="mb-3" />
 
-        @* Regola: le scadenze devono ripartire l'INTERO importo del dettaglio. *@
+        @* Le scadenze dovrebbero ripartire l'intero importo del dettaglio, ma la
+           ripartizione parziale è ammessa: il residuo resta gestito a valle (avviso). *@
         @if (!Dettaglio.HasFattura && _sbilanciato)
         {
             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
                 Schedula l'intero importo del dettaglio (@Dettaglio.Importo.ToString("N2", _itCulture) €)
-                con una o più scadenze. Finché il totale schedulato non coincide, la maschera non può
-                essere chiusa. Residuo da schedulare: <strong>@_residuo.ToString("N2", _itCulture) €</strong>.
+                con una o più scadenze. Residuo da schedulare:
+                <strong>@_residuo.ToString("N2", _itCulture) €</strong>.
+                Puoi comunque chiudere: le scadenze già inserite <strong>restano salvate</strong>.
             </MudAlert>
         }
 
@@ -193,46 +195,19 @@
         }
     </DialogContent>
     <DialogActions>
-        @* Chiusura "pulita" (Chiudi) solo quando l'importo è interamente schedulato
-           oppure la riga è in sola lettura. Altrimenti l'unica uscita è "Esci senza
-           salvare", che elimina le scadenze incomplete: ESC e click sul backdrop
-           sono disabilitati a monte (DialogOptions in GestAttivitaStudio) così
-           l'uscita passa sempre da qui e la ripartizione parziale non persiste. *@
-        @if (Dettaglio.HasFattura || _bilanciato)
-        {
-            <MudButton OnClick="Chiudi" Variant="Variant.Text">Chiudi</MudButton>
-        }
-        else if (_confermaUscita)
-        {
-            <div class="d-flex align-center flex-wrap gap-2">
-                <MudText Typo="Typo.caption" Color="Color.Error" Class="mr-2 my-2">
-                    Le scadenze di questo dettaglio (@_totaleScadenzato.ToString("N2", _itCulture) €)
-                    non verranno salvate e saranno eliminate. Confermi?
-                </MudText>
-                <MudButton Size="Size.Small" Variant="Variant.Text"
-                           Disabled="_salvataggio"
-                           OnClick="@(() => _confermaUscita = false)">
-                    Annulla
-                </MudButton>
-                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error"
-                           StartIcon="@Icons.Material.Filled.DeleteForever"
-                           Disabled="_salvataggio"
-                           OnClick="EsciSenzaSalvareAsync">
-                    Esci ed elimina
-                </MudButton>
-            </div>
-        }
-        else
+        @* Chiusura sempre NON distruttiva: le scadenze sono già persistite a ogni azione
+           e restano salvate anche se la ripartizione è parziale. Una somma < importo del
+           dettaglio è uno stato ammesso (il residuo è gestito a valle in fase di avviso):
+           in uscita non si cancella nulla, così non si perde il pregresso. *@
+        @if (!Dettaglio.HasFattura && _sbilanciato)
         {
             <MudText Typo="Typo.caption" Color="Color.Warning" Class="mr-2 my-2">
-                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" />
-                Schedula l'intero importo per chiudere — mancano @_residuo.ToString("N2", _itCulture) €.
+                <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" />
+                Dettaglio parzialmente schedulato — residuo @_residuo.ToString("N2", _itCulture) €.
+                Le scadenze restano salvate.
             </MudText>
-            <MudButton Variant="Variant.Text"
-                       OnClick="@(() => _confermaUscita = true)">
-                Esci senza salvare
-            </MudButton>
         }
+        <MudButton OnClick="Chiudi" Variant="Variant.Text">Chiudi</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -256,9 +231,6 @@
     private string    _fNota = string.Empty;
 
     private ScadenzaPagamento? _scadenzaInModifica;
-    // True quando l'utente ha chiesto di uscire da una ripartizione incompleta e
-    // si attende la conferma dell'eliminazione delle scadenze.
-    private bool _confermaUscita;
 
     private decimal _totaleScadenzato => _scadenze.Sum(s => s.Importo);
     private decimal _residuo          => Dettaglio.Importo - _totaleScadenzato;
@@ -403,34 +375,4 @@
     }
 
     private void Chiudi() => MudDialog.Close();
-
-    /// <summary>
-    /// Uscita da una ripartizione incompleta: una somma di scadenze inferiore
-    /// all'importo del dettaglio non è uno stato valido e non deve persistere.
-    /// Si eliminano (soft-delete) tutte le scadenze attive del dettaglio, che torna
-    /// "da schedulare", e si chiude la maschera.
-    /// </summary>
-    private async Task EsciSenzaSalvareAsync()
-    {
-        _salvataggio = true;
-        try
-        {
-            // Non si toccano le rate già evase da un avviso (congelate): si eliminano
-            // solo le scadenze non ancora messe in avviso.
-            foreach (var s in _scadenze.Where(s => !s.IsEvasa))
-                await ScadenzaPagamentoManager.EliminaAsync(s.IdScadenza);
-
-            Snackbar.Add("Scadenze non salvate: il dettaglio resta da schedulare.", Severity.Info);
-        }
-        catch (Exception)
-        {
-            Snackbar.Add("Errore durante l'annullamento delle scadenze.", Severity.Error);
-        }
-        finally
-        {
-            _salvataggio = false;
-        }
-
-        MudDialog.Close();
-    }
 }
