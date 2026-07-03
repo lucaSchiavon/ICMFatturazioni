@@ -45,6 +45,7 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         public string?  DescrizioneSpeseInAvviso { get; init; }
         public bool     IsAttivo                 { get; init; }
         public decimal  TotaleRighe              { get; init; }
+        public decimal  TotaleSpese              { get; init; }
     }
 
     private static AvvisoFattura ToEntity(AvvisoFatturaRow r) => new()
@@ -65,12 +66,14 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
         DescrizioneSpeseInAvviso = r.DescrizioneSpeseInAvviso,
         IsAttivo                 = r.IsAttivo,
         TotaleRighe              = r.TotaleRighe,
+        TotaleSpese              = r.TotaleSpese,
     };
 
     // DataAvviso: DATE NOT NULL in SQL → DateTime in params.
     private static DateTime ToSqlDate(DateOnly d) => d.ToDateTime(TimeOnly.MinValue);
 
-    // TotaleRighe: subquery di convenienza (somma importi righe dell'avviso).
+    // TotaleRighe / TotaleSpese: subquery di convenienza (somma importi righe e somma
+    // spese anticipate collegate). Servono a riconoscere gli avvisi di "sole spese".
     private const string SqlSelectBase = """
         SELECT
             a.IdAvviso, a.IdAttivita, a.IdAnagrafica, a.DataAvviso,
@@ -80,7 +83,10 @@ internal sealed class AvvisoFatturaRepository : IAvvisoFatturaRepository
             a.DescrizioneSpeseInAvviso, a.IsAttivo,
             (SELECT COALESCE(SUM(r.Importo), 0)
                FROM fatt.AvvisoFatturaRighe r
-              WHERE r.IdAvviso = a.IdAvviso) AS TotaleRighe
+              WHERE r.IdAvviso = a.IdAvviso) AS TotaleRighe,
+            (SELECT COALESCE(SUM(s.Importo), 0)
+               FROM fatt.SpeseAnticipate s
+              WHERE s.IdAvviso = a.IdAvviso) AS TotaleSpese
         FROM fatt.AvvisiFattura a
         """;
 

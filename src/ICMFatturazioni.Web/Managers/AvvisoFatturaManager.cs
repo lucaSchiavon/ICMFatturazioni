@@ -77,10 +77,13 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
                 AvvisoFatturaMotivoInvalido.DataObbligatoria,
                 "La data dell'avviso è obbligatoria.");
 
-        if (!request.Righe.Any(r => r.IdScadenza is not null))
+        // Un avviso deve avere contenuto reale, ma non necessariamente delle rate:
+        // è ammesso l'avviso con SOLE spese anticipate (art. 15) da riaddebitare.
+        // Serve quindi almeno una rata da fatturare OPPURE almeno una spesa allegata.
+        if (!request.Righe.Any(r => r.IdScadenza is not null) && request.IdSpeseSelezionate.Count == 0)
             throw new AvvisoFatturaInvalidaException(
                 AvvisoFatturaMotivoInvalido.NessunaScadenzaSelezionata,
-                "Seleziona almeno una rata da fatturare.");
+                "Seleziona almeno una rata da fatturare o una spesa da riaddebitare.");
 
         var anagrafica = await _anagrafiche.GetByIdAsync(request.IdAnagrafica, ct)
             ?? throw new AvvisoFatturaInvalidaException(

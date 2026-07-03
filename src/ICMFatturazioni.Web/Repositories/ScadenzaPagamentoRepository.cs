@@ -146,10 +146,13 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
 
     // -----------------------------------------------------------------------
     // Attività con residuo da fatturare (per i filtri della maschera Avvisi).
-    // Criterio basato sull'IMPORTO, non sull'esistenza di scadenze: un'attività
-    // resta visibile finché esiste un dettaglio il cui importo eccede quanto già
-    // allocato in avvisi attivi. Così un dettaglio senza scadenze (allocato 0 <
-    // importo) NON fa sparire l'attività: il "buco" resta visibile.
+    // Un'attività è fatturabile in due casi (UNION):
+    //   1) Ha un dettaglio il cui importo eccede quanto già allocato in avvisi attivi
+    //      (criterio basato sull'IMPORTO, non sull'esistenza di scadenze: un dettaglio
+    //      senza scadenze — allocato 0 < importo — NON fa sparire l'attività).
+    //   2) Ha almeno una spesa anticipata attiva non ancora messa in avviso: così è
+    //      possibile emettere un avviso con SOLE spese art. 15, anche se le scadenze
+    //      sono già tutte fatturate (o non ce ne sono).
     // Tolleranza 0,005 per assorbire eventuale rumore di arrotondamento.
     // -----------------------------------------------------------------------
     private const string SqlSelectAttivitaConResiduo = """
@@ -162,7 +165,14 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
               FROM fatt.AvvisoFatturaRighe r
               JOIN fatt.AvvisiFattura av ON av.IdAvviso = r.IdAvviso AND av.IsAttivo = 1
               WHERE r.IdAttivitaDettaglio = d.IdAttivitaDettaglio
-          ) + 0.005;
+          ) + 0.005
+
+        UNION
+
+        SELECT DISTINCT a.IdAnagrafica, a.IdAttivita
+        FROM fatt.Attivita a
+        JOIN fatt.SpeseAnticipate s ON s.IdAttivita = a.IdAttivita AND s.IsAttivo = 1 AND s.IdAvviso IS NULL
+        WHERE a.IsAttivo = 1;
         """;
 
     public async Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConResiduoDaFatturareAsync(CancellationToken ct = default)

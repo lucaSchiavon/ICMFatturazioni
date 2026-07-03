@@ -206,7 +206,18 @@
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Data">@context.DataAvviso.ToString("dd/MM/yyyy")</MudTd>
-                        <MudTd DataLabel="Oggetto">@(string.IsNullOrWhiteSpace(context.Oggetto) ? "—" : context.Oggetto)</MudTd>
+                        <MudTd DataLabel="Oggetto">
+                            @if (context.IsSoloSpese)
+                            {
+                                @* Avviso di sole spese anticipate (imponibile 0): badge con il totale spese. *@
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled"
+                                         Icon="@Icons.Material.Filled.ReceiptLong" Class="ma-0 mr-1"
+                                         title="Avviso con sole spese anticipate (art. 15)">
+                                    Solo spese @context.TotaleSpese.ToString("N2", _itCulture) €
+                                </MudChip>
+                            }
+                            @(string.IsNullOrWhiteSpace(context.Oggetto) ? "—" : context.Oggetto)
+                        </MudTd>
                         <MudTd DataLabel="Imponibile" Style="text-align:right;font-weight:600;">@context.TotaleRighe.ToString("N2", _itCulture)</MudTd>
                         <MudTd Style="padding:2px 4px;white-space:nowrap;">
                             <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
@@ -589,7 +600,7 @@
                 </MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
                            StartIcon="@Icons.Material.Filled.Check"
-                           Disabled="_emissioneInCorso || !_righeBozza.Any(r => !r.IsDescrittiva)"
+                           Disabled="_emissioneInCorso || !(_righeBozza.Any(r => !r.IsDescrittiva) || _speseSelezionate.Count > 0)"
                            OnClick="TerminaInserimentoAsync">
                     @(_emissioneInCorso ? "Emissione…" : "Termina inserimento")
                 </MudButton>
@@ -967,9 +978,11 @@
     private async Task TerminaInserimentoAsync()
     {
         _erroreEmissione = string.Empty;
-        if (!_righeBozza.Any(r => !r.IsDescrittiva))
+        // Contenuto minimo: almeno una rata reale nelle righe OPPURE almeno una spesa
+        // anticipata selezionata (avviso con sole spese art. 15 ammesso).
+        if (!_righeBozza.Any(r => !r.IsDescrittiva) && _speseSelezionate.Count == 0)
         {
-            _erroreEmissione = "Aggiungi almeno una rata alle righe dell'avviso.";
+            _erroreEmissione = "Aggiungi almeno una rata alle righe dell'avviso, oppure seleziona una spesa da riaddebitare.";
             return;
         }
         if (_speseSelezionate.Count > 0 && string.IsNullOrWhiteSpace(_descrizioneSpese))

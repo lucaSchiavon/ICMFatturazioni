@@ -78,4 +78,17 @@ public sealed class AvvisoFattura
     /// è responsabilità del calcolo (CalcoloFiscaleAvviso).
     /// </summary>
     public decimal TotaleRighe { get; set; }
+
+    /// <summary>
+    /// Somma delle spese anticipate (art. 15) collegate all'avviso. Subquery di
+    /// convenienza per l'elenco: consente di riconoscere e quantificare gli avvisi
+    /// di "sole spese" (dove <see cref="TotaleRighe"/> è 0).
+    /// </summary>
+    public decimal TotaleSpese { get; set; }
+
+    /// <summary>
+    /// True quando l'avviso non ha imponibile da prestazione ma ha spese anticipate:
+    /// è un avviso di "sole spese art. 15". Derivato dalle due subquery di elenco.
+    /// </summary>
+    public bool IsSoloSpese => TotaleRighe <= 0.005m && TotaleSpese > 0.005m;
 }

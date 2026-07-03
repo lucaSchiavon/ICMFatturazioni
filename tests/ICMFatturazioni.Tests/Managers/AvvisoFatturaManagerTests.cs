@@ -280,14 +280,35 @@ public class AvvisoFatturaManagerTests
     // =====================================================================
 
     [Fact]
-    public async Task EmettiAsync_SenzaScadenze_Lancia()
+    public async Task EmettiAsync_SenzaScadenzeNeSpese_Lancia()
     {
         var sut = NewSut();
         var idAnag = await SeedAnagraficaAsync(sut.Anag);
 
+        // Nessuna rata e nessuna spesa: avviso senza contenuto → errore.
         var ex = await Assert.ThrowsAsync<AvvisoFatturaInvalidaException>(
             () => sut.Manager.EmettiAsync(Request(idAnag, Array.Empty<Guid>())));
         Assert.Equal(AvvisoFatturaMotivoInvalido.NessunaScadenzaSelezionata, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task EmettiAsync_SoloSpese_SenzaScadenze_Emette()
+    {
+        var sut = NewSut();
+        var idAnag = await SeedAnagraficaAsync(sut.Anag);
+        var idSpesa = Guid.NewGuid();
+
+        // Nessuna scadenza, ma una spesa anticipata da riaddebitare (art. 15).
+        var id = await sut.Manager.EmettiAsync(
+            Request(idAnag, Array.Empty<Guid>(), spese: new[] { idSpesa }));
+
+        Assert.NotEqual(Guid.Empty, id);
+        var testata = await sut.Repo.GetByIdAsync(id);
+        Assert.NotNull(testata);
+        Assert.True(testata!.IsAttivo);
+        // La spesa è collegata all'avviso e non ci sono righe reali.
+        Assert.Contains(idSpesa, sut.Repo.SpeseCollegate[id]);
+        Assert.Empty(await sut.Repo.GetRigheByAvvisoAsync(id));
     }
 
     [Fact]
