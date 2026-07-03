@@ -49,8 +49,10 @@ internal sealed class FakeAttivitaDettaglioRepository : IAttivitaDettaglioReposi
 
     public Task<int> GetMaxOrdineAsync(Guid idAttivita, CancellationToken ct = default)
     {
+        // Come nel repo reale: MAX su TUTTE le righe (attive e soft-deletate),
+        // perché il vincolo UNIQUE (IdAttivita, Ordine) non è filtrato su IsAttivo.
         var max = _store
-            .Where(d => d.IdAttivita == idAttivita && d.IsAttivo)
+            .Where(d => d.IdAttivita == idAttivita)
             .Select(d => (int?)d.Ordine)
             .Max() ?? 0;
         return Task.FromResult(max);

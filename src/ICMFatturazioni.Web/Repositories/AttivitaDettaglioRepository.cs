@@ -103,10 +103,15 @@ internal sealed class AttivitaDettaglioRepository : IAttivitaDettaglioRepository
         return row is null ? null : ToEntity(row);
     }
 
+    // Il MAX va calcolato su TUTTE le righe dell'attività (attive E soft-deletate):
+    // il vincolo UNIQUE (IdAttivita, Ordine) non è filtrato, quindi anche una riga
+    // con IsAttivo = 0 continua a "occupare" il suo Ordine. Filtrare su IsAttivo = 1
+    // farebbe riusare l'Ordine di una riga cancellata → violazione del vincolo.
+    // I buchi di numerazione tra le righe attive sono innocui (lista ORDER BY Ordine).
     private const string SqlMaxOrdine = """
         SELECT ISNULL(MAX(Ordine), 0)
         FROM fatt.AttivitaDettaglio
-        WHERE IdAttivita = @IdAttivita AND IsAttivo = 1;
+        WHERE IdAttivita = @IdAttivita;
         """;
 
     public async Task<int> GetMaxOrdineAsync(Guid idAttivita, CancellationToken ct = default)

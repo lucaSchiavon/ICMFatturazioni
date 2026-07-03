@@ -63,6 +63,27 @@ public class AttivitaDettaglioManagerTests
         Assert.Equal(3, (await fake.GetByIdAsync(id3))!.Ordine);
     }
 
+    // Regressione: dopo l'eliminazione (soft-delete) di un dettaglio il suo Ordine
+    // resta "occupato" nel vincolo UNIQUE (IdAttivita, Ordine). Il nuovo dettaglio
+    // NON deve riusare quell'Ordine, altrimenti l'INSERT viola il vincolo.
+    [Fact]
+    public async Task CreaAsync_DopoEliminazione_NonRiusaOrdineDellaRigaCancellata()
+    {
+        var fake = new FakeAttivitaDettaglioRepository();
+        var sut  = NewSut(fake);
+
+        var id1 = await sut.CreaAsync(Det(descr: "Prima"));   // Ordine 1
+        var id2 = await sut.CreaAsync(Det(descr: "Seconda"));  // Ordine 2
+        var id3 = await sut.CreaAsync(Det(descr: "Terza"));    // Ordine 3
+
+        await sut.EliminaAsync(id3); // soft-delete: Ordine 3 resta occupato
+
+        var id4 = await sut.CreaAsync(Det(descr: "Quarta"));
+
+        // Deve prendere Ordine 4, non 3 (che è ancora usato dalla riga soft-deletata).
+        Assert.Equal(4, (await fake.GetByIdAsync(id4))!.Ordine);
+    }
+
     [Fact]
     public async Task CreaAsync_RegistraAuditCreazione()
     {
