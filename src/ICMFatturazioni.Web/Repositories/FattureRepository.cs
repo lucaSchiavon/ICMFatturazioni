@@ -2,6 +2,7 @@ using Dapper;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 using Microsoft.Data.SqlClient;
 
@@ -136,5 +137,85 @@ internal sealed class FattureRepository : IFattureRepository
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
         var cmd = new CommandDefinition(SqlAnnulla, new { IdFattura = idFattura }, cancellationToken: ct);
         await conn.ExecuteAsync(cmd);
+    }
+
+    // =====================================================================
+    // Letture per la maschera "Stampe fatture"
+    // =====================================================================
+
+    // DTO Dapper: DataFattura come DateTime (colonna DATE) → convertita in DateOnly.
+    private sealed class FatturaEmessaRow
+    {
+        public Guid     IdFattura               { get; init; }
+        public Guid     IdAvviso                { get; init; }
+        public int      NumeroFattura           { get; init; }
+        public int      Anno                    { get; init; }
+        public DateTime DataFattura             { get; init; }
+        public string   ClienteRagioneSociale   { get; init; } = string.Empty;
+        public string?  TipoAttivitaDescrizione { get; init; }
+        public string   NumeroAttivita          { get; init; } = string.Empty;
+        public string   DescrizioneAttivita     { get; init; } = string.Empty;
+    }
+
+    // Fatture attive di un'attività, arricchite via l'avviso di origine con
+    // cliente/tipo/attività (join sulle viste fatt.Anagrafica e fatt.Attivita).
+    private const string SqlEmesseByAttivita = """
+        SELECT
+            f.IdFattura, f.IdAvviso, f.NumeroFattura, f.Anno, f.DataFattura,
+            an.RagioneSociale AS ClienteRagioneSociale,
+            ta.TipoAttivita   AS TipoAttivitaDescrizione,
+            att.Numero        AS NumeroAttivita,
+            att.Descrizione   AS DescrizioneAttivita
+        FROM fatt.Fatture f
+        JOIN fatt.AvvisiFattura a   ON a.IdAvviso        = f.IdAvviso
+        JOIN fatt.Attivita      att ON att.IdAttivita    = a.IdAttivita
+        LEFT JOIN fatt.Anagrafica   an  ON an.IdAnagrafica  = a.IdAnagrafica
+        LEFT JOIN fatt.TipiAttivita ta  ON ta.IdTipoAttivita = att.IdTipoAttivita
+        WHERE f.IsAttivo = 1 AND a.IdAttivita = @IdAttivita
+        ORDER BY f.Anno DESC, f.NumeroFattura DESC;
+        """;
+
+    public async Task<IReadOnlyList<FatturaEmessa>> GetEmesseByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlEmesseByAttivita, new { IdAttivita = idAttivita }, cancellationToken: ct);
+        var rows = await conn.QueryAsync<FatturaEmessaRow>(cmd);
+        return rows.Select(r => new FatturaEmessa(
+            r.IdFattura, r.IdAvviso, r.NumeroFattura, r.Anno,
+            DateOnly.FromDateTime(r.DataFattura),
+            r.ClienteRagioneSociale, r.TipoAttivitaDescrizione,
+            r.NumeroAttivita, r.DescrizioneAttivita)).ToList();
+    }
+
+    private const string SqlAnniConFatture = """
+        SELECT DISTINCT Anno
+        FROM fatt.Fatture
+        WHERE IsAttivo = 1
+        ORDER BY Anno DESC;
+        """;
+
+    public async Task<IReadOnlyList<int>> GetAnniConFattureAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlAnniConFatture, cancellationToken: ct);
+        var anni = await conn.QueryAsync<int>(cmd);
+        return anni.ToList();
+    }
+
+    // Coppie (cliente, attività) che hanno almeno una fattura attiva: restringe i
+    // selettori della maschera ai soli clienti/attività fatturati.
+    private const string SqlAttivitaConFatture = """
+        SELECT DISTINCT a.IdAnagrafica, a.IdAttivita
+        FROM fatt.Fatture f
+        JOIN fatt.AvvisiFattura a ON a.IdAvviso = f.IdAvviso
+        WHERE f.IsAttivo = 1;
+        """;
+
+    public async Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConFattureAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlAttivitaConFatture, cancellationToken: ct);
+        var rows = await conn.QueryAsync<AttivitaFatturabile>(cmd);
+        return rows.ToList();
     }
 }

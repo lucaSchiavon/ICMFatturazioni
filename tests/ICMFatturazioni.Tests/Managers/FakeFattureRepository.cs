@@ -1,5 +1,6 @@
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Tests.Managers;
@@ -47,6 +48,42 @@ internal sealed class FakeFattureRepository : IFattureRepository
         if (_fatture.TryGetValue(idFattura, out var f))
             _fatture[idFattura] = CloneInattiva(f);
         return Task.CompletedTask;
+    }
+
+    // ── Supporto per le letture della maschera "Stampe fatture" ──────────────
+    // Il fake non ha i join reali: i test mappano avviso→attività/cliente qui, così
+    // le tre letture possono derivare i read-model dalle fatture in memoria.
+    public readonly Dictionary<Guid, Guid> AvvisoToAttivita   = new();
+    public readonly Dictionary<Guid, Guid> AvvisoToAnagrafica = new();
+
+    public Task<IReadOnlyList<FatturaEmessa>> GetEmesseByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+    {
+        var righe = _fatture.Values
+            .Where(f => f.IsAttivo
+                        && AvvisoToAttivita.TryGetValue(f.IdAvviso, out var idAtt)
+                        && idAtt == idAttivita)
+            .OrderByDescending(f => f.Anno).ThenByDescending(f => f.NumeroFattura)
+            .Select(f => new FatturaEmessa(
+                f.IdFattura, f.IdAvviso, f.NumeroFattura, f.Anno, f.DataFattura,
+                "Cliente", "Tipo", "0", "Attività"))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<FatturaEmessa>>(righe);
+    }
+
+    public Task<IReadOnlyList<int>> GetAnniConFattureAsync(CancellationToken ct = default)
+    {
+        var anni = _fatture.Values.Where(f => f.IsAttivo)
+            .Select(f => f.Anno).Distinct().OrderByDescending(a => a).ToList();
+        return Task.FromResult<IReadOnlyList<int>>(anni);
+    }
+
+    public Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConFattureAsync(CancellationToken ct = default)
+    {
+        var coppie = _fatture.Values.Where(f => f.IsAttivo)
+            .Where(f => AvvisoToAttivita.ContainsKey(f.IdAvviso) && AvvisoToAnagrafica.ContainsKey(f.IdAvviso))
+            .Select(f => new AttivitaFatturabile(AvvisoToAnagrafica[f.IdAvviso], AvvisoToAttivita[f.IdAvviso]))
+            .Distinct().ToList();
+        return Task.FromResult<IReadOnlyList<AttivitaFatturabile>>(coppie);
     }
 
     private static Fattura CloneInattiva(Fattura src) => new()

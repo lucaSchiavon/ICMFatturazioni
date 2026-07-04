@@ -1,0 +1,428 @@
+@*
+    Pagina /stampe-fatture — "Gestione - Stampa Fatture" (spec "Stampe fatture.pdf").
+
+    Serve a STAMPARE ed ELIMINARE le fatture già emesse.
+      • FILTRO in alto: stessi tre selettori Access-like delle maschere sorelle
+        (GestAttivitaStudio / AvvisiFattura / SpeseAnticipate): [Anagrafica] [Tipo
+        Attività] [Attività]. L'universo è ristretto ai soli clienti/attività che
+        HANNO almeno una fattura attiva (scelta utente): niente selezioni a vuoto.
+      • Combo "Fatture emesse anno" sopra la griglia: filtra le fatture per anno;
+        contiene tutti gli anni per cui esistono fatture (elenco globale).
+      • GRIGLIA: Numero · Data · Cliente · Tipo · Attività, + icona PDF (apre il PDF
+        di cortesia in nuova scheda) + icona Elimina (annulla la fattura: soft-delete
+        con conferma; l'avviso di origine torna fatturabile/modificabile).
+*@
+
+@page "/stampe-fatture"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Components.Shared
+@using System.Globalization
+
+@inject IFattureManager FattureManager
+@inject IAttivitaManager AttivitaManager
+@inject IAnagraficaManager AnagraficaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Stampe fatture · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Stampe fatture</MudText>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Riga dei due selettori (come il form Access "Stampe fatture"):
+   [Anagrafica] e [Attività]. Qui l'attività NON è filtrata per tipo: la
+   griglia mostra tutte le attività del cliente (con fatture), con il loro
+   Tipo · Numero · Descrizione.
+   ═══════════════════════════════════════════════════════════════════ *@
+<MudGrid Spacing="2" Class="mb-0">
+
+    @* ── Col 1: Anagrafica ──────────────────────────────────────── *@
+    <MudItem xs="12" md="5" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Anagrafica</MudText>
+
+            <MudRadioGroup T="FiltroTipo" Value="_filtroTipo" ValueChanged="OnFiltroTipoChanged" Class="mb-1">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Tutti"   Dense="true" Size="Size.Small">Tutti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Enti"    Dense="true" Size="Size.Small">Enti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Societa" Dense="true" Size="Size.Small">Soc.</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Privati" Dense="true" Size="Size.Small">Privati</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudTextField @bind-Value="_filtroRagioneSociale"
+                          Placeholder="Filtra per ragione sociale…"
+                          Immediate="true" DebounceInterval="150"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Clear"
+                          OnAdornmentClick="@(() => _filtroRagioneSociale = string.Empty)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="mb-2" />
+
+            <div class="icm-sellist mb-3" style="height:240px;">
+                @if (_caricamentoAnagrafica)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AnagraficheFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun cliente con fatture emesse.</div>
+                }
+                else
+                {
+                    @foreach (var a in AnagraficheFiltrate)
+                    {
+                        <div class="icm-sellist-item @(a.IdAnagrafica == _anagraficaSelezionata?.IdAnagrafica ? "selected" : "")"
+                             @onclick="@(() => SelezionaAnagrafica(a))">
+                            <span class="icm-tipo-badge">@a.TipoAnagrafica.ToDbCode()</span>@a.RagioneSociale
+                        </div>
+                    }
+                }
+            </div>
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.People" Ripple="false" Size="Size.Small"
+                       OnClick="@(() => Nav.NavigateTo("/anagrafiche"))">
+                Gestione anagrafiche
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 2: Attività (Tipo · Numero · Descrizione) ──────────── *@
+    <MudItem xs="12" md="7" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Attività</MudText>
+
+            @* Intestazione colonne, come nella maschera Access *@
+            <div class="icm-att-row icm-att-head">
+                <span>Tipo</span>
+                <span>Numero</span>
+                <span>Attività</span>
+            </div>
+
+            <div class="icm-sellist" style="height:214px;">
+                @if (_anagraficaSelezionata is null)
+                {
+                    <div class="icm-sellist-placeholder">Selezionare un cliente.</div>
+                }
+                else if (_caricamentoAttivita)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AttivitaFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessuna attività con fatture per questo cliente.</div>
+                }
+                else
+                {
+                    @foreach (var a in AttivitaFiltrate)
+                    {
+                        <div class="icm-sellist-item icm-att-row @(a.IdAttivita == _attivitaSelezionata?.IdAttivita ? "selected" : "")"
+                             @onclick="@(() => SelezionaAttivitaAsync(a))">
+                            <span class="icm-att-tipo">@(string.IsNullOrWhiteSpace(a.TipoAttivitaDescrizione) ? "—" : a.TipoAttivitaDescrizione)</span>
+                            <span class="icm-nr">@a.Numero</span>
+                            <span class="icm-desc">@a.Descrizione</span>
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Corpo — fatture dell'attività selezionata
+   ═══════════════════════════════════════════════════════════════════ *@
+@if (_attivitaSelezionata is not null)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
+
+        @* Intestazione attività + combo filtro anno *@
+        <div class="d-flex align-center flex-wrap gap-2 mb-3">
+            <MudChip T="string" Color="Color.Primary" Variant="Variant.Text" Size="Size.Small" Class="ma-0">
+                @_attivitaSelezionata.Numero
+            </MudChip>
+            <MudText Typo="Typo.h6" Class="ma-0">@_attivitaSelezionata.Descrizione</MudText>
+            <MudSpacer />
+            <MudSelect T="int?" Value="_annoFiltro" ValueChanged="OnAnnoFiltroChanged"
+                       Label="Fatture emesse anno" Dense="true" Margin="Margin.Dense"
+                       Variant="Variant.Outlined" Clearable="true" Style="max-width:220px;">
+                <MudSelectItem T="int?" Value="@((int?)null)">Tutti gli anni</MudSelectItem>
+                @foreach (var anno in _anniDisponibili)
+                {
+                    <MudSelectItem T="int?" Value="@anno">@anno</MudSelectItem>
+                }
+            </MudSelect>
+        </div>
+
+        @* Griglia fatture *@
+        @if (_caricamentoFatture)
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">Caricamento…</MudText>
+        }
+        else if (!FattureFiltrate.Any())
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">
+                @(_annoFiltro is null
+                    ? "Nessuna fattura emessa per questa attività."
+                    : $"Nessuna fattura emessa nell'anno {_annoFiltro} per questa attività.")
+            </MudText>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <MudTable Items="FattureFiltrate" Dense="true" Hover="true" Striped="true" Style="min-width:720px;">
+                    <HeaderContent>
+                        <MudTh Style="width:90px;">Numero</MudTh>
+                        <MudTh Style="width:110px;">Data</MudTh>
+                        <MudTh>Cliente</MudTh>
+                        <MudTh>Tipo</MudTh>
+                        <MudTh>Attività</MudTh>
+                        <MudTh Style="width:110px;"></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Numero" Style="font-weight:600;">@context.NumeroFattura/@context.Anno</MudTd>
+                        <MudTd DataLabel="Data">@context.DataFattura.ToString("dd/MM/yyyy")</MudTd>
+                        <MudTd DataLabel="Cliente">@context.ClienteRagioneSociale</MudTd>
+                        <MudTd DataLabel="Tipo">@(string.IsNullOrWhiteSpace(context.TipoAttivitaDescrizione) ? "—" : context.TipoAttivitaDescrizione)</MudTd>
+                        <MudTd DataLabel="Attività">@context.NumeroAttivita – @context.DescrizioneAttivita</MudTd>
+                        <MudTd Style="padding:2px 4px;white-space:nowrap;">
+                            <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
+                                           Size="Size.Small" Ripple="false" Color="Color.Primary"
+                                           aria-label="Stampa PDF fattura" title="Stampa PDF fattura"
+                                           OnClick="@(() => StampaPdfAsync(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Size="Size.Small" Ripple="false" Color="Color.Error"
+                                           aria-label="Elimina fattura" title="Elimina fattura"
+                                           OnClick="@(() => EliminaFatturaAsync(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </MudPaper>
+}
+
+@code {
+    private enum FiltroTipo { Tutti, Enti, Societa, Privati }
+
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    // ── Cataloghi/filtri ────────────────────────────────────────────────
+    private IReadOnlyList<Anagrafica> _anagrafiche   = Array.Empty<Anagrafica>();
+    private IReadOnlyList<Attivita>   _attivitaLista = Array.Empty<Attivita>();
+
+    // Universo ristretto: solo clienti/attività che hanno almeno una fattura attiva.
+    private HashSet<Guid> _anagraficheConFatture = new();
+    private HashSet<Guid> _attivitaConFatture    = new();
+
+    // Selezioni correnti.
+    private FiltroTipo  _filtroTipo = FiltroTipo.Tutti;
+    private string      _filtroRagioneSociale = string.Empty;
+    private Anagrafica? _anagraficaSelezionata;
+    private Attivita?   _attivitaSelezionata;
+
+    // Fatture dell'attività + filtro per anno.
+    private IReadOnlyList<FatturaEmessa> _fatture = Array.Empty<FatturaEmessa>();
+    private IReadOnlyList<int>           _anniDisponibili = Array.Empty<int>();
+    private int?                         _annoFiltro;
+
+    // Flag di caricamento.
+    private bool _caricamentoAnagrafica = true;
+    private bool _caricamentoAttivita;
+    private bool _caricamentoFatture;
+
+    // ── Proprietà derivate (filtri UI) ──────────────────────────────────
+    private IEnumerable<Anagrafica> AnagraficheFiltrate
+    {
+        get
+        {
+            var q = _anagrafiche.AsEnumerable();
+            q = _filtroTipo switch
+            {
+                FiltroTipo.Enti    => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.EntePubblico),
+                FiltroTipo.Societa => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Societa),
+                FiltroTipo.Privati => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Privato),
+                _                  => q,
+            };
+            // Solo clienti con almeno una fattura emessa.
+            q = q.Where(a => _anagraficheConFatture.Contains(a.IdAnagrafica));
+            if (!string.IsNullOrWhiteSpace(_filtroRagioneSociale))
+                q = q.Where(a => a.RagioneSociale.Contains(
+                    _filtroRagioneSociale.Trim(), StringComparison.OrdinalIgnoreCase));
+            return q;
+        }
+    }
+
+    // Attività del cliente selezionato che hanno fatture.
+    private IEnumerable<Attivita> AttivitaFiltrate
+        => _attivitaLista.Where(a => _attivitaConFatture.Contains(a.IdAttivita));
+
+    // Fatture filtrate per anno (null = tutti).
+    private IEnumerable<FatturaEmessa> FattureFiltrate
+        => _annoFiltro is null ? _fatture : _fatture.Where(f => f.Anno == _annoFiltro);
+
+    // ── Init ─────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t1 = AnagraficaManager.ElencoAsync();
+            var t2 = FattureManager.AttivitaConFattureAsync();
+            var t3 = FattureManager.AnniConFattureAsync();
+            await Task.WhenAll(t1, t2, t3);
+            _anagrafiche = t1.Result;
+            _anagraficheConFatture = t2.Result.Select(f => f.IdAnagrafica).ToHashSet();
+            _attivitaConFatture    = t2.Result.Select(f => f.IdAttivita).ToHashSet();
+            _anniDisponibili = t3.Result;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento iniziale della maschera Stampe fatture fallito.", "StampeFatture.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento della maschera.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamentoAnagrafica = false;
+        }
+    }
+
+    // ── Selezione filtri ─────────────────────────────────────────────────
+    private async Task SelezionaAnagrafica(Anagrafica a)
+    {
+        if (_anagraficaSelezionata?.IdAnagrafica == a.IdAnagrafica) return;
+        _anagraficaSelezionata = a;
+        _attivitaLista         = Array.Empty<Attivita>();
+        ResetContestoAttivita();
+        await CaricaAttivitaAsync();
+    }
+
+    // Carica TUTTE le attività del cliente (nessun filtro per tipo): la griglia le
+    // mostra con il proprio Tipo, e AttivitaFiltrate restringe a quelle con fatture.
+    private async Task CaricaAttivitaAsync()
+    {
+        if (_anagraficaSelezionata is null) return;
+        _caricamentoAttivita = true;
+        try
+        {
+            _attivitaLista = await AttivitaManager.ElencoPerAnagraficaAsync(_anagraficaSelezionata.IdAnagrafica);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento attività fallito.", "StampeFatture.CaricaAttivitaAsync");
+            Snackbar.Add("Errore nel caricamento delle attività.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoAttivita = false; }
+    }
+
+    private async Task SelezionaAttivitaAsync(Attivita a)
+    {
+        _attivitaSelezionata = a;
+        _annoFiltro = null;
+        await CaricaFattureAsync();
+    }
+
+    private void OnFiltroTipoChanged(FiltroTipo nuovo)
+    {
+        _filtroTipo = nuovo;
+        if (_anagraficaSelezionata is not null
+            && !AnagraficheFiltrate.Any(a => a.IdAnagrafica == _anagraficaSelezionata.IdAnagrafica))
+        {
+            _anagraficaSelezionata = null;
+            _attivitaLista         = Array.Empty<Attivita>();
+            ResetContestoAttivita();
+        }
+    }
+
+    private void OnAnnoFiltroChanged(int? anno) => _annoFiltro = anno;
+
+    private void ResetContestoAttivita()
+    {
+        _attivitaSelezionata = null;
+        _fatture = Array.Empty<FatturaEmessa>();
+        _annoFiltro = null;
+    }
+
+    // ── Fatture ──────────────────────────────────────────────────────────
+    private async Task CaricaFattureAsync()
+    {
+        if (_attivitaSelezionata is null) return;
+        _caricamentoFatture = true;
+        try
+        {
+            _fatture = await FattureManager.ElencoEmessePerAttivitaAsync(_attivitaSelezionata.IdAttivita);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento fatture fallito.", "StampeFatture.CaricaFattureAsync");
+            Snackbar.Add("Errore nel caricamento delle fatture.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoFatture = false; }
+    }
+
+    // Apre il PDF di cortesia della fattura in una nuova scheda.
+    private async Task StampaPdfAsync(FatturaEmessa f)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("open", $"/api/fatture/{f.IdFattura}/pdf", "_blank");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura PDF fattura fallita.", "StampeFatture.StampaPdfAsync");
+            Snackbar.Add("Impossibile aprire il PDF della fattura.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // Elimina (annulla) la fattura con conferma: l'avviso di origine torna fatturabile.
+    private async Task EliminaFatturaAsync(FatturaEmessa f)
+    {
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare la fattura?" },
+            { x => x.NomeElemento, $"Fattura {f.NumeroFattura}/{f.Anno}" },
+            { x => x.Messaggio, "L'avviso di origine tornerà fatturabile e il numero sarà riutilizzabile." },
+            { x => x.TestoConferma, "Elimina fattura" },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var risultato = await dialog.Result;
+        if (risultato is not { Canceled: false }) return;
+
+        try
+        {
+            await FattureManager.AnnullaAsync(f.IdFattura);
+            Snackbar.Add("Fattura eliminata.", MudBlazor.Severity.Success);
+            // Aggiorna l'universo (la coppia potrebbe non avere più fatture) e la griglia.
+            await RicaricaDopoEliminazioneAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Eliminazione fattura fallita.", "StampeFatture.EliminaFatturaAsync");
+            Snackbar.Add("Errore durante l'eliminazione della fattura.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // Dopo un'eliminazione ricalcola l'universo ristretto, gli anni e la griglia.
+    // Se l'attività corrente non ha più fatture torna alla sola vista dei filtri.
+    private async Task RicaricaDopoEliminazioneAsync()
+    {
+        var conFatture = await FattureManager.AttivitaConFattureAsync();
+        _anagraficheConFatture = conFatture.Select(x => x.IdAnagrafica).ToHashSet();
+        _attivitaConFatture    = conFatture.Select(x => x.IdAttivita).ToHashSet();
+        _anniDisponibili       = await FattureManager.AnniConFattureAsync();
+
+        await CaricaFattureAsync();
+        if (!_fatture.Any())
+            ResetContestoAttivita();
+        else if (_annoFiltro is not null && !_anniDisponibili.Contains(_annoFiltro.Value))
+            _annoFiltro = null;
+    }
+}

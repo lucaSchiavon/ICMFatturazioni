@@ -194,4 +194,98 @@ public class FattureManagerTests
         await sut.Manager.AnnullaAsync(Guid.NewGuid());
         Assert.Empty(sut.Audit.Voci);
     }
+
+    // =====================================================================
+    // Letture per la maschera "Stampe fatture"
+    // =====================================================================
+
+    // Semina un avviso attivo su una specifica coppia (attività, cliente).
+    private static Guid SeedAvvisoSu(FakeAvvisoFatturaRepository avvisi, FakeFattureRepository fatture,
+        Guid idAttivita, Guid idAnagrafica)
+    {
+        var id = Guid.NewGuid();
+        avvisi.Seed(new AvvisoFattura
+        {
+            IdAvviso     = id,
+            IdAttivita   = idAttivita,
+            IdAnagrafica = idAnagrafica,
+            DataAvviso   = new DateOnly(2026, 7, 1),
+            IsAttivo     = true,
+        });
+        fatture.AvvisoToAttivita[id]   = idAttivita;
+        fatture.AvvisoToAnagrafica[id] = idAnagrafica;
+        return id;
+    }
+
+    [Fact]
+    public async Task ElencoEmessePerAttivita_RestituisceSoloLeFatturuAttiveDellAttivita()
+    {
+        var sut = NewSut();
+        var attA = Guid.NewGuid();
+        var attB = Guid.NewGuid();
+        var cli  = Guid.NewGuid();
+
+        var av1 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, attA, cli);
+        var av2 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, attA, cli);
+        var av3 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, attB, cli);
+        await sut.Manager.CreaAsync(Req(av1, numero: 5,  data: new DateOnly(2026, 3, 1)));
+        await sut.Manager.CreaAsync(Req(av2, numero: 12, data: new DateOnly(2026, 5, 1)));
+        await sut.Manager.CreaAsync(Req(av3, numero: 3,  data: new DateOnly(2026, 2, 1)));
+
+        var righe = await sut.Manager.ElencoEmessePerAttivitaAsync(attA);
+
+        Assert.Equal(2, righe.Count);
+        // Ordinamento: anno desc, numero desc → 12 prima di 5.
+        Assert.Equal(12, righe[0].NumeroFattura);
+        Assert.Equal(5,  righe[1].NumeroFattura);
+    }
+
+    [Fact]
+    public async Task ElencoEmessePerAttivita_EscludeLeFatturuAnnullate()
+    {
+        var sut = NewSut();
+        var att = Guid.NewGuid();
+        var av  = SeedAvvisoSu(sut.Avvisi, sut.Fatture, att, Guid.NewGuid());
+        var id  = await sut.Manager.CreaAsync(Req(av, numero: 7));
+        await sut.Manager.AnnullaAsync(id);
+
+        Assert.Empty(await sut.Manager.ElencoEmessePerAttivitaAsync(att));
+    }
+
+    [Fact]
+    public async Task AnniConFatture_RestituisceGliAnniDistintiDecrescenti()
+    {
+        var sut = NewSut();
+        var att = Guid.NewGuid();
+        var av1 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, att, Guid.NewGuid());
+        var av2 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, att, Guid.NewGuid());
+        var av3 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, att, Guid.NewGuid());
+        await sut.Manager.CreaAsync(Req(av1, numero: 1, data: new DateOnly(2024, 5, 1)));
+        await sut.Manager.CreaAsync(Req(av2, numero: 1, data: new DateOnly(2026, 5, 1)));
+        await sut.Manager.CreaAsync(Req(av3, numero: 2, data: new DateOnly(2026, 6, 1)));
+
+        var anni = await sut.Manager.AnniConFattureAsync();
+
+        Assert.Equal(new[] { 2026, 2024 }, anni);
+    }
+
+    [Fact]
+    public async Task AttivitaConFatture_RestituisceLeCoppieDistinteConFatturaAttiva()
+    {
+        var sut = NewSut();
+        var attA = Guid.NewGuid();
+        var cliA = Guid.NewGuid();
+        var av1 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, attA, cliA);
+        var av2 = SeedAvvisoSu(sut.Avvisi, sut.Fatture, attA, cliA); // stessa coppia
+        await sut.Manager.CreaAsync(Req(av1, numero: 1, data: new DateOnly(2026, 1, 1)));
+        var id2 = await sut.Manager.CreaAsync(Req(av2, numero: 2, data: new DateOnly(2026, 2, 1)));
+
+        var coppie = await sut.Manager.AttivitaConFattureAsync();
+        Assert.Equal(new AttivitaFatturabile(cliA, attA), Assert.Single(coppie));
+
+        // Annullando entrambe le fatture, la coppia sparisce.
+        await sut.Manager.AnnullaAsync(id2);
+        await sut.Manager.AnnullaAsync((await sut.Manager.ElencoEmessePerAttivitaAsync(attA)).Single().IdFattura);
+        Assert.Empty(await sut.Manager.AttivitaConFattureAsync());
+    }
 }

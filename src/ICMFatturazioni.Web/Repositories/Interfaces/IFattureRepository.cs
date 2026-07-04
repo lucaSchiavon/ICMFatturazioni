@@ -1,4 +1,5 @@
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Web.Repositories.Interfaces;
 
@@ -35,4 +36,22 @@ public interface IFattureRepository
 
     /// <summary>Soft-delete della fattura: <c>IsAttivo = 0</c>. Idempotente.</summary>
     Task AnnullaAsync(Guid idFattura, CancellationToken ct = default);
+
+    /// <summary>
+    /// Fatture ATTIVE di un'attività (join sull'avviso di origine → attività/cliente/
+    /// tipo), ordinate per anno e numero decrescenti. Alimenta la griglia "Stampe fatture".
+    /// </summary>
+    Task<IReadOnlyList<FatturaEmessa>> GetEmesseByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
+
+    /// <summary>
+    /// Anni per cui esiste almeno una fattura ATTIVA, decrescenti. Popola la combo
+    /// "Fatture emesse anno" (elenco globale, non ristretto al cliente selezionato).
+    /// </summary>
+    Task<IReadOnlyList<int>> GetAnniConFattureAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Coppie (cliente, attività) con almeno una fattura ATTIVA. Restringe i selettori
+    /// della maschera "Stampe fatture" ai soli clienti/attività che hanno fatture.
+    /// </summary>
+    Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConFattureAsync(CancellationToken ct = default);
 }

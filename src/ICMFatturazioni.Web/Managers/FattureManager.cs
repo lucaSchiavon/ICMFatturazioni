@@ -33,6 +33,15 @@ public sealed class FattureManager : IFattureManager
     public Task<Fattura?> GetByIdAsync(Guid idFattura, CancellationToken ct = default)
         => _repo.GetByIdAsync(idFattura, ct);
 
+    public Task<IReadOnlyList<FatturaEmessa>> ElencoEmessePerAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
+        => _repo.GetEmesseByAttivitaAsync(idAttivita, ct);
+
+    public Task<IReadOnlyList<int>> AnniConFattureAsync(CancellationToken ct = default)
+        => _repo.GetAnniConFattureAsync(ct);
+
+    public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaConFattureAsync(CancellationToken ct = default)
+        => _repo.GetAttivitaConFattureAsync(ct);
+
     public Task<Fattura?> GetAttivaByAvvisoAsync(Guid idAvviso, CancellationToken ct = default)
         => _repo.GetAttivaByAvvisoAsync(idAvviso, ct);
 

@@ -199,6 +199,50 @@ h1:focus {
     text-overflow: ellipsis;
 }
 
+/* Griglia attività a 3 colonne (Tipo · Numero · Descrizione) della maschera
+   "Stampe fatture", allineata alle colonne del form Access. */
+.icm-att-row {
+    display: grid;
+    grid-template-columns: 130px 150px 1fr;
+    gap: 10px;
+    align-items: center;
+    overflow: hidden;
+}
+
+.icm-att-row .icm-att-tipo {
+    font-size: 0.78rem;
+    font-weight: 600;
+    opacity: 0.85;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icm-att-row .icm-nr {
+    font-weight: 600;
+    font-size: 0.8rem;
+    opacity: 0.85;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icm-att-row .icm-desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Riga di intestazione delle colonne della griglia attività. */
+.icm-att-head {
+    padding: 2px 12px 6px 12px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.6;
+}
+
 /* Utility responsive ICM: visibilità per breakpoint.
    icm-solo-desktop → nascosta su smartphone (< 600px), visibile su tablet/desktop.
    icm-solo-mobile  → visibile su smartphone, nascosta su tablet/desktop. */

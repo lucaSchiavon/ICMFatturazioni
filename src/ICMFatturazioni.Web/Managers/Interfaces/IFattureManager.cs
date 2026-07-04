@@ -13,6 +13,18 @@ public interface IFattureManager
     /// <summary>Fattura per chiave primaria (anche annullata), o <c>null</c>.</summary>
     Task<Fattura?> GetByIdAsync(Guid idFattura, CancellationToken ct = default);
 
+    /// <summary>
+    /// Fatture emesse (attive) di un'attività, per la griglia "Stampe fatture":
+    /// già arricchite con cliente/tipo/attività e ordinate per anno e numero decrescenti.
+    /// </summary>
+    Task<IReadOnlyList<FatturaEmessa>> ElencoEmessePerAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
+
+    /// <summary>Anni (decrescenti) per cui esiste almeno una fattura attiva, per la combo di filtro.</summary>
+    Task<IReadOnlyList<int>> AnniConFattureAsync(CancellationToken ct = default);
+
+    /// <summary>Coppie (cliente, attività) con fatture attive: restringe i selettori della maschera.</summary>
+    Task<IReadOnlyList<AttivitaFatturabile>> AttivitaConFattureAsync(CancellationToken ct = default);
+
     /// <summary>Fattura ATTIVA di un avviso, o <c>null</c> se non ancora fatturato.</summary>
     Task<Fattura?> GetAttivaByAvvisoAsync(Guid idAvviso, CancellationToken ct = default);
 
