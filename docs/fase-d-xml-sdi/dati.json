@@ -1,0 +1,20 @@
+{
+  "_nota": "Variante SOLO Vis Logica (nessun committente). Documento di condivisione ragionamento Fase D.",
+
+  "TEMPLATE": "template-vislogica.html",
+  "ACCENT": "#102050",
+
+  "DOC_TIPOLOGIA": "Documento di progetto",
+  "DOC_TITOLO": "Fatturazione elettronica: generazione XML e invio allo SdI",
+  "DOC_SOTTOTITOLO": "Analisi, alternative valutate e decisioni per la Fase D",
+  "PROGETTO_NOME": "ICMFatturazioni",
+  "DOC_VERSIONE": "1.1",
+  "DOC_DATA": "05/07/2026",
+  "DOC_STATO": "Definitivo",
+  "DOC_CLASSIFICAZIONE": "Interno",
+  "DOC_AUTORE": "Luca Schiavon",
+
+  "AGENZIA_NOME": "Vis Logica",
+  "AGENZIA_INFO": "Automazioni e software per PMI<br>vislogica.com",
+  "LOGO_AGENZIA_SRC": "loghi/logo-vislogica.png"
+}
