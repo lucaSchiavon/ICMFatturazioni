@@ -1,5 +1,6 @@
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
+using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Tests.Managers;
 
@@ -269,5 +270,41 @@ public class ScadenzaPagamentoManagerTests
         Assert.Equal(new DateOnly(2025,  6, 30), lista[0].DataScadenza);
         Assert.Equal(new DateOnly(2025, 12, 31), lista[1].DataScadenza);
         Assert.Equal(new DateOnly(2026,  3, 31), lista[2].DataScadenza);
+    }
+
+    // -------------------------------------------------------------------------
+    // Report scadenzario (maschera Stampa scadenze)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ReportScadenzarioAsync_PassaFiltroVerbatimEOggiAlRepository()
+    {
+        var (sut, fakeRepo, _) = NewSut();
+        fakeRepo.ReportRighe.Add(new ScadenzaReport(
+            DataScadenza:             new DateOnly(2026, 7, 31),
+            Importo:                  1500m,
+            IsEvasa:                  false,
+            AvvisoDataEvasione:       null,
+            NotaScadenza:             null,
+            TipoCliente:              TipoAnagrafica.Societa,
+            ClienteRagioneSociale:    "ROSSI SRL",
+            TipoAttivitaDescrizione:  "PROGETTAZIONI",
+            NumeroAttivita:           "872",
+            DescrizioneAttivita:      "Tettoia",
+            TipoDettaglioDescrizione: "DISCIPLINARE",
+            DescrizioneDettaglio:     "Acconto progetto"));
+
+        var filtro = new FiltroScadenzario(
+            TipoCliente: TipoAnagrafica.Privato,
+            DallaData:   new DateOnly(2026, 1, 1),
+            Scadute:     FiltroScadute.SoloNonScadute,
+            Evase:       FiltroEvase.SoloNonEvase);
+
+        var righe = await sut.ReportScadenzarioAsync(filtro);
+
+        // Il manager è pass-through sul filtro e fissa "oggi" alla data odierna.
+        Assert.Single(righe);
+        Assert.Same(filtro, fakeRepo.UltimoFiltroReport);
+        Assert.Equal(DateOnly.FromDateTime(DateTime.Today), fakeRepo.UltimaOggiReport);
     }
 }

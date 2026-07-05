@@ -1,4 +1,5 @@
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 
 namespace ICMFatturazioni.Web.Managers.Interfaces;
 
@@ -12,6 +13,13 @@ public interface IScadenzaPagamentoManager
 {
     /// <summary>Restituisce le scadenze attive di un dettaglio, ordinate per DataScadenza ASC.</summary>
     Task<IReadOnlyList<ScadenzaPagamento>> ElencoPerDettaglioAsync(Guid idAttivitaDettaglio, CancellationToken ct = default);
+
+    /// <summary>
+    /// Righe del report "Scadenziario attività clienti" secondo il filtro
+    /// (maschera "Stampa scadenze"): lettura pura, il criterio scadute/non
+    /// scadute è valutato rispetto alla data odierna.
+    /// </summary>
+    Task<IReadOnlyList<ScadenzaReport>> ReportScadenzarioAsync(FiltroScadenzario filtro, CancellationToken ct = default);
 
     /// <summary>
     /// Crea una nuova scadenza. Assegna GUID v7.

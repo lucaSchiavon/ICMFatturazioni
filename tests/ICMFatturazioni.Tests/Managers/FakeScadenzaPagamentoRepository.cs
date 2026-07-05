@@ -29,6 +29,22 @@ internal sealed class FakeScadenzaPagamentoRepository : IScadenzaPagamentoReposi
     /// <summary>Dettagli da schedulare seminati dai test (segnalazione buchi in maschera Avvisi).</summary>
     public List<DettaglioDaSchedulare> DettagliDaSchedulare { get; } = new();
 
+    /// <summary>Righe del report scadenzario seminate dai test.</summary>
+    public List<ScadenzaReport> ReportRighe { get; } = new();
+
+    /// <summary>Ultimo filtro ricevuto da <see cref="GetReportScadenzarioAsync"/> (verifica pass-through del manager).</summary>
+    public FiltroScadenzario? UltimoFiltroReport { get; private set; }
+
+    /// <summary>Ultima data "oggi" ricevuta da <see cref="GetReportScadenzarioAsync"/>.</summary>
+    public DateOnly? UltimaOggiReport { get; private set; }
+
+    public Task<IReadOnlyList<ScadenzaReport>> GetReportScadenzarioAsync(FiltroScadenzario filtro, DateOnly oggi, CancellationToken ct = default)
+    {
+        UltimoFiltroReport = filtro;
+        UltimaOggiReport   = oggi;
+        return Task.FromResult<IReadOnlyList<ScadenzaReport>>(ReportRighe.ToList());
+    }
+
     public Task<IReadOnlyList<DettaglioDaSchedulare>> GetDettagliNonSchedulatiByAttivitaAsync(Guid idAttivita, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<DettaglioDaSchedulare>>(DettagliDaSchedulare.ToList());
 

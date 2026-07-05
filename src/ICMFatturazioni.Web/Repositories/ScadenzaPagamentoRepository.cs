@@ -214,6 +214,104 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
         return rows.ToList();
     }
 
+    // -----------------------------------------------------------------------
+    // Report "Scadenziario attività clienti" (maschera Stampa scadenze).
+    // Radicata sulla scadenza; JOIN di arricchimento su dettaglio → attività →
+    // anagrafica + tipi; LEFT JOIN sull'avviso per la data di evasione.
+    // I criteri opzionali usano il pattern "@Param IS NULL OR colonna = @Param"
+    // così un'unica query parametrizzata copre tutte le combinazioni di filtro.
+    // NB colonne reali dei cataloghi: fatt.TipiAttivita.TipoAttivita e
+    // fatt.TipiDettaglioAttivita.TipoDettaglioAttivita (le entità le espongono
+    // come "Descrizione").
+    // -----------------------------------------------------------------------
+    private sealed class ScadenzaReportRow
+    {
+        public DateTime  DataScadenza             { get; init; }
+        public decimal   Importo                  { get; init; }
+        public bool      IsEvasa                  { get; init; }
+        public DateTime? AvvisoDataEvasione       { get; init; }
+        public string?   NotaScadenza             { get; init; }
+        public string    TipoClienteCode          { get; init; } = "S";
+        public string    ClienteRagioneSociale    { get; init; } = string.Empty;
+        public string?   TipoAttivitaDescrizione  { get; init; }
+        public string    NumeroAttivita           { get; init; } = string.Empty;
+        public string    DescrizioneAttivita      { get; init; } = string.Empty;
+        public string?   TipoDettaglioDescrizione { get; init; }
+        public string    DescrizioneDettaglio     { get; init; } = string.Empty;
+    }
+
+    private const string SqlSelectReportScadenzario = """
+        SELECT
+            s.DataScadenza,
+            s.Importo,
+            CAST(CASE WHEN s.IdAvvisoRiga IS NOT NULL THEN 1 ELSE 0 END AS bit) AS IsEvasa,
+            av.DataAvviso             AS AvvisoDataEvasione,
+            s.Nota                    AS NotaScadenza,
+            an.TipoAnagrafica         AS TipoClienteCode,
+            an.RagioneSociale         AS ClienteRagioneSociale,
+            ta.TipoAttivita           AS TipoAttivitaDescrizione,
+            a.Numero                  AS NumeroAttivita,
+            a.Descrizione             AS DescrizioneAttivita,
+            td.TipoDettaglioAttivita  AS TipoDettaglioDescrizione,
+            d.DescrizioneDettaglio
+        FROM fatt.SchedulazionePagamenti s
+        JOIN fatt.AttivitaDettaglio d  ON d.IdAttivitaDettaglio = s.IdAttivitaDettaglio AND d.IsAttivo = 1
+        JOIN fatt.Attivita a           ON a.IdAttivita = d.IdAttivita AND a.IsAttivo = 1
+        JOIN fatt.Anagrafica an        ON an.IdAnagrafica = a.IdAnagrafica
+        LEFT JOIN fatt.TipiAttivita ta ON ta.IdTipoAttivita = a.IdTipoAttivita
+        LEFT JOIN fatt.TipiDettaglioAttivita td
+               ON td.IdTipoDettaglioAttivita = d.IdTipoDettaglioAttivita
+        -- L'avviso che ha evaso la rata (solo per la data nel report); il marcatore
+        -- IdAvvisoRiga viene azzerato all'annullo dell'avviso, quindi implica già
+        -- un avviso attivo: il vincolo IsAttivo = 1 è cintura e bretelle.
+        LEFT JOIN fatt.AvvisoFatturaRighe r ON r.IdRiga   = s.IdAvvisoRiga
+        LEFT JOIN fatt.AvvisiFattura av     ON av.IdAvviso = r.IdAvviso AND av.IsAttivo = 1
+        WHERE s.IsAttivo = 1
+          AND (@TipoCliente    IS NULL OR an.TipoAnagrafica = @TipoCliente)
+          AND (@IdAnagrafica   IS NULL OR an.IdAnagrafica   = @IdAnagrafica)
+          AND (@IdTipoAttivita IS NULL OR a.IdTipoAttivita  = @IdTipoAttivita)
+          AND (@DallaData      IS NULL OR s.DataScadenza   >= @DallaData)
+          AND (@AllaData       IS NULL OR s.DataScadenza   <= @AllaData)
+          AND (@SoloScadute    = 0 OR s.DataScadenza <  @Oggi)
+          AND (@SoloNonScadute = 0 OR s.DataScadenza >= @Oggi)
+          AND (@SoloEvase      = 0 OR s.IdAvvisoRiga IS NOT NULL)
+          AND (@SoloNonEvase   = 0 OR s.IdAvvisoRiga IS NULL)
+        ORDER BY s.DataScadenza ASC, an.RagioneSociale ASC, a.Numero ASC;
+        """;
+
+    public async Task<IReadOnlyList<ScadenzaReport>> GetReportScadenzarioAsync(FiltroScadenzario filtro, DateOnly oggi, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var parametri = new
+        {
+            TipoCliente    = filtro.TipoCliente is { } t ? t.ToDbCode().ToString() : null,
+            filtro.IdAnagrafica,
+            filtro.IdTipoAttivita,
+            DallaData      = filtro.DallaData is { } dal ? ToSqlDate(dal) : null,
+            AllaData       = filtro.AllaData  is { } al  ? ToSqlDate(al)  : null,
+            Oggi           = ToSqlDate(oggi),
+            SoloScadute    = filtro.Scadute == FiltroScadute.SoloScadute,
+            SoloNonScadute = filtro.Scadute == FiltroScadute.SoloNonScadute,
+            SoloEvase      = filtro.Evase == FiltroEvase.SoloEvase,
+            SoloNonEvase   = filtro.Evase == FiltroEvase.SoloNonEvase,
+        };
+        var cmd  = new CommandDefinition(SqlSelectReportScadenzario, parametri, cancellationToken: ct);
+        var rows = await conn.QueryAsync<ScadenzaReportRow>(cmd);
+        return rows.Select(r => new ScadenzaReport(
+            DataScadenza:             DateOnly.FromDateTime(r.DataScadenza),
+            Importo:                  r.Importo,
+            IsEvasa:                  r.IsEvasa,
+            AvvisoDataEvasione:       r.AvvisoDataEvasione is { } d ? DateOnly.FromDateTime(d) : null,
+            NotaScadenza:             r.NotaScadenza,
+            TipoCliente:              TipoAnagraficaExtensions.FromDbCode(r.TipoClienteCode[0]),
+            ClienteRagioneSociale:    r.ClienteRagioneSociale,
+            TipoAttivitaDescrizione:  r.TipoAttivitaDescrizione,
+            NumeroAttivita:           r.NumeroAttivita,
+            DescrizioneAttivita:      r.DescrizioneAttivita,
+            TipoDettaglioDescrizione: r.TipoDettaglioDescrizione,
+            DescrizioneDettaglio:     r.DescrizioneDettaglio)).ToList();
+    }
+
     private const string SqlSelectById =
         SqlSelectBase + " WHERE IdScadenza = @IdScadenza;";
 

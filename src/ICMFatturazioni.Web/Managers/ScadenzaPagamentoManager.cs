@@ -1,6 +1,7 @@
 using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Web.Managers;
@@ -28,6 +29,14 @@ public sealed class ScadenzaPagamentoManager : IScadenzaPagamentoManager
 
     public Task<IReadOnlyList<ScadenzaPagamento>> ElencoPerDettaglioAsync(Guid idAttivitaDettaglio, CancellationToken ct = default)
         => _repo.GetByDettaglioAsync(idAttivitaDettaglio, ct);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// La data odierna (criterio "scaduta") si fissa qui e si passa al repository:
+    /// la query resta deterministica e il fake dei test può verificarla.
+    /// </remarks>
+    public Task<IReadOnlyList<ScadenzaReport>> ReportScadenzarioAsync(FiltroScadenzario filtro, CancellationToken ct = default)
+        => _repo.GetReportScadenzarioAsync(filtro, DateOnly.FromDateTime(DateTime.Today), ct);
 
     /// <inheritdoc/>
     public async Task<Guid> CreaAsync(ScadenzaPagamento scadenza, CancellationToken ct = default)

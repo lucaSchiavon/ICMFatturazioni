@@ -8,6 +8,7 @@ using ICMFatturazioni.Web.Logging;
 using ICMFatturazioni.Web.Manutenzione;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Managers.Interfaces;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 using ICMFatturazioni.Web.Services;
@@ -145,6 +146,8 @@ builder.Services.AddScoped<IAvvisoPdfService>(sp =>
 builder.Services.AddScoped<IFatturaPdfService>(sp =>
     new FatturaPdfService(sp.GetRequiredService<AvvisoPdfDataBuilder>(),
                           sp.GetRequiredService<IFattureManager>()));
+// Report scadenzario: dipende solo da Manager pubblici → registrazione standard.
+builder.Services.AddScoped<IScadenzarioPdfService, ScadenzarioPdfService>();
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le
@@ -546,6 +549,60 @@ app.MapGet("/api/fatture/{id:guid}/pdf", async Task<IResult> (
             "risolto sull'host, dati azienda/cliente incoerenti.",
             "FatturaPdf.GeneraAsync", entityId: id, entityType: "Fattura", cancellationToken: ct);
         return Results.Problem("Errore durante la generazione del PDF della fattura.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
+
+// ----------------------------------------------------------------------------
+// Report PDF "Scadenziario attività clienti" (maschera Stampa scadenze).
+// I filtri viaggiano in query string (il PDF si apre in nuova scheda via GET,
+// stesso pattern degli altri PDF): parametri assenti = filtro non applicato.
+// Lettura pura: nessun audit (come gli altri export), solo log degli errori.
+// ----------------------------------------------------------------------------
+app.MapGet("/api/report/scadenzario", async Task<IResult> (
+    HttpContext httpContext,
+    IScadenzarioPdfService pdfService,
+    ILogManager logManager,
+    CancellationToken ct,
+    string? tipoCliente = null,
+    Guid? idAnagrafica = null,
+    Guid? idTipoAttivita = null,
+    DateOnly? dal = null,
+    DateOnly? al = null,
+    FiltroScadute scadute = FiltroScadute.Tutte,
+    FiltroEvase evase = FiltroEvase.Entrambe) =>
+{
+    // tipoCliente: 'S'/'P'/'E' (case-insensitive); valori diversi → 400.
+    TipoAnagrafica? tipo = null;
+    if (!string.IsNullOrWhiteSpace(tipoCliente))
+    {
+        try { tipo = TipoAnagraficaExtensions.FromDbCode(char.ToUpperInvariant(tipoCliente.Trim()[0])); }
+        catch (ArgumentOutOfRangeException) { return Results.BadRequest("tipoCliente non valido: ammessi S, P, E."); }
+    }
+
+    var filtro = new FiltroScadenzario(
+        TipoCliente:    tipo,
+        IdAnagrafica:   idAnagrafica,
+        IdTipoAttivita: idTipoAttivita,
+        DallaData:      dal,
+        AllaData:       al,
+        Scadute:        scadute,
+        Evase:          evase);
+
+    try
+    {
+        var pdf = await pdfService.GeneraAsync(filtro, ct);
+        var nomeFile = $"Scadenzario_{DateTime.Today:yyyy-MM-dd}.pdf";
+        httpContext.Response.Headers.ContentDisposition = $"inline; filename=\"{nomeFile}\"";
+        return Results.File(pdf, "application/pdf");
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Generazione del PDF dello scadenzario fallita. Cause tipiche: font di sistema " +
+            "non risolto sull'host, dati incoerenti sulle scadenze.",
+            "ScadenzarioPdf.GeneraAsync", cancellationToken: ct);
+        return Results.Problem("Errore durante la generazione del PDF dello scadenzario.", statusCode: 500);
     }
 })
 .RequireAuthorization();

@@ -1,0 +1,380 @@
+@*
+    Pagina /stampa-scadenze — "Stampa Scadenzari" (spec "Stampa scadenze.pdf").
+
+    Maschera di soli FILTRI che genera il report PDF "Scadenziario attività
+    clienti" (modello docs/Scadenze.pdf: gruppi anno/mese, totali, filtro nel
+    piè di pagina). Filtri:
+      • [Anagrafica]: radio Tutti/Enti/Soc./Privati + ricerca + lista clienti
+        (click = seleziona, ri-click = deseleziona → tutti i clienti);
+      • [Tipo attività]: lista dei tipi (toggle, nessuna selezione = tutti);
+      • [Scadenze]: intervallo date + radio scadute/non scadute + radio
+        evase/non evase (evasa = rata consumata da un avviso attivo).
+    Sotto i filtri: ANTEPRIMA LIVE (conteggio + totale, stessa query del PDF →
+    sempre coerente) e pulsante "Stampa scadenzario" che apre il PDF in nuova
+    scheda via GET /api/report/scadenzario.
+    Lettura pura: nessun audit (Regola 7 non si applica), solo log errori.
+*@
+
+@page "/stampa-scadenze"
+
+@using System.Globalization
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+
+@inject IAnagraficaManager AnagraficaManager
+@inject ITipoAttivitaManager TipoAttivitaManager
+@inject IScadenzaPagamentoManager ScadenzaManager
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Stampa scadenze · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Stampa scadenze</MudText>
+
+<MudGrid Spacing="2" Class="mb-0">
+
+    @* ── Col 1: Anagrafica ──────────────────────────────────────────── *@
+    <MudItem xs="12" md="5" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Anagrafica</MudText>
+
+            <MudRadioGroup T="FiltroTipo" Value="_filtroTipo" ValueChanged="OnFiltroTipoChangedAsync" Class="mb-1">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Tutti"   Dense="true" Size="Size.Small">Tutti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Enti"    Dense="true" Size="Size.Small">Enti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Societa" Dense="true" Size="Size.Small">Soc.</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Privati" Dense="true" Size="Size.Small">Privati</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudTextField @bind-Value="_filtroRagioneSociale"
+                          Placeholder="Filtra per ragione sociale…"
+                          Immediate="true" DebounceInterval="150"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Clear"
+                          OnAdornmentClick="@(() => _filtroRagioneSociale = string.Empty)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="mb-2" />
+
+            <div class="icm-sellist mb-2" style="height:230px;">
+                @if (_caricamentoIniziale)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AnagraficheFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun cliente per questo filtro.</div>
+                }
+                else
+                {
+                    @foreach (var a in AnagraficheFiltrate)
+                    {
+                        <div class="icm-sellist-item @(a.IdAnagrafica == _anagraficaSelezionata?.IdAnagrafica ? "selected" : "")"
+                             @onclick="@(() => ToggleAnagraficaAsync(a))">
+                            <span class="icm-tipo-badge">@a.TipoAnagrafica.ToDbCode()</span>@a.RagioneSociale
+                        </div>
+                    }
+                }
+            </div>
+
+            @* Selezione corrente: un cliente puntuale o l'intero insieme filtrato. *@
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
+                @(_anagraficaSelezionata is null
+                    ? "Nessun cliente selezionato: il report copre tutti i clienti del filtro."
+                    : $"Cliente selezionato: {_anagraficaSelezionata.RagioneSociale} (clic di nuovo per deselezionare)")
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 2: Tipo attività ───────────────────────────────────────── *@
+    <MudItem xs="12" md="3" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Tipo attività</MudText>
+
+            <div class="icm-sellist mb-2" style="height:290px;">
+                @if (_caricamentoIniziale)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!_tipiAttivita.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun tipo attività.</div>
+                }
+                else
+                {
+                    @foreach (var t in _tipiAttivita)
+                    {
+                        <div class="icm-sellist-item @(t.IdTipoAttivita == _tipoAttivitaSelezionato?.IdTipoAttivita ? "selected" : "")"
+                             @onclick="@(() => ToggleTipoAttivitaAsync(t))">
+                            @t.Descrizione
+                        </div>
+                    }
+                }
+            </div>
+
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
+                @(_tipoAttivitaSelezionato is null
+                    ? "Nessun tipo selezionato: tutte le attività."
+                    : $"Tipo selezionato: {_tipoAttivitaSelezionato.Descrizione}")
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 3: Periodo e stato delle scadenze ──────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Scadenze</MudText>
+
+            <MudDatePicker Date="_dallaData" DateChanged="OnDallaDataChangedAsync"
+                           Label="Dalla data scadenza" Editable="true" Clearable="true"
+                           DateFormat="dd/MM/yyyy" Margin="Margin.Dense"
+                           Variant="Variant.Outlined" Class="mb-2" />
+
+            <MudDatePicker Date="_allaData" DateChanged="OnAllaDataChangedAsync"
+                           Label="Alla data scadenza" Editable="true" Clearable="true"
+                           DateFormat="dd/MM/yyyy" Margin="Margin.Dense"
+                           Variant="Variant.Outlined" Class="mb-2" />
+
+            @if (IntervalloDateInvalido)
+            {
+                <MudAlert Severity="MudBlazor.Severity.Warning" Dense="true" Class="mb-2">
+                    La data iniziale è successiva alla data finale.
+                </MudAlert>
+            }
+
+            <MudText Typo="Typo.caption" Style="font-weight:700;">Scadute (data &lt; oggi)</MudText>
+            <MudRadioGroup T="FiltroScadute" Value="_scadute" ValueChanged="OnScaduteChangedAsync" Class="mb-2">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroScadute" Value="FiltroScadute.SoloScadute"    Dense="true" Size="Size.Small">Solo scadute</MudRadio>
+                    <MudRadio T="FiltroScadute" Value="FiltroScadute.SoloNonScadute" Dense="true" Size="Size.Small">Solo NON scadute</MudRadio>
+                    <MudRadio T="FiltroScadute" Value="FiltroScadute.Tutte"          Dense="true" Size="Size.Small">Tutte</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudText Typo="Typo.caption" Style="font-weight:700;">Evase (in avviso di fattura)</MudText>
+            <MudRadioGroup T="FiltroEvase" Value="_evase" ValueChanged="OnEvaseChangedAsync" Class="mb-1">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroEvase" Value="FiltroEvase.SoloEvase"    Dense="true" Size="Size.Small">Solo evase</MudRadio>
+                    <MudRadio T="FiltroEvase" Value="FiltroEvase.SoloNonEvase" Dense="true" Size="Size.Small">Solo NON evase</MudRadio>
+                    <MudRadio T="FiltroEvase" Value="FiltroEvase.Entrambe"     Dense="true" Size="Size.Small">Entrambe</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@* ═══ Anteprima live + stampa ═══════════════════════════════════════════ *@
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
+    <div class="d-flex align-center flex-wrap gap-3">
+        @if (_caricamentoAnteprima)
+        {
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">Aggiornamento anteprima…</MudText>
+        }
+        else if (IntervalloDateInvalido)
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">
+                Correggere l'intervallo di date per generare il report.
+            </MudText>
+        }
+        else
+        {
+            <MudIcon Icon="@Icons.Material.Filled.EventNote" Color="Color.Primary" />
+            <MudText Typo="Typo.body1">
+                <b>@_conteggioAnteprima</b> @(_conteggioAnteprima == 1 ? "scadenza trovata" : "scadenze trovate")
+                — totale <b>@_totaleAnteprima.ToString("N2", _itCulture) €</b>
+            </MudText>
+        }
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
+                   StartIcon="@Icons.Material.Filled.Print"
+                   Disabled="@(_caricamentoAnteprima || _conteggioAnteprima == 0 || IntervalloDateInvalido)"
+                   OnClick="StampaScadenzarioAsync">
+            Stampa scadenzario
+        </MudButton>
+    </div>
+</MudPaper>
+
+@code {
+    private enum FiltroTipo { Tutti, Enti, Societa, Privati }
+
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    // ── Cataloghi ───────────────────────────────────────────────────────
+    private IReadOnlyList<Anagrafica>   _anagrafiche = Array.Empty<Anagrafica>();
+    private IReadOnlyList<TipoAttivita> _tipiAttivita = Array.Empty<TipoAttivita>();
+
+    // ── Stato dei filtri ────────────────────────────────────────────────
+    private FiltroTipo    _filtroTipo = FiltroTipo.Tutti;
+    private string        _filtroRagioneSociale = string.Empty;
+    private Anagrafica?   _anagraficaSelezionata;
+    private TipoAttivita? _tipoAttivitaSelezionato;
+    private DateTime?     _dallaData;
+    private DateTime?     _allaData;
+    private FiltroScadute _scadute = FiltroScadute.Tutte;
+    private FiltroEvase   _evase   = FiltroEvase.Entrambe;
+
+    // ── Anteprima live ──────────────────────────────────────────────────
+    private bool    _caricamentoIniziale = true;
+    private bool    _caricamentoAnteprima;
+    private int     _conteggioAnteprima;
+    private decimal _totaleAnteprima;
+    // Versione dell'ultima richiesta: scarta le risposte superate da un filtro
+    // cambiato nel frattempo (le letture non sono annullabili dalla UI).
+    private int _versioneAnteprima;
+
+    private bool IntervalloDateInvalido
+        => _dallaData is { } dal && _allaData is { } al && dal.Date > al.Date;
+
+    // Lista clienti filtrata per tipologia + testo (il testo filtra solo la
+    // lista a video, NON il report: il report usa tipologia/cliente selezionato).
+    private IEnumerable<Anagrafica> AnagraficheFiltrate
+    {
+        get
+        {
+            var q = _anagrafiche.AsEnumerable();
+            q = _filtroTipo switch
+            {
+                FiltroTipo.Enti    => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.EntePubblico),
+                FiltroTipo.Societa => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Societa),
+                FiltroTipo.Privati => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Privato),
+                _                  => q,
+            };
+            if (!string.IsNullOrWhiteSpace(_filtroRagioneSociale))
+                q = q.Where(a => a.RagioneSociale.Contains(
+                    _filtroRagioneSociale.Trim(), StringComparison.OrdinalIgnoreCase));
+            return q;
+        }
+    }
+
+    // ── Init ────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t1 = AnagraficaManager.ElencoAsync();
+            var t2 = TipoAttivitaManager.ElencoAsync();
+            await Task.WhenAll(t1, t2);
+            _anagrafiche  = t1.Result;
+            _tipiAttivita = t2.Result.Where(t => t.IsAttivo).ToList();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento iniziale della maschera Stampa scadenze fallito.", "StampaScadenze.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento della maschera.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamentoIniziale = false;
+        }
+        await AggiornaAnteprimaAsync();
+    }
+
+    // ── Cambi filtro (ognuno rinfresca l'anteprima) ─────────────────────
+    private async Task OnFiltroTipoChangedAsync(FiltroTipo nuovo)
+    {
+        _filtroTipo = nuovo;
+        // Il cliente selezionato che non appartiene più alla tipologia scelta
+        // viene deselezionato (stesso comportamento di Stampe fatture).
+        if (_anagraficaSelezionata is not null
+            && !AnagraficheFiltrate.Any(a => a.IdAnagrafica == _anagraficaSelezionata.IdAnagrafica))
+        {
+            _anagraficaSelezionata = null;
+        }
+        await AggiornaAnteprimaAsync();
+    }
+
+    private async Task ToggleAnagraficaAsync(Anagrafica a)
+    {
+        _anagraficaSelezionata = _anagraficaSelezionata?.IdAnagrafica == a.IdAnagrafica ? null : a;
+        await AggiornaAnteprimaAsync();
+    }
+
+    private async Task ToggleTipoAttivitaAsync(TipoAttivita t)
+    {
+        _tipoAttivitaSelezionato = _tipoAttivitaSelezionato?.IdTipoAttivita == t.IdTipoAttivita ? null : t;
+        await AggiornaAnteprimaAsync();
+    }
+
+    private async Task OnDallaDataChangedAsync(DateTime? d) { _dallaData = d; await AggiornaAnteprimaAsync(); }
+    private async Task OnAllaDataChangedAsync(DateTime? d)  { _allaData  = d; await AggiornaAnteprimaAsync(); }
+    private async Task OnScaduteChangedAsync(FiltroScadute s) { _scadute = s; await AggiornaAnteprimaAsync(); }
+    private async Task OnEvaseChangedAsync(FiltroEvase e)     { _evase   = e; await AggiornaAnteprimaAsync(); }
+
+    // ── Filtro corrente (unica fonte per anteprima e stampa) ────────────
+    private FiltroScadenzario BuildFiltro()
+        => new(
+            // Con un cliente puntuale la tipologia è ridondante (e il piè di
+            // pagina del report privilegia "Cliente: …"): si passa solo l'Id.
+            TipoCliente: _anagraficaSelezionata is not null ? null : _filtroTipo switch
+            {
+                FiltroTipo.Enti    => TipoAnagrafica.EntePubblico,
+                FiltroTipo.Societa => TipoAnagrafica.Societa,
+                FiltroTipo.Privati => TipoAnagrafica.Privato,
+                _                  => null,
+            },
+            IdAnagrafica:   _anagraficaSelezionata?.IdAnagrafica,
+            IdTipoAttivita: _tipoAttivitaSelezionato?.IdTipoAttivita,
+            DallaData:      _dallaData is { } dal ? DateOnly.FromDateTime(dal) : null,
+            AllaData:       _allaData  is { } al  ? DateOnly.FromDateTime(al)  : null,
+            Scadute:        _scadute,
+            Evase:          _evase);
+
+    // ── Anteprima live: stessa query del report → coerenza garantita ────
+    private async Task AggiornaAnteprimaAsync()
+    {
+        if (IntervalloDateInvalido) return;
+
+        var versione = ++_versioneAnteprima;
+        _caricamentoAnteprima = true;
+        try
+        {
+            var righe = await ScadenzaManager.ReportScadenzarioAsync(BuildFiltro());
+            if (versione != _versioneAnteprima) return;   // risposta superata
+            _conteggioAnteprima = righe.Count;
+            _totaleAnteprima    = righe.Sum(r => r.Importo);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Aggiornamento anteprima scadenzario fallito.", "StampaScadenze.AggiornaAnteprimaAsync");
+            Snackbar.Add("Errore nell'aggiornamento dell'anteprima.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            if (versione == _versioneAnteprima) _caricamentoAnteprima = false;
+        }
+    }
+
+    // ── Stampa: apre il PDF in nuova scheda con i filtri in query string ─
+    private async Task StampaScadenzarioAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("open", BuildUrlReport(), "_blank");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura PDF scadenzario fallita.", "StampaScadenze.StampaScadenzarioAsync");
+            Snackbar.Add("Impossibile aprire il PDF dello scadenzario.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private string BuildUrlReport()
+    {
+        var f = BuildFiltro();
+        var parametri = new List<string>();
+        if (f.TipoCliente is { } tipo)      parametri.Add($"tipoCliente={tipo.ToDbCode()}");
+        if (f.IdAnagrafica is { } idA)      parametri.Add($"idAnagrafica={idA:D}");
+        if (f.IdTipoAttivita is { } idT)    parametri.Add($"idTipoAttivita={idT:D}");
+        if (f.DallaData is { } dal)         parametri.Add($"dal={dal:yyyy-MM-dd}");
+        if (f.AllaData is { } al)           parametri.Add($"al={al:yyyy-MM-dd}");
+        if (f.Scadute != FiltroScadute.Tutte)  parametri.Add($"scadute={f.Scadute}");
+        if (f.Evase != FiltroEvase.Entrambe)   parametri.Add($"evase={f.Evase}");
+        return parametri.Count == 0
+            ? "/api/report/scadenzario"
+            : $"/api/report/scadenzario?{string.Join("&", parametri)}";
+    }
+}

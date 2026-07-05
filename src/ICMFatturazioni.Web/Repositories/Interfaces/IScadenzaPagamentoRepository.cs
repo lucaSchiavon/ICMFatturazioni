@@ -45,6 +45,17 @@ public interface IScadenzaPagamentoRepository
     /// </summary>
     Task<IReadOnlyList<DettaglioDaSchedulare>> GetDettagliNonSchedulatiByAttivitaAsync(Guid idAttivita, CancellationToken ct = default);
 
+    /// <summary>
+    /// Restituisce le righe del report "Scadenziario attività clienti": tutte le
+    /// scadenze attive (di dettagli/attività attivi) che soddisfano il filtro,
+    /// arricchite con cliente, attività, dettaglio e stato di evasione.
+    /// "Scaduta" = <c>DataScadenza &lt; oggi</c>; "evasa" = consumata da un avviso
+    /// attivo (<c>IdAvvisoRiga</c> valorizzato). Ordinamento: DataScadenza,
+    /// cliente, attività (il raggruppamento anno/mese lo fa il rendering).
+    /// </summary>
+    /// <param name="oggi">Data odierna di riferimento per il criterio scadute/non scadute.</param>
+    Task<IReadOnlyList<ScadenzaReport>> GetReportScadenzarioAsync(FiltroScadenzario filtro, DateOnly oggi, CancellationToken ct = default);
+
     /// <summary>Restituisce una scadenza per chiave primaria (incluse soft-deleted).</summary>
     Task<ScadenzaPagamento?> GetByIdAsync(Guid idScadenza, CancellationToken ct = default);
 
