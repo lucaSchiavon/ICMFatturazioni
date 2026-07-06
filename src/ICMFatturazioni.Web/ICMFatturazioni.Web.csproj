@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="FatturaElettronica" Version="4.0.8" />
     <!-- MailKit: invio email SMTP per i magic-link (invito/reset password, T4).
          Stessa libreria e versione di ICMVerbali (ADR D22), licenza MIT.
          System.Net.Mail.SmtpClient è deprecato da Microsoft per nuovo sviluppo. -->

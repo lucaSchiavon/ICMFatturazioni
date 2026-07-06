@@ -30,8 +30,27 @@ public sealed class Fattura
     /// <summary>Flag Fattura Elettronica (Fase D): XML prodotto. Default <c>false</c>.</summary>
     public bool CreatoXML { get; init; }
 
-    /// <summary>Esito invio SdI (Fase D). Default 0 = non inviata.</summary>
+    /// <summary>Esito invio SdI (Fase D). Default 0 = non inviata/in attesa; 1 = esito OK.</summary>
     public int EsitoXML { get; init; }
+
+    // ── Metadati del tracciato XML FatturaPA (Fase D1, migration 066) ──────────
+    // Valorizzati alla generazione del file; null finché l'XML non è mai stato creato.
+
+    /// <summary>
+    /// Progressivo invio (max 5 caratteri A-Z/0-9) che rende univoco il nome del
+    /// file agli occhi dello SdI. SLEGATO dal numero fattura. Assegnato alla PRIMA
+    /// creazione dalla sequence <c>fatt.SeqProgressivoInvio</c> e RIUSATO su "Ricrea".
+    /// </summary>
+    public string? ProgressivoInvio { get; init; }
+
+    /// <summary>Nome del file XML prodotto (<c>IdPaese+IdCodiceTrasmittente_progressivo.xml</c>).</summary>
+    public string? NomeFileXml { get; init; }
+
+    /// <summary>Istante (UTC) dell'ultima creazione/rigenerazione del tracciato XML.</summary>
+    public DateTime? DataCreazioneXmlUtc { get; init; }
+
+    /// <summary>Istante (UTC) in cui è stato confermato l'esito OK dell'invio allo SdI.</summary>
+    public DateTime? DataEsitoXmlUtc { get; init; }
 
     /// <summary>Soft-delete (ADR D22). Default <c>true</c>.</summary>
     public bool IsAttivo { get; init; } = true;

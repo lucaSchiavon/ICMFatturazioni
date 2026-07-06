@@ -26,31 +26,40 @@ internal sealed class FattureRepository : IFattureRepository
     // DTO: DataFattura come DateTime per compatibilità Dapper con DATE SQL.
     private sealed class FatturaRow
     {
-        public Guid     IdFattura     { get; init; }
-        public Guid     IdAvviso      { get; init; }
-        public int      NumeroFattura { get; init; }
-        public int      Anno          { get; init; }
-        public DateTime DataFattura   { get; init; }
-        public bool     CreatoXML     { get; init; }
-        public int      EsitoXML      { get; init; }
-        public bool     IsAttivo      { get; init; }
+        public Guid      IdFattura           { get; init; }
+        public Guid      IdAvviso            { get; init; }
+        public int       NumeroFattura       { get; init; }
+        public int       Anno                { get; init; }
+        public DateTime  DataFattura         { get; init; }
+        public bool      CreatoXML           { get; init; }
+        public int       EsitoXML            { get; init; }
+        public string?   ProgressivoInvio    { get; init; }
+        public string?   NomeFileXml         { get; init; }
+        public DateTime? DataCreazioneXmlUtc { get; init; }
+        public DateTime? DataEsitoXmlUtc     { get; init; }
+        public bool      IsAttivo            { get; init; }
     }
 
     private static Fattura ToEntity(FatturaRow r) => new()
     {
-        IdFattura     = r.IdFattura,
-        IdAvviso      = r.IdAvviso,
-        NumeroFattura = r.NumeroFattura,
-        Anno          = r.Anno,
-        DataFattura   = DateOnly.FromDateTime(r.DataFattura),
-        CreatoXML     = r.CreatoXML,
-        EsitoXML      = r.EsitoXML,
-        IsAttivo      = r.IsAttivo,
+        IdFattura           = r.IdFattura,
+        IdAvviso            = r.IdAvviso,
+        NumeroFattura       = r.NumeroFattura,
+        Anno                = r.Anno,
+        DataFattura         = DateOnly.FromDateTime(r.DataFattura),
+        CreatoXML           = r.CreatoXML,
+        EsitoXML            = r.EsitoXML,
+        ProgressivoInvio    = r.ProgressivoInvio,
+        NomeFileXml         = r.NomeFileXml,
+        DataCreazioneXmlUtc = r.DataCreazioneXmlUtc,
+        DataEsitoXmlUtc     = r.DataEsitoXmlUtc,
+        IsAttivo            = r.IsAttivo,
     };
 
     private const string SqlSelectBase = """
         SELECT IdFattura, IdAvviso, NumeroFattura, Anno, DataFattura,
-               CreatoXML, EsitoXML, IsAttivo
+               CreatoXML, EsitoXML, ProgressivoInvio, NomeFileXml,
+               DataCreazioneXmlUtc, DataEsitoXmlUtc, IsAttivo
         FROM fatt.Fatture
         """;
 
@@ -217,5 +226,148 @@ internal sealed class FattureRepository : IFattureRepository
         var cmd  = new CommandDefinition(SqlAttivitaConFatture, cancellationToken: ct);
         var rows = await conn.QueryAsync<AttivitaFatturabile>(cmd);
         return rows.ToList();
+    }
+
+    // =====================================================================
+    // Fase D1 — maschera "Creazione-Gestione XML Documenti"
+    // =====================================================================
+
+    // DTO Dapper della griglia XML: TipoAnagrafica come CHAR(1) (string) →
+    // convertito in enum a valle (come AnagraficaRepository).
+    private sealed class DocumentoXmlRow
+    {
+        public Guid      IdFattura               { get; init; }
+        public int       NumeroFattura           { get; init; }
+        public int       Anno                    { get; init; }
+        public DateTime  DataFattura             { get; init; }
+        public string    TipoAnagrafica          { get; init; } = "P";
+        public string    ClienteRagioneSociale   { get; init; } = string.Empty;
+        public string?   TipoAttivitaDescrizione { get; init; }
+        public string    NumeroAttivita          { get; init; } = string.Empty;
+        public string    DescrizioneAttivita     { get; init; } = string.Empty;
+        public bool      CreatoXML               { get; init; }
+        public int       EsitoXML                { get; init; }
+        public string?   ProgressivoInvio        { get; init; }
+        public string?   NomeFileXml             { get; init; }
+    }
+
+    // Le clausole di stato sono composte con sentinelle @Creazione*/@Esito* che il
+    // manager passa già risolte: niente concatenazione dinamica (Regola 5), un solo
+    // testo SQL costante e parametrizzato che copre tutte le combinazioni del filtro.
+    //   • Creazione: -1 = tutti · 0 = solo da creare · 1 = solo creato
+    //   • Esito:     -1 = tutti · 0 = solo attesa   · 1 = solo OK
+    private const string SqlPerXml = """
+        SELECT
+            f.IdFattura, f.NumeroFattura, f.Anno, f.DataFattura,
+            an.TipoAnagrafica AS TipoAnagrafica,
+            an.RagioneSociale AS ClienteRagioneSociale,
+            ta.TipoAttivita   AS TipoAttivitaDescrizione,
+            att.Numero        AS NumeroAttivita,
+            att.Descrizione   AS DescrizioneAttivita,
+            f.CreatoXML, f.EsitoXML, f.ProgressivoInvio, f.NomeFileXml
+        FROM fatt.Fatture f
+        JOIN fatt.AvvisiFattura a   ON a.IdAvviso        = f.IdAvviso
+        JOIN fatt.Anagrafica    an  ON an.IdAnagrafica   = a.IdAnagrafica
+        JOIN fatt.Attivita      att ON att.IdAttivita    = a.IdAttivita
+        LEFT JOIN fatt.TipiAttivita ta ON ta.IdTipoAttivita = att.IdTipoAttivita
+        WHERE f.IsAttivo = 1
+          AND f.DataFattura >= @DataDa
+          AND f.DataFattura <= @DataA
+          AND (@IdAnagrafica IS NULL OR a.IdAnagrafica = @IdAnagrafica)
+          AND (@CreazioneFlag = -1 OR CAST(f.CreatoXML AS INT) = @CreazioneFlag)
+          AND (@EsitoFlag     = -1 OR f.EsitoXML             = @EsitoFlag)
+        ORDER BY f.DataFattura DESC, f.NumeroFattura DESC;
+        """;
+
+    public async Task<IReadOnlyList<DocumentoXmlRiga>> GetPerXmlAsync(FiltroDocumentiXml filtro, CancellationToken ct = default)
+    {
+        var creazioneFlag = filtro.Creazione switch
+        {
+            StatoCreazioneXml.DaCreare => 0,
+            StatoCreazioneXml.Creato   => 1,
+            _                          => -1,
+        };
+        var esitoFlag = filtro.Esito switch
+        {
+            StatoEsitoXml.Attesa => 0,
+            StatoEsitoXml.Ok     => 1,
+            _                    => -1,
+        };
+
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd = new CommandDefinition(SqlPerXml, new
+        {
+            DataDa        = ToSqlDate(filtro.DataDa),
+            DataA         = ToSqlDate(filtro.DataA),
+            filtro.IdAnagrafica,
+            CreazioneFlag = creazioneFlag,
+            EsitoFlag     = esitoFlag,
+        }, cancellationToken: ct);
+
+        var rows = await conn.QueryAsync<DocumentoXmlRow>(cmd);
+        return rows.Select(r => new DocumentoXmlRiga(
+            r.IdFattura, r.NumeroFattura, r.Anno,
+            DateOnly.FromDateTime(r.DataFattura),
+            TipoAnagraficaExtensions.FromDbCode(r.TipoAnagrafica[0]),
+            r.ClienteRagioneSociale, r.TipoAttivitaDescrizione,
+            r.NumeroAttivita, r.DescrizioneAttivita,
+            r.CreatoXML, r.EsitoXML, r.ProgressivoInvio, r.NomeFileXml)).ToList();
+    }
+
+    public async Task<long> GetNextProgressivoInvioAsync(CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd = new CommandDefinition(
+            "SELECT NEXT VALUE FOR fatt.SeqProgressivoInvio;", cancellationToken: ct);
+        return await conn.ExecuteScalarAsync<long>(cmd);
+    }
+
+    private const string SqlSetXmlCreato = """
+        UPDATE fatt.Fatture
+        SET CreatoXML = 1,
+            ProgressivoInvio    = @ProgressivoInvio,
+            NomeFileXml         = @NomeFileXml,
+            DataCreazioneXmlUtc = @CreatoUtc
+        WHERE IdFattura = @IdFattura AND IsAttivo = 1;
+        """;
+
+    public async Task SetXmlCreatoAsync(Guid idFattura, string progressivoInvio, string nomeFileXml, DateTime creatoUtc, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd = new CommandDefinition(SqlSetXmlCreato, new
+        {
+            IdFattura = idFattura,
+            ProgressivoInvio = progressivoInvio,
+            NomeFileXml = nomeFileXml,
+            CreatoUtc = creatoUtc,
+        }, cancellationToken: ct);
+        await conn.ExecuteAsync(cmd);
+    }
+
+    private const string SqlConfermaEsito = """
+        UPDATE fatt.Fatture
+        SET EsitoXML = 1, DataEsitoXmlUtc = @EsitoUtc
+        WHERE IdFattura = @IdFattura AND IsAttivo = 1;
+        """;
+
+    public async Task ConfermaEsitoAsync(Guid idFattura, DateTime esitoUtc, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd = new CommandDefinition(SqlConfermaEsito,
+            new { IdFattura = idFattura, EsitoUtc = esitoUtc }, cancellationToken: ct);
+        await conn.ExecuteAsync(cmd);
+    }
+
+    private const string SqlTogliEsito = """
+        UPDATE fatt.Fatture
+        SET EsitoXML = 0, DataEsitoXmlUtc = NULL
+        WHERE IdFattura = @IdFattura AND IsAttivo = 1;
+        """;
+
+    public async Task TogliEsitoAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd = new CommandDefinition(SqlTogliEsito, new { IdFattura = idFattura }, cancellationToken: ct);
+        await conn.ExecuteAsync(cmd);
     }
 }

@@ -26,6 +26,15 @@ public enum FatturaMotivoInvalido
     /// (violazione di <c>UQ_Fatture_Anno_Numero_Attiva</c>). Riproporre il successivo.
     /// </summary>
     NumeroDuplicato,
+
+    /// <summary>La fattura indicata non esiste o è stata annullata.</summary>
+    FatturaNonTrovata,
+
+    /// <summary>
+    /// Si è tentato di confermare l'esito SdI di una fattura il cui tracciato XML
+    /// non è ancora stato generato (Fase D1): prima si crea l'XML, poi si conferma.
+    /// </summary>
+    XmlNonCreato,
 }
 
 /// <summary>

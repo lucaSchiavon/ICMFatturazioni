@@ -1,0 +1,560 @@
+@*
+    Pagina /gestione-xml — "Creazione-Gestione XML Documenti" (spec CreazioneGestioneXml.pdf).
+
+    Genera il tracciato XML FatturaPA (FPR12, privati/società) di una fattura già
+    emessa, ne traccia lo stato (creato / esito OK) e ne permette il download.
+    L'invio allo SdI avviene FUORI dall'app (upload manuale sul portale AdE).
+
+      • FILTRO: [Anagrafica] (opzionale → tutte) + combo [Anno] (anni con fatture);
+        scegliere l'anno compila le date Dalla/Alla con 1 gennaio–31 dicembre, poi
+        sovrascrivibili. Radio stato creazione XML (Da creare/Creato/Tutto) e stato
+        esito (Attesa/OK/Tutto).
+      • GRIGLIA: FT · N. · Del · tipo cliente (S/P/E) · Cliente · Creato · Esito OK ·
+        link download XML. Selezionando una riga si abilitano i pulsanti contestuali.
+      • PULSANTI (dipendono dalla riga): Stampa Documento (PDF) sempre; Crea File XML
+        se non creato; Ricrea File XML + Conferma/Togli esito se già creato.
+*@
+
+@page "/gestione-xml"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Services
+@using ICMFatturazioni.Web.FatturaPa
+@using ICMFatturazioni.Web.Components.Shared
+@using System.Globalization
+
+@inject IFattureManager FattureManager
+@inject IFatturaPaXmlService XmlService
+@inject IAnagraficaManager AnagraficaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogManager LogManager
+@inject IJSRuntime JS
+
+<PageTitle>Documenti XML · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Creazione – gestione documenti XML</MudText>
+
+<MudGrid Spacing="2" Class="mb-0">
+
+    @* ── Col 1: Anagrafica (opzionale) ─────────────────────────────── *@
+    <MudItem xs="12" md="6" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <div class="d-flex align-center mb-2">
+                <MudText Typo="Typo.overline" Style="font-weight:700;">Anagrafiche</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small" Ripple="false"
+                           StartIcon="@Icons.Material.Filled.Clear" OnClick="ResetAnagrafica"
+                           Disabled="@(_anagraficaSelezionata is null)">
+                    Tutte
+                </MudButton>
+            </div>
+
+            <MudTextField @bind-Value="_filtroRagioneSociale"
+                          Placeholder="Filtra per ragione sociale…"
+                          Immediate="true" DebounceInterval="150"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2" />
+
+            <div class="icm-sellist" style="height:280px;">
+                @if (_caricamentoAnagrafica)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AnagraficheFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessuna anagrafica.</div>
+                }
+                else
+                {
+                    @foreach (var a in AnagraficheFiltrate)
+                    {
+                        <div class="icm-sellist-item @(a.IdAnagrafica == _anagraficaSelezionata?.IdAnagrafica ? "selected" : "")"
+                             @onclick="@(() => SelezionaAnagraficaAsync(a))">
+                            <span class="icm-tipo-badge">@a.TipoAnagrafica.ToDbCode()</span>@a.RagioneSociale
+                        </div>
+                    }
+                }
+            </div>
+
+            <MudText Typo="Typo.caption" Class="mt-2" Style="color:var(--mud-palette-text-secondary);">
+                @(_anagraficaSelezionata is null
+                    ? "Nessuna anagrafica selezionata: vengono mostrate tutte le fatture del periodo."
+                    : $"Filtro cliente: {_anagraficaSelezionata.RagioneSociale}")
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 2: Anno, periodo e stato Fatturazione Elettronica ──────── *@
+    <MudItem xs="12" md="6" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Anno e periodo</MudText>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="int?" Value="_anno" ValueChanged="OnAnnoChangedAsync"
+                               Label="Anno" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                        @foreach (var anno in _anniDisponibili)
+                        {
+                            <MudSelectItem T="int?" Value="@anno">@anno</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudDatePicker Date="_dataDa" DateChanged="OnDataDaChangedAsync"
+                                   Label="Dalla data" Editable="true" DateFormat="dd/MM/yyyy"
+                                   Margin="Margin.Dense" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6" sm="4">
+                    <MudDatePicker Date="_dataA" DateChanged="OnDataAChangedAsync"
+                                   Label="Alla data" Editable="true" DateFormat="dd/MM/yyyy"
+                                   Margin="Margin.Dense" Variant="Variant.Outlined" />
+                </MudItem>
+            </MudGrid>
+
+            @if (IntervalloDateInvalido)
+            {
+                <MudAlert Severity="MudBlazor.Severity.Warning" Dense="true" Class="mt-2">
+                    La data iniziale è successiva alla data finale.
+                </MudAlert>
+            }
+
+            <MudDivider Class="my-3" />
+
+            <MudText Typo="Typo.overline" Class="mb-1" Style="font-weight:700;">Fatturazione Elettronica</MudText>
+
+            <MudText Typo="Typo.caption" Style="font-weight:700;">Tracciato XML</MudText>
+            <MudRadioGroup T="StatoCreazioneXml" Value="_statoCreazione" ValueChanged="OnStatoCreazioneChangedAsync" Class="mb-2">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="StatoCreazioneXml" Value="StatoCreazioneXml.DaCreare" Dense="true" Size="Size.Small">XML da creare</MudRadio>
+                    <MudRadio T="StatoCreazioneXml" Value="StatoCreazioneXml.Creato"   Dense="true" Size="Size.Small">XML creato</MudRadio>
+                    <MudRadio T="StatoCreazioneXml" Value="StatoCreazioneXml.Tutti"    Dense="true" Size="Size.Small">Tutto</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudText Typo="Typo.caption" Style="font-weight:700;">Esito invio</MudText>
+            <MudRadioGroup T="StatoEsitoXml" Value="_statoEsito" ValueChanged="OnStatoEsitoChangedAsync">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="StatoEsitoXml" Value="StatoEsitoXml.Attesa" Dense="true" Size="Size.Small">Attesa esito</MudRadio>
+                    <MudRadio T="StatoEsitoXml" Value="StatoEsitoXml.Ok"     Dense="true" Size="Size.Small">Esito OK</MudRadio>
+                    <MudRadio T="StatoEsitoXml" Value="StatoEsitoXml.Tutti"  Dense="true" Size="Size.Small">Tutto</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Corpo — documenti (fatture) che soddisfano il filtro
+   ═══════════════════════════════════════════════════════════════════ *@
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
+
+    <div class="d-flex align-center flex-wrap gap-2 mb-3">
+        <MudText Typo="Typo.h6" Class="ma-0">Documento</MudText>
+        <MudChip T="string" Color="Color.Default" Variant="Variant.Text" Size="Size.Small" Class="ma-0">
+            @_documenti.Count fatture
+        </MudChip>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" Ripple="false"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="CaricaDocumentiAsync">
+            Aggiorna
+        </MudButton>
+    </div>
+
+    @if (_erroriValidazione.Count > 0)
+    {
+        <MudAlert Severity="MudBlazor.Severity.Warning" Class="mb-3"
+                  ShowCloseIcon="true" CloseIconClicked="@(() => _erroriValidazione.Clear())">
+            <MudText Typo="Typo.subtitle2">Il tracciato non è valido:</MudText>
+            <ul style="margin:4px 0 0 18px;">
+                @foreach (var e in _erroriValidazione)
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        </MudAlert>
+    }
+
+    @if (_caricamentoDocumenti)
+    {
+        <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">Caricamento…</MudText>
+    }
+    else if (_documenti.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">
+            Nessuna fattura per i filtri selezionati.
+        </MudText>
+    }
+    else
+    {
+        <div style="overflow-x:auto;">
+            <MudTable Items="_documenti" Dense="true" Hover="true" Striped="true"
+                      Style="min-width:820px;" T="DocumentoXmlRiga"
+                      Breakpoint="Breakpoint.None"
+                      OnRowClick="@(args => Seleziona(args.Item))"
+                      RowClassFunc="@RigaClass">
+                <HeaderContent>
+                    <MudTh Style="width:56px;">Tipo</MudTh>
+                    <MudTh Style="width:64px;">N.</MudTh>
+                    <MudTh Style="width:104px;">Del</MudTh>
+                    <MudTh Style="width:36px;">*</MudTh>
+                    <MudTh>Cliente</MudTh>
+                    <MudTh Style="width:92px;">Creato</MudTh>
+                    <MudTh Style="width:92px;">Esito OK</MudTh>
+                    <MudTh Style="width:96px;">File XML</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Tipo" Style="font-weight:600;">FT</MudTd>
+                    <MudTd DataLabel="N.">@context.NumeroFattura</MudTd>
+                    <MudTd DataLabel="Del">@context.DataFattura.ToString("dd/MM/yyyy")</MudTd>
+                    <MudTd DataLabel="Tipo cliente">@context.TipoAnagrafica.ToDbCode()</MudTd>
+                    <MudTd DataLabel="Cliente">@context.ClienteRagioneSociale</MudTd>
+                    <MudTd DataLabel="Creato">
+                        @if (context.CreatoXML)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Text" Class="ma-0">SÌ</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text" Class="ma-0">NO</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Esito OK">
+                        @if (context.EsitoOk)
+                        {
+                            <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Filled" Class="ma-0">SÌ</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Text" Class="ma-0">NO</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="File XML" Style="padding:2px 4px;">
+                        @if (context.CreatoXML)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small" Ripple="false"
+                                           Color="Color.Primary" title="Scarica il tracciato XML"
+                                           OnClick="@(() => ScaricaXmlAsync(context))" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-disabled);">—</MudText>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        @* ── Barra azioni contestuale alla riga selezionata ── *@
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3 mt-3">
+            @if (_selezionata is null)
+            {
+                <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">
+                    Seleziona una fattura nella griglia per generare o gestire il tracciato XML.
+                </MudText>
+            }
+            else
+            {
+                <div class="d-flex align-center flex-wrap gap-2">
+                    <MudText Typo="Typo.subtitle2" Class="ma-0">
+                        Fattura @_selezionata.NumeroFattura/@_selezionata.Anno — @_selezionata.ClienteRagioneSociale
+                    </MudText>
+                    <MudSpacer />
+
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small" Ripple="false"
+                               StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                               OnClick="@(() => StampaDocumentoAsync(_selezionata))">
+                        Stampa Documento
+                    </MudButton>
+
+                    @if (!_selezionata.CreatoXML)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Ripple="false"
+                                   StartIcon="@Icons.Material.Filled.Code" Disabled="_operazioneInCorso"
+                                   OnClick="@(() => GeneraXmlAsync(_selezionata, rigenera:false))">
+                            Crea File XML
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Ripple="false"
+                                   StartIcon="@Icons.Material.Filled.Autorenew" Disabled="_operazioneInCorso"
+                                   OnClick="@(() => GeneraXmlAsync(_selezionata, rigenera:true))">
+                            Ricrea File XML
+                        </MudButton>
+
+                        @if (!_selezionata.EsitoOk)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" Ripple="false"
+                                       StartIcon="@Icons.Material.Filled.CheckCircle" Disabled="_operazioneInCorso"
+                                       OnClick="@(() => ConfermaEsitoAsync(_selezionata))">
+                                Conferma esito XML
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" Ripple="false"
+                                       StartIcon="@Icons.Material.Filled.Undo" Disabled="_operazioneInCorso"
+                                       OnClick="@(() => TogliEsitoAsync(_selezionata))">
+                                Togli esito XML
+                            </MudButton>
+                        }
+                    }
+                </div>
+            }
+        </MudPaper>
+    }
+</MudPaper>
+
+@code {
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    // ── Cataloghi/filtri ────────────────────────────────────────────────
+    private IReadOnlyList<Anagrafica> _anagrafiche = Array.Empty<Anagrafica>();
+    private IReadOnlyList<int>        _anniDisponibili = Array.Empty<int>();
+
+    private string      _filtroRagioneSociale = string.Empty;
+    private Anagrafica? _anagraficaSelezionata;
+    private int?        _anno;
+    private DateTime?   _dataDa;
+    private DateTime?   _dataA;
+    private StatoCreazioneXml _statoCreazione = StatoCreazioneXml.Tutti;
+    private StatoEsitoXml     _statoEsito     = StatoEsitoXml.Tutti;
+
+    // ── Griglia + selezione ─────────────────────────────────────────────
+    private List<DocumentoXmlRiga> _documenti = new();
+    private DocumentoXmlRiga?       _selezionata;
+
+    // ── Stato UI ────────────────────────────────────────────────────────
+    private bool _caricamentoAnagrafica = true;
+    private bool _caricamentoDocumenti;
+    private bool _operazioneInCorso;
+    private readonly List<string> _erroriValidazione = new();
+
+    // ── Derivate ────────────────────────────────────────────────────────
+    private IEnumerable<Anagrafica> AnagraficheFiltrate
+        => string.IsNullOrWhiteSpace(_filtroRagioneSociale)
+            ? _anagrafiche
+            : _anagrafiche.Where(a => a.RagioneSociale.Contains(
+                _filtroRagioneSociale.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private bool IntervalloDateInvalido => _dataDa is { } d && _dataA is { } a && d > a;
+
+    // ── Init ─────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var t1 = AnagraficaManager.ElencoAsync();
+            var t2 = FattureManager.AnniConFattureAsync();
+            await Task.WhenAll(t1, t2);
+            _anagrafiche = t1.Result;
+            _anniDisponibili = t2.Result;
+
+            // Default: anno più recente con fatture (o anno corrente se nessuna).
+            _anno = _anniDisponibili.Count > 0 ? _anniDisponibili[0] : DateTime.Today.Year;
+            ImpostaDateDaAnno(_anno!.Value);
+
+            await CaricaDocumentiAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento iniziale della maschera Documenti XML fallito.", "GestioneXml.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento della maschera.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamentoAnagrafica = false;
+        }
+    }
+
+    // ── Filtri ───────────────────────────────────────────────────────────
+    private void ImpostaDateDaAnno(int anno)
+    {
+        _dataDa = new DateTime(anno, 1, 1);
+        _dataA  = new DateTime(anno, 12, 31);
+    }
+
+    private async Task OnAnnoChangedAsync(int? anno)
+    {
+        _anno = anno;
+        if (anno is { } a) ImpostaDateDaAnno(a);
+        await CaricaDocumentiAsync();
+    }
+
+    private async Task OnDataDaChangedAsync(DateTime? d) { _dataDa = d; await CaricaDocumentiAsync(); }
+    private async Task OnDataAChangedAsync(DateTime? d)  { _dataA  = d; await CaricaDocumentiAsync(); }
+    private async Task OnStatoCreazioneChangedAsync(StatoCreazioneXml s) { _statoCreazione = s; await CaricaDocumentiAsync(); }
+    private async Task OnStatoEsitoChangedAsync(StatoEsitoXml s)         { _statoEsito     = s; await CaricaDocumentiAsync(); }
+
+    private async Task SelezionaAnagraficaAsync(Anagrafica a)
+    {
+        // Toggle: ri-cliccare il cliente selezionato lo deseleziona (→ "tutte").
+        _anagraficaSelezionata = _anagraficaSelezionata?.IdAnagrafica == a.IdAnagrafica ? null : a;
+        await CaricaDocumentiAsync();
+    }
+
+    private async Task ResetAnagrafica()
+    {
+        _anagraficaSelezionata = null;
+        await CaricaDocumentiAsync();
+    }
+
+    // ── Caricamento griglia ──────────────────────────────────────────────
+    private async Task CaricaDocumentiAsync()
+    {
+        if (_dataDa is null || _dataA is null) { _documenti = new(); return; }
+
+        _caricamentoDocumenti = true;
+        _erroriValidazione.Clear();
+        try
+        {
+            var filtro = new FiltroDocumentiXml(
+                IdAnagrafica: _anagraficaSelezionata?.IdAnagrafica,
+                DataDa:       DateOnly.FromDateTime(_dataDa.Value),
+                DataA:        DateOnly.FromDateTime(_dataA.Value),
+                Creazione:    _statoCreazione,
+                Esito:        _statoEsito);
+
+            var righe = await FattureManager.ElencoPerXmlAsync(filtro);
+            _documenti = righe.ToList();
+
+            // Mantiene la selezione se la riga è ancora presente (aggiornata).
+            _selezionata = _selezionata is null
+                ? null
+                : _documenti.FirstOrDefault(d => d.IdFattura == _selezionata.IdFattura);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento documenti XML fallito.", "GestioneXml.CaricaDocumentiAsync");
+            Snackbar.Add("Errore nel caricamento dei documenti.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoDocumenti = false; }
+    }
+
+    private void Seleziona(DocumentoXmlRiga? d)
+    {
+        if (d is not null) _selezionata = d;
+    }
+
+    private string RigaClass(DocumentoXmlRiga d, int _)
+        => d.IdFattura == _selezionata?.IdFattura ? "icm-row-selected" : string.Empty;
+
+    // ── Azioni ───────────────────────────────────────────────────────────
+
+    // Apre il PDF di cortesia della fattura in una nuova scheda.
+    private async Task StampaDocumentoAsync(DocumentoXmlRiga d)
+    {
+        try { await JS.InvokeVoidAsync("open", $"/api/fatture/{d.IdFattura}/pdf", "_blank"); }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura PDF documento fallita.", "GestioneXml.StampaDocumentoAsync");
+            Snackbar.Add("Impossibile aprire il PDF del documento.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // Scarica il tracciato XML (attachment).
+    private async Task ScaricaXmlAsync(DocumentoXmlRiga d)
+    {
+        try { await JS.InvokeVoidAsync("open", $"/api/fatture/{d.IdFattura}/xml", "_blank"); }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Download XML fallito.", "GestioneXml.ScaricaXmlAsync");
+            Snackbar.Add("Impossibile scaricare il tracciato XML.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // Genera o rigenera il tracciato XML. Su rigenerazione con esito già OK chiede
+    // conferma (sovrascrive un file che risulta già accettato dallo SdI).
+    private async Task GeneraXmlAsync(DocumentoXmlRiga d, bool rigenera)
+    {
+        if (rigenera && d.EsitoOk)
+        {
+            var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+            {
+                { x => x.Titolo, "Rigenerare il tracciato?" },
+                { x => x.NomeElemento, $"Fattura {d.NumeroFattura}/{d.Anno}" },
+                { x => x.Messaggio, "L'esito è già confermato OK: rigenerare sovrascrive il file che risulta accettato dallo SdI. Continuare?" },
+                { x => x.TestoConferma, "Rigenera" },
+            };
+            var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+            var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+            if (await dialog.Result is not { Canceled: false }) return;
+        }
+
+        _operazioneInCorso = true;
+        _erroriValidazione.Clear();
+        try
+        {
+            var esito = await XmlService.GeneraAsync(d.IdFattura);
+            Snackbar.Add($"Tracciato XML generato: {esito.NomeFile}", MudBlazor.Severity.Success);
+            await CaricaDocumentiAsync();
+        }
+        catch (FatturaPaEntePubblicoException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+        catch (FatturaPaXmlNonValidoException ex)
+        {
+            // Esito di validazione a schermo (miglioria approvata): elenco puntuale.
+            _erroriValidazione.Clear();
+            _erroriValidazione.AddRange(ex.Errori);
+            Snackbar.Add("Il tracciato non ha superato la validazione: vedi il dettaglio.", MudBlazor.Severity.Warning);
+        }
+        catch (FatturaPaDatiMancantiException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Generazione XML fallita.", "GestioneXml.GeneraXmlAsync", entityId: d.IdFattura, entityType: "Fattura");
+            Snackbar.Add("Errore durante la generazione del tracciato XML.", MudBlazor.Severity.Error);
+        }
+        finally { _operazioneInCorso = false; }
+    }
+
+    private async Task ConfermaEsitoAsync(DocumentoXmlRiga d)
+    {
+        _operazioneInCorso = true;
+        try
+        {
+            await FattureManager.ConfermaEsitoXmlAsync(d.IdFattura);
+            Snackbar.Add("Esito XML confermato.", MudBlazor.Severity.Success);
+            await CaricaDocumentiAsync();
+        }
+        catch (Managers.FatturaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Conferma esito XML fallita.", "GestioneXml.ConfermaEsitoAsync", entityId: d.IdFattura, entityType: "Fattura");
+            Snackbar.Add("Errore durante la conferma dell'esito.", MudBlazor.Severity.Error);
+        }
+        finally { _operazioneInCorso = false; }
+    }
+
+    private async Task TogliEsitoAsync(DocumentoXmlRiga d)
+    {
+        _operazioneInCorso = true;
+        try
+        {
+            await FattureManager.TogliEsitoXmlAsync(d.IdFattura);
+            Snackbar.Add("Esito XML rimosso.", MudBlazor.Severity.Success);
+            await CaricaDocumentiAsync();
+        }
+        catch (Managers.FatturaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Rimozione esito XML fallita.", "GestioneXml.TogliEsitoAsync", entityId: d.IdFattura, entityType: "Fattura");
+            Snackbar.Add("Errore durante la rimozione dell'esito.", MudBlazor.Severity.Error);
+        }
+        finally { _operazioneInCorso = false; }
+    }
+}

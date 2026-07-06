@@ -54,4 +54,36 @@ public interface IFattureRepository
     /// della maschera "Stampe fatture" ai soli clienti/attività che hanno fatture.
     /// </summary>
     Task<IReadOnlyList<AttivitaFatturabile>> GetAttivitaConFattureAsync(CancellationToken ct = default);
+
+    // =====================================================================
+    // Fase D1 — maschera "Creazione-Gestione XML Documenti"
+    // =====================================================================
+
+    /// <summary>
+    /// Fatture ATTIVE che soddisfano il filtro della maschera XML (anagrafica
+    /// opzionale, range date su <c>DataFattura</c>, stato creazione XML, stato
+    /// esito), già arricchite con tipo/ragione sociale del cliente e attività.
+    /// Ordinate per data e numero decrescenti.
+    /// </summary>
+    Task<IReadOnlyList<DocumentoXmlRiga>> GetPerXmlAsync(FiltroDocumentiXml filtro, CancellationToken ct = default);
+
+    /// <summary>
+    /// Estrae il prossimo valore dalla sequence <c>fatt.SeqProgressivoInvio</c>
+    /// (generatore atomico del progressivo invio univoco). Consuma un valore ad ogni
+    /// chiamata: va invocato SOLO alla prima creazione dell'XML, non sulle rigenerazioni.
+    /// </summary>
+    Task<long> GetNextProgressivoInvioAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Marca la fattura come "XML creato": imposta <c>CreatoXML = 1</c>,
+    /// <c>ProgressivoInvio</c>, <c>NomeFileXml</c> e <c>DataCreazioneXmlUtc</c>.
+    /// Idempotente sulla rigenerazione (stesso progressivo/nome file).
+    /// </summary>
+    Task SetXmlCreatoAsync(Guid idFattura, string progressivoInvio, string nomeFileXml, DateTime creatoUtc, CancellationToken ct = default);
+
+    /// <summary>Imposta l'esito a OK: <c>EsitoXML = 1</c> e <c>DataEsitoXmlUtc</c>.</summary>
+    Task ConfermaEsitoAsync(Guid idFattura, DateTime esitoUtc, CancellationToken ct = default);
+
+    /// <summary>Riporta l'esito in attesa: <c>EsitoXML = 0</c> e <c>DataEsitoXmlUtc = NULL</c>.</summary>
+    Task TogliEsitoAsync(Guid idFattura, CancellationToken ct = default);
 }

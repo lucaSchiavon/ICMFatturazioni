@@ -20,7 +20,10 @@ internal sealed record AvvisoPdfData(
     // Se valorizzato, il documento è la FATTURA nata da questo avviso (numero/data
     // fattura in barra titolo, banner "non valido ai fini fiscali", riferimento
     // avviso nel footer). Null → documento = avviso di parcella (comportamento base).
-    Fattura? Fattura = null);
+    Fattura? Fattura = null,
+    // IBAN grezzo della banca d'appoggio (non la stringa composta in DescrizioneBanca):
+    // serve alla generazione XML FatturaPA (DettaglioPagamento). Null se non impostato.
+    string? BancaIban = null);
 
 /// <summary>
 /// Costruisce l'<see cref="AvvisoPdfData"/> a partire dall'Id di un avviso: legge
@@ -91,8 +94,13 @@ internal sealed class AvvisoPdfDataBuilder
             descrizionePagamento = (await _pagamenti.GetByIdAsync(idPag, ct))?.DescrPag;
 
         string? descrizioneBanca = null;
+        string? bancaIban        = null;
         if (testata.IdBancaAppoggio is { } idBanca)
-            descrizioneBanca = ComponiBanca(await _banche.GetByIdAsync(idBanca, ct));
+        {
+            var banca        = await _banche.GetByIdAsync(idBanca, ct);
+            descrizioneBanca = ComponiBanca(banca);
+            bancaIban        = banca?.IBAN;
+        }
 
         // Cascata fiscale ricostruita dagli snapshot congelati sull'avviso: importo
         // autorevole = somma righe reali; spese art.15 = somma spese collegate.
@@ -109,7 +117,8 @@ internal sealed class AvvisoPdfDataBuilder
             DescrizionePagamento: descrizionePagamento,
             DescrizioneBanca:     descrizioneBanca,
             Calcolo:              calcolo,
-            Fattura:              fattura);
+            Fattura:              fattura,
+            BancaIban:            bancaIban);
     }
 
     // "Banca - Agenzia - IBAN: xxx", omettendo le parti mancanti.

@@ -47,4 +47,37 @@ public interface IFattureManager
     /// numero è riutilizzabile. Idempotente: no-op se già annullata o inesistente.
     /// </summary>
     Task AnnullaAsync(Guid idFattura, CancellationToken ct = default);
+
+    // ── Fase D1 — maschera "Creazione-Gestione XML Documenti" ─────────────────
+
+    /// <summary>
+    /// Righe della griglia della maschera XML che soddisfano il filtro
+    /// (anagrafica opzionale, range date, stato creazione/esito).
+    /// </summary>
+    Task<IReadOnlyList<DocumentoXmlRiga>> ElencoPerXmlAsync(FiltroDocumentiXml filtro, CancellationToken ct = default);
+
+    /// <summary>
+    /// Preleva il prossimo valore della sequence del progressivo invio (consuma un
+    /// valore): usato dal servizio XML SOLO alla prima generazione di una fattura.
+    /// </summary>
+    Task<long> ProssimoProgressivoInvioSeqAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Registra che il tracciato XML è stato generato (progressivo + nome file),
+    /// impostando <c>CreatoXML = 1</c> e la data di creazione (UTC), con audit.
+    /// </summary>
+    Task SegnaXmlCreatoAsync(Guid idFattura, string progressivoInvio, string nomeFileXml, CancellationToken ct = default);
+
+    /// <summary>
+    /// Conferma l'esito OK dell'invio allo SdI (<c>EsitoXML = 1</c>), con audit.
+    /// </summary>
+    /// <exception cref="FatturaInvalidaException">
+    /// Motivo <c>FatturaNonTrovata</c> o <c>XmlNonCreato</c> (esito non confermabile
+    /// prima di aver generato l'XML).
+    /// </exception>
+    Task ConfermaEsitoXmlAsync(Guid idFattura, CancellationToken ct = default);
+
+    /// <summary>Riporta l'esito in attesa (<c>EsitoXML = 0</c>), con audit.</summary>
+    /// <exception cref="FatturaInvalidaException">Motivo <c>FatturaNonTrovata</c>.</exception>
+    Task TogliEsitoXmlAsync(Guid idFattura, CancellationToken ct = default);
 }

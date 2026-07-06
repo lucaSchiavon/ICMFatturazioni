@@ -135,6 +135,90 @@ public sealed class FattureManager : IFattureManager
         catch { /* audit best-effort */ }
     }
 
+    // ── Fase D1 — maschera "Creazione-Gestione XML Documenti" ─────────────────
+
+    public Task<IReadOnlyList<DocumentoXmlRiga>> ElencoPerXmlAsync(FiltroDocumentiXml filtro, CancellationToken ct = default)
+        => _repo.GetPerXmlAsync(filtro, ct);
+
+    public Task<long> ProssimoProgressivoInvioSeqAsync(CancellationToken ct = default)
+        => _repo.GetNextProgressivoInvioAsync(ct);
+
+    /// <inheritdoc/>
+    public async Task SegnaXmlCreatoAsync(Guid idFattura, string progressivoInvio, string nomeFileXml, CancellationToken ct = default)
+    {
+        var fattura = await _repo.GetByIdAsync(idFattura, ct);
+        if (fattura is null || !fattura.IsAttivo)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.FatturaNonTrovata,
+                "La fattura non esiste più o è stata annullata.");
+
+        var giaCreato = fattura.CreatoXML; // per distinguere prima creazione da rigenerazione nell'audit
+        await _repo.SetXmlCreatoAsync(idFattura, progressivoInvio, nomeFileXml, DateTime.UtcNow, ct);
+
+        try
+        {
+            await _audit.RegistraModificaAsync(
+                "Fattura", idFattura,
+                DescrizioneAudit(fattura),
+                AuditDettaglio.Snapshot(new
+                {
+                    Operazione = giaCreato ? "RigeneraXML" : "CreaXML",
+                    ProgressivoInvio = progressivoInvio,
+                    NomeFileXml = nomeFileXml,
+                }),
+                cancellationToken: ct);
+        }
+        catch { /* audit best-effort */ }
+    }
+
+    /// <inheritdoc/>
+    public async Task ConfermaEsitoXmlAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        var fattura = await _repo.GetByIdAsync(idFattura, ct);
+        if (fattura is null || !fattura.IsAttivo)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.FatturaNonTrovata,
+                "La fattura non esiste più o è stata annullata.");
+
+        // Non ha senso confermare l'esito dell'invio se il tracciato XML non esiste.
+        if (!fattura.CreatoXML)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.XmlNonCreato,
+                "Genera prima il file XML: l'esito si conferma solo dopo l'invio allo SdI.");
+
+        await _repo.ConfermaEsitoAsync(idFattura, DateTime.UtcNow, ct);
+
+        try
+        {
+            await _audit.RegistraModificaAsync(
+                "Fattura", idFattura, DescrizioneAudit(fattura),
+                AuditDettaglio.Snapshot(new { Operazione = "ConfermaEsitoXML" }),
+                cancellationToken: ct);
+        }
+        catch { /* audit best-effort */ }
+    }
+
+    /// <inheritdoc/>
+    public async Task TogliEsitoXmlAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        var fattura = await _repo.GetByIdAsync(idFattura, ct);
+        if (fattura is null || !fattura.IsAttivo)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.FatturaNonTrovata,
+                "La fattura non esiste più o è stata annullata.");
+
+        await _repo.TogliEsitoAsync(idFattura, ct);
+
+        try
+        {
+            await _audit.RegistraModificaAsync(
+                "Fattura", idFattura, DescrizioneAudit(fattura),
+                AuditDettaglio.Snapshot(new { Operazione = "TogliEsitoXML" }),
+                cancellationToken: ct);
+        }
+        catch { /* audit best-effort */ }
+    }
+
     // Etichetta breve leggibile per l'audit: "Fattura 38/2026".
     private static string DescrizioneAudit(Fattura f) => $"Fattura {f.NumeroFattura}/{f.Anno}";
 }

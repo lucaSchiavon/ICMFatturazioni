@@ -4,6 +4,7 @@ using ICMFatturazioni.Web.Components;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Email;
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.FatturaPa;
 using ICMFatturazioni.Web.Logging;
 using ICMFatturazioni.Web.Manutenzione;
 using ICMFatturazioni.Web.Managers;
@@ -148,6 +149,17 @@ builder.Services.AddScoped<IFatturaPdfService>(sp =>
                           sp.GetRequiredService<IFattureManager>()));
 // Report scadenzario: dipende solo da Manager pubblici → registrazione standard.
 builder.Services.AddScoped<IScadenzarioPdfService, ScadenzarioPdfService>();
+
+// === Fatturazione elettronica (Fase D1) ===
+// Opzioni (cartella output XML) + servizio di generazione tracciato FatturaPA.
+// Il servizio riusa il builder dati condiviso e ha costruttore interno → factory.
+builder.Services.Configure<FatturaPaOptions>(
+    builder.Configuration.GetSection(FatturaPaOptions.SectionName));
+builder.Services.AddScoped<IFatturaPaXmlService>(sp =>
+    new FatturaPaXmlService(
+        sp.GetRequiredService<AvvisoPdfDataBuilder>(),
+        sp.GetRequiredService<IFattureManager>(),
+        sp.GetRequiredService<IOptions<FatturaPaOptions>>()));
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le
@@ -549,6 +561,44 @@ app.MapGet("/api/fatture/{id:guid}/pdf", async Task<IResult> (
             "risolto sull'host, dati azienda/cliente incoerenti.",
             "FatturaPdf.GeneraAsync", entityId: id, entityType: "Fattura", cancellationToken: ct);
         return Results.Problem("Errore durante la generazione del PDF della fattura.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
+
+// ----------------------------------------------------------------------------
+// Download del tracciato XML FatturaPA di una fattura (maschera Documenti XML).
+// Scarica il file dalla cartella configurata; se assente lo rigenera al volo dai
+// dati (riusando il progressivo già persistito). Content-Disposition attachment:
+// il browser lo salva invece di aprirlo. Lettura pura → nessun audit qui.
+// ----------------------------------------------------------------------------
+app.MapGet("/api/fatture/{id:guid}/xml", async Task<IResult> (
+    Guid id,
+    IFatturaPaXmlService xmlService,
+    ILogManager logManager,
+    CancellationToken ct) =>
+{
+    try
+    {
+        var (contenuto, nomeFile) = await xmlService.ScaricaAsync(id, ct);
+        // application/xml + attachment: download esplicito del tracciato.
+        return Results.File(contenuto, "application/xml", fileDownloadName: nomeFile);
+    }
+    catch (ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonTrovataException)
+    {
+        return Results.NotFound();
+    }
+    catch (ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonGeneratoException)
+    {
+        // XML non ancora generato: conflitto di stato, non un errore server.
+        return Results.Conflict("Il tracciato XML di questa fattura non è ancora stato generato.");
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Download del tracciato XML fallito. Cause tipiche: cartella di output non " +
+            "accessibile, dati azienda/cliente incoerenti alla rigenerazione al volo.",
+            "FatturaPaXml.Scarica", entityId: id, entityType: "Fattura", cancellationToken: ct);
+        return Results.Problem("Errore durante il download del tracciato XML.", statusCode: 500);
     }
 })
 .RequireAuthorization();

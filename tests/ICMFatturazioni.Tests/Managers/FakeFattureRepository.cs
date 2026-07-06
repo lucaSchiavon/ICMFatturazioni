@@ -86,15 +86,95 @@ internal sealed class FakeFattureRepository : IFattureRepository
         return Task.FromResult<IReadOnlyList<AttivitaFatturabile>>(coppie);
     }
 
-    private static Fattura CloneInattiva(Fattura src) => new()
+    // ── Fase D1 — maschera "Creazione-Gestione XML Documenti" ─────────────────
+
+    // Sequence in-memory del progressivo invio.
+    private long _seqProgressivo;
+
+    // Tipo anagrafica per avviso (default Privato), per il read-model della griglia.
+    public readonly Dictionary<Guid, TipoAnagrafica> AvvisoToTipo = new();
+
+    public Task<long> GetNextProgressivoInvioAsync(CancellationToken ct = default)
+        => Task.FromResult(++_seqProgressivo);
+
+    public Task SetXmlCreatoAsync(Guid idFattura, string progressivoInvio, string nomeFileXml, DateTime creatoUtc, CancellationToken ct = default)
     {
-        IdFattura     = src.IdFattura,
-        IdAvviso      = src.IdAvviso,
-        NumeroFattura = src.NumeroFattura,
-        Anno          = src.Anno,
-        DataFattura   = src.DataFattura,
-        CreatoXML     = src.CreatoXML,
-        EsitoXML      = src.EsitoXML,
-        IsAttivo      = false,
+        if (_fatture.TryGetValue(idFattura, out var f))
+            _fatture[idFattura] = Clone(f, creatoXml: true, progressivo: progressivoInvio,
+                nomeFile: nomeFileXml, creatoUtc: creatoUtc);
+        return Task.CompletedTask;
+    }
+
+    public Task ConfermaEsitoAsync(Guid idFattura, DateTime esitoUtc, CancellationToken ct = default)
+    {
+        if (_fatture.TryGetValue(idFattura, out var f))
+            _fatture[idFattura] = Clone(f, esitoXml: 1, esitoUtc: esitoUtc);
+        return Task.CompletedTask;
+    }
+
+    public Task TogliEsitoAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        if (_fatture.TryGetValue(idFattura, out var f))
+            _fatture[idFattura] = Clone(f, esitoXml: 0, esitoUtc: null, azzeraEsitoUtc: true);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<DocumentoXmlRiga>> GetPerXmlAsync(FiltroDocumentiXml filtro, CancellationToken ct = default)
+    {
+        var righe = _fatture.Values
+            .Where(f => f.IsAttivo
+                        && f.DataFattura >= filtro.DataDa
+                        && f.DataFattura <= filtro.DataA)
+            .Where(f => filtro.IdAnagrafica is null
+                        || (AvvisoToAnagrafica.TryGetValue(f.IdAvviso, out var idAna) && idAna == filtro.IdAnagrafica))
+            .Where(f => filtro.Creazione switch
+            {
+                StatoCreazioneXml.DaCreare => !f.CreatoXML,
+                StatoCreazioneXml.Creato   => f.CreatoXML,
+                _                          => true,
+            })
+            .Where(f => filtro.Esito switch
+            {
+                StatoEsitoXml.Attesa => f.EsitoXML == 0,
+                StatoEsitoXml.Ok     => f.EsitoXML == 1,
+                _                    => true,
+            })
+            .OrderByDescending(f => f.DataFattura).ThenByDescending(f => f.NumeroFattura)
+            .Select(f => new DocumentoXmlRiga(
+                f.IdFattura, f.NumeroFattura, f.Anno, f.DataFattura,
+                AvvisoToTipo.TryGetValue(f.IdAvviso, out var tp) ? tp : TipoAnagrafica.Privato,
+                "Cliente", "Tipo", "0", "Attività",
+                f.CreatoXML, f.EsitoXML, f.ProgressivoInvio, f.NomeFileXml))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<DocumentoXmlRiga>>(righe);
+    }
+
+    private static Fattura CloneInattiva(Fattura src) => Clone(src, isAttivo: false);
+
+    // Clone con override selettivi (l'entità è a init-only): base per soft-delete e
+    // per le transizioni di stato XML.
+    private static Fattura Clone(
+        Fattura src,
+        bool?     isAttivo   = null,
+        bool?     creatoXml  = null,
+        int?      esitoXml   = null,
+        string?   progressivo = null,
+        string?   nomeFile   = null,
+        DateTime? creatoUtc  = null,
+        DateTime? esitoUtc   = null,
+        bool      azzeraEsitoUtc = false) => new()
+    {
+        IdFattura           = src.IdFattura,
+        IdAvviso            = src.IdAvviso,
+        NumeroFattura       = src.NumeroFattura,
+        Anno                = src.Anno,
+        DataFattura         = src.DataFattura,
+        CreatoXML           = creatoXml ?? src.CreatoXML,
+        EsitoXML            = esitoXml  ?? src.EsitoXML,
+        ProgressivoInvio    = progressivo ?? src.ProgressivoInvio,
+        NomeFileXml         = nomeFile ?? src.NomeFileXml,
+        DataCreazioneXmlUtc = creatoUtc ?? src.DataCreazioneXmlUtc,
+        DataEsitoXmlUtc     = azzeraEsitoUtc ? null : (esitoUtc ?? src.DataEsitoXmlUtc),
+        IsAttivo            = isAttivo  ?? src.IsAttivo,
     };
 }
