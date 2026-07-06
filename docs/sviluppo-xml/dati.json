@@ -1,0 +1,18 @@
+{
+  "TEMPLATE": "template-vislogica.html",
+  "ACCENT": "#102050",
+
+  "DOC_TIPOLOGIA": "Documentazione tecnica di sviluppo",
+  "DOC_TITOLO": "La maschera Documenti XML e il tracciato FatturaPA",
+  "DOC_SOTTOTITOLO": "Analisi dettagliata dello sviluppo — Fase D1",
+  "PROGETTO_NOME": "ICMFatturazioni",
+  "DOC_VERSIONE": "1.0",
+  "DOC_DATA": "06/07/2026",
+  "DOC_STATO": "Rilasciato",
+  "DOC_CLASSIFICAZIONE": "Interno",
+  "DOC_AUTORE": "Luca Schiavon",
+
+  "AGENZIA_NOME": "Vis Logica",
+  "AGENZIA_INFO": "Automazioni e software per PMI<br>vislogica.com",
+  "LOGO_AGENZIA_SRC": "loghi/logo-vislogica.png"
+}

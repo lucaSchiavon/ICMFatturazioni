@@ -1,0 +1,18 @@
+{
+  "TEMPLATE": "template-vislogica.html",
+  "ACCENT": "#102050",
+
+  "DOC_TIPOLOGIA": "Documentazione tecnica",
+  "DOC_TITOLO": "Profilo fiscale del cedente",
+  "DOC_SOTTOTITOLO": "Configurazione di fatt.Azienda e impatti su avvisi, fatture e fatturazione elettronica",
+  "PROGETTO_NOME": "ICMFatturazioni",
+  "DOC_VERSIONE": "1.0",
+  "DOC_DATA": "06/07/2026",
+  "DOC_STATO": "Rilasciato",
+  "DOC_CLASSIFICAZIONE": "Interno",
+  "DOC_AUTORE": "Luca Schiavon",
+
+  "AGENZIA_NOME": "Vis Logica",
+  "AGENZIA_INFO": "Automazioni e software per PMI<br>vislogica.com",
+  "LOGO_AGENZIA_SRC": "loghi/logo-vislogica.png"
+}
