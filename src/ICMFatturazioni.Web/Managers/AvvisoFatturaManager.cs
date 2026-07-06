@@ -21,6 +21,7 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
     private readonly IScadenzaPagamentoRepository _scadenze;
     private readonly IAnagraficaRepository        _anagrafiche;
     private readonly IAliquotaManager             _aliquote;
+    private readonly IAziendaManager              _azienda;
     private readonly ICalcoloFiscaleAvviso        _calcolo;
     private readonly IAuditManager                _audit;
 
@@ -29,6 +30,7 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
         IScadenzaPagamentoRepository scadenze,
         IAnagraficaRepository anagrafiche,
         IAliquotaManager aliquote,
+        IAziendaManager azienda,
         ICalcoloFiscaleAvviso calcolo,
         IAuditManager audit)
     {
@@ -36,6 +38,7 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
         _scadenze    = scadenze;
         _anagrafiche = anagrafiche;
         _aliquote    = aliquote;
+        _azienda     = azienda;
         _calcolo     = calcolo;
         _audit       = audit;
     }
@@ -64,8 +67,26 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
     public Task<IReadOnlyList<ScadenzaFatturabile>> ScadenzeFatturabiliAsync(Guid idAttivita, Guid? idAvvisoEscluso = null, CancellationToken ct = default)
         => _scadenze.GetFatturabiliByAttivitaAsync(idAttivita, idAvvisoEscluso, ct);
 
-    public Task<IReadOnlyList<AttivitaFatturabile>> AttivitaFatturabiliAsync(CancellationToken ct = default)
-        => _scadenze.GetAttivitaConResiduoDaFatturareAsync(ct);
+    /// <summary>
+    /// Universo delle attività su cui resta lavoro di fatturazione, per i filtri della
+    /// maschera avvisi. È l'UNIONE di:
+    /// <list type="bullet">
+    ///   <item>attività con <b>residuo da fatturare</b> (scadenze non ancora in un avviso)
+    ///   → si può creare un nuovo avviso;</item>
+    ///   <item>attività con <b>avvisi non ancora fatturati</b> → si deve ancora emettere la
+    ///   fattura dall'avviso.</item>
+    /// </list>
+    /// Così un'attività resta selezionabile finché non è tutto fatturato: senza l'unione,
+    /// un avviso che satura tutte le scadenze farebbe sparire l'attività dal filtro
+    /// <b>prima</b> di poter creare la fattura da quell'avviso (l'utente resterebbe bloccato).
+    /// </summary>
+    public async Task<IReadOnlyList<AttivitaFatturabile>> AttivitaFatturabiliAsync(CancellationToken ct = default)
+    {
+        var conResiduo = await _scadenze.GetAttivitaConResiduoDaFatturareAsync(ct);
+        var conAvvisi  = await _repo.GetAttivitaConAvvisiNonFatturatiAsync(ct);
+        // AttivitaFatturabile è un record → Distinct deduplica per (IdAnagrafica, IdAttivita).
+        return conResiduo.Concat(conAvvisi).Distinct().ToList();
+    }
 
     public Task<IReadOnlyList<DettaglioDaSchedulare>> DettagliDaSchedulareAsync(Guid idAttivita, CancellationToken ct = default)
         => _scadenze.GetDettagliNonSchedulatiByAttivitaAsync(idAttivita, ct);
@@ -102,6 +123,14 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
             .ToDictionary(f => f.IdScadenza);
 
         var aliquote = await _aliquote.GetAliquoteAvvisoAsync(ct);
+
+        // Profilo fiscale del cedente (migration 069): decide se cassa/ritenuta si
+        // applicano. Per una S.r.l. commerciale entrambi off → snapshot a 0/false, e
+        // avviso/PDF/XML restano "puliti" (imponibile + IVA). Se l'azienda non è
+        // configurata, prudenzialmente NON si applicano (documento neutro).
+        var azienda = await _azienda.GetAziendaAsync(ct);
+        var applicaCassa    = azienda?.ApplicaCassaPrevidenziale ?? false;
+        var soggettoRitenuta = azienda?.SoggettoARitenuta ?? false;
 
         var idAvviso = Guid.CreateVersion7();
         var righe    = new List<AvvisoFatturaRiga>();
@@ -156,11 +185,13 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
             // Ereditati dall'anagrafica, salvo override esplicito sull'avviso.
             IdCodicePagamento        = request.IdCodicePagamento ?? anagrafica.IdPag,
             IdBancaAppoggio          = request.IdBancaAppoggio ?? anagrafica.IdBancaAppoggio,
-            // Snapshot fiscali congelati all'emissione.
+            // Snapshot fiscali congelati all'emissione, filtrati dal profilo del cedente.
+            // Cassa: solo se il cedente la prevede (altrimenti aliquota 0 → nessuna cassa).
+            // Ritenuta: solo se il cedente vi è soggetto E il cliente è sostituto d'imposta.
             AliquotaIva              = request.AliquotaIva,
-            AliquotaCnpaia           = aliquote.Cnpaia,
+            AliquotaCnpaia           = applicaCassa ? aliquote.Cnpaia : 0m,
             AliquotaRitenuta         = aliquote.Ritenuta,
-            ApplicaRitenuta          = anagrafica.SostitutoImposta,
+            ApplicaRitenuta          = soggettoRitenuta && anagrafica.SostitutoImposta,
             DescrizioneSpeseInAvviso = request.DescrizioneSpeseInAvviso,
             IsAttivo                 = true,
         };
@@ -386,8 +417,10 @@ public sealed class AvvisoFatturaManager : IAvvisoFatturaManager
             AliquotaCassa:    avviso.AliquotaCnpaia,
             AliquotaIva:      avviso.AliquotaIva,
             AliquotaRitenuta: avviso.AliquotaRitenuta,
-            ApplicaCassa:     true,                    // lo studio applica sempre la cassa
-            ApplicaRitenuta:  avviso.ApplicaRitenuta,  // solo clienti sostituti d'imposta
+            // Cassa/ritenuta guidate dallo snapshot dell'avviso (già filtrato dal profilo
+            // del cedente all'emissione): aliquota cassa 0 → nessuna cassa.
+            ApplicaCassa:     avviso.AliquotaCnpaia > 0m,
+            ApplicaRitenuta:  avviso.ApplicaRitenuta,
             SpeseArt15:       speseArt15));
 
     // Etichetta breve leggibile per l'audit (oggetto o data).

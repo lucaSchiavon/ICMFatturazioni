@@ -1,0 +1,69 @@
+@*
+    Dialog modale per l'esito NEGATIVO della generazione del tracciato XML
+    (validazione fallita, dato mancante, ente pubblico non gestito, errore
+    imprevisto). A differenza di uno snackbar, resta in primo piano finché
+    l'utente non la chiude col pulsante: gli errori che bloccano l'emissione
+    dell'XML vanno letti, non fatti sparire da soli.
+
+    Uso:
+        var parameters = new DialogParameters<EsitoXmlDialog>
+        {
+            { x => x.Titolo, "Tracciato non valido" },
+            { x => x.Messaggio, "Il file non è stato generato:" },
+            { x => x.Errori, listaErrori },   // opzionale
+        };
+        // Non chiudibile con ESC/backdrop: solo col pulsante "Chiudi".
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true,
+                                          CloseOnEscapeKey = false, BackdropClick = false };
+        await DialogService.ShowAsync<EsitoXmlDialog>(string.Empty, parameters, options);
+*@
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex flex-column align-center text-center pa-2">
+            <MudAvatar Variant="Variant.Filled"
+                       Style="background-color:#FEF3C7; color:#B45309;" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Outlined.ReportProblem" Size="Size.Large" />
+            </MudAvatar>
+
+            <MudText Typo="Typo.h6" Class="mb-1">@Titolo</MudText>
+
+            @if (!string.IsNullOrWhiteSpace(Messaggio))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">@Messaggio</MudText>
+            }
+        </div>
+
+        @if (Errori is { Count: > 0 })
+        {
+            @* Elenco puntuale degli errori di validazione, a tutta larghezza. *@
+            <ul class="icm-xml-errori">
+                @foreach (var e in Errori)
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false" OnClick="Chiudi">
+            Chiudi
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    /// <summary>Titolo del dialog (es. "Tracciato non valido").</summary>
+    [Parameter] public string Titolo { get; set; } = "Impossibile generare l'XML";
+
+    /// <summary>Messaggio principale/introduttivo.</summary>
+    [Parameter] public string? Messaggio { get; set; }
+
+    /// <summary>Elenco opzionale degli errori di validazione (uno per riga).</summary>
+    [Parameter] public IReadOnlyList<string>? Errori { get; set; }
+
+    private void Chiudi() => MudDialog.Close();
+}

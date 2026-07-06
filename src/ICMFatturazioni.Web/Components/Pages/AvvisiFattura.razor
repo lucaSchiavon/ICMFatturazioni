@@ -29,6 +29,7 @@
 @inject ITipoAttivitaManager TipoAttivitaManager
 @inject ISpesaAnticipataManager SpesaAnticipataManager
 @inject IAliquotaManager AliquotaManager
+@inject IAziendaManager AziendaManager
 @inject ICodiceIVAManager CodiceIVAManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -177,7 +178,10 @@
             Cliente: @_anagraficaSelezionata?.RagioneSociale
             @if (_anagraficaSelezionata is not null)
             {
-                <text> · </text>@(_anagraficaSelezionata.SostitutoImposta ? "sostituto d'imposta (ritenuta applicata)" : "non sostituto d'imposta (nessuna ritenuta)")
+                @* La ritenuta è applicata solo se il cliente è sostituto d'imposta E il
+                   cedente vi è soggetto (profilo azienda): la nota riflette l'esito reale. *@
+                <text> · </text>@(_anagraficaSelezionata.SostitutoImposta ? "sostituto d'imposta" : "non sostituto d'imposta")
+                <text> </text>@(_applicaRitenutaEff ? "(ritenuta applicata)" : "(nessuna ritenuta)")
             }
         </MudText>
 
@@ -606,7 +610,10 @@
                 @{ var calc = CalcolaAnteprima(); }
                 <div class="d-flex flex-column gap-1" style="max-width:360px;">
                     @RigaImporto("Imponibile", calc.Imponibile, false, false)
-                    @RigaImporto($"C.N.P.A.I.A. {_cnpaiaEff.ToString("0.##", _itCulture)}%", calc.Cassa, false, false)
+                    @if (calc.Cassa > 0)
+                    {
+                        @RigaImporto($"C.N.P.A.I.A. {_cnpaiaEff.ToString("0.##", _itCulture)}%", calc.Cassa, false, false)
+                    }
                     @RigaImporto($"IVA {_aliquotaIvaCorrente.ToString("0.##", _itCulture)}%", calc.Iva, false, false)
                     <MudDivider Class="my-1" />
                     @RigaImporto("Totale", calc.Totale, true, false)
@@ -690,6 +697,11 @@
     private IReadOnlyList<TipoAttivita> _tipiAttivita  = Array.Empty<TipoAttivita>();
     private IReadOnlyList<Attivita>     _attivitaLista = Array.Empty<Attivita>();
     private IReadOnlyList<CodiceIVA>    _codiciIva     = Array.Empty<CodiceIVA>();
+
+    // Profilo fiscale del cedente (fatt.Azienda): pilota cassa/ritenuta nell'anteprima
+    // e in emissione. Per una S.r.l. commerciale entrambi false.
+    private bool _aziendaApplicaCassa;
+    private bool _aziendaSoggettaRitenuta;
     private AliquoteFiscali             _aliquoteFiscali = new(0m, 0m);
 
     // Contesto dell'attività selezionata
@@ -765,12 +777,14 @@
         => _codiciIva.FirstOrDefault(c => c.IdCodiceIVA == _idCodiceIvaSelezionato)?.Aliquota ?? 0m;
 
     // Aliquote "effettive" per l'anteprima cascata: in emissione = aliquote di
-    // sistema + sostituto d'imposta dell'anagrafica; in modifica = snapshot congelati
-    // sull'avviso (CNPAIA/Ritenuta non sono modificabili qui).
+    // sistema filtrate dal PROFILO FISCALE del cedente (cassa/ritenuta solo se
+    // l'azienda le prevede); in modifica = snapshot congelati sull'avviso.
     private bool _inModifica => _idAvvisoInModifica is not null && _avvisoOrig is not null;
-    private decimal _cnpaiaEff   => _inModifica ? _avvisoOrig!.AliquotaCnpaia   : _aliquoteFiscali.Cnpaia;
+    private decimal _cnpaiaEff   => _inModifica ? _avvisoOrig!.AliquotaCnpaia
+                                                : (_aziendaApplicaCassa ? _aliquoteFiscali.Cnpaia : 0m);
     private decimal _ritenutaEff => _inModifica ? _avvisoOrig!.AliquotaRitenuta : _aliquoteFiscali.Ritenuta;
-    private bool _applicaRitenutaEff => _inModifica ? _avvisoOrig!.ApplicaRitenuta : (_anagraficaSelezionata?.SostitutoImposta ?? false);
+    private bool _applicaRitenutaEff => _inModifica ? _avvisoOrig!.ApplicaRitenuta
+                                                    : (_aziendaSoggettaRitenuta && (_anagraficaSelezionata?.SostitutoImposta ?? false));
 
     // ── Computed ─────────────────────────────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -824,12 +838,16 @@
         var t3 = CodiceIVAManager.ElencoAsync();
         var t4 = AliquotaManager.GetAliquoteAvvisoAsync();
         var t5 = AvvisoManager.AttivitaFatturabiliAsync();
-        await Task.WhenAll(t1, t2, t3, t4, t5);
+        var t6 = AziendaManager.GetAziendaAsync();
+        await Task.WhenAll(t1, t2, t3, t4, t5, t6);
         _anagrafiche     = t1.Result;
         _tipiAttivita    = t2.Result;
         _codiciIva       = t3.Result;
         _aliquoteFiscali = t4.Result;
         AggiornaUniversoFatturabile(t5.Result);
+        // Profilo fiscale del cedente: pilota cassa/ritenuta in anteprima ed emissione.
+        _aziendaApplicaCassa     = t6.Result?.ApplicaCassaPrevidenziale ?? false;
+        _aziendaSoggettaRitenuta = t6.Result?.SoggettoARitenuta ?? false;
         _caricamentoAnagrafica = false;
         _caricamentoTipi       = false;
     }

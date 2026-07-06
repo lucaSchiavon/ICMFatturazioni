@@ -458,9 +458,14 @@ internal sealed class AvvisoPdfDocument
         // porta una linea di chiusura sopra l'importo, come nel modello dello studio.
         // Dal TOTALE IMPONIBILE in giù è tutto in grassetto (anche il subtotale).
         RigaCascata(table, "TOTALE IMPONIBILE", c.Imponibile, segno: null, bold: true);
-        RigaCascata(table, $"Maggiorazione {Perc(_data.Testata.AliquotaCnpaia)}% C.N.P.A.I.A.",
-            c.Cassa, segno: "+", bold: true);
-        RigaCascata(table, "", c.ImponibilePiuCassa, segno: null, bold: true, lineaSopra: true);
+        // Cassa previdenziale: solo se il cedente la applica (c.Cassa > 0). Per una
+        // società commerciale non compare — come già avviene per la ritenuta.
+        if (c.Cassa > 0)
+        {
+            RigaCascata(table, $"Maggiorazione {Perc(_data.Testata.AliquotaCnpaia)}% C.N.P.A.I.A.",
+                c.Cassa, segno: "+", bold: true);
+            RigaCascata(table, "", c.ImponibilePiuCassa, segno: null, bold: true, lineaSopra: true);
+        }
         RigaCascata(table, $"I.V.A. {Perc(_data.Testata.AliquotaIva)}% su € {Eur(c.ImponibilePiuCassa)}",
             c.Iva, segno: "+", bold: true);
         RigaCascata(table, "TOTALE", c.Totale, segno: null, bold: true, lineaSopra: true);

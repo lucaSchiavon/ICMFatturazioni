@@ -70,7 +70,7 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         var progressivo = fattura.ProgressivoInvio
             ?? CodificaProgressivo(await _fatture.ProssimoProgressivoInvioSeqAsync(ct));
 
-        var (fo, cedentePiva) = Mappa(data, fattura, progressivo, _options);
+        var (fo, cedentePiva) = Mappa(data, fattura, progressivo);
 
         // Validazione offline (schema + regole FatturaPA della libreria).
         var vr = fo.Validate();
@@ -104,7 +104,7 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         // File assente (spostato/eliminato) → rigenero al volo dallo stato persistito,
         // riusando il progressivo (nessun consumo di sequence, nessun cambio stato).
         var (data, _) = await CaricaAsync(idFattura, ct);
-        var (fo, _)   = Mappa(data, fattura, fattura.ProgressivoInvio, _options);
+        var (fo, _)   = Mappa(data, fattura, fattura.ProgressivoInvio);
         return (Serializza(fo), fattura.NomeFileXml);
     }
 
@@ -128,7 +128,7 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
     // Ritorna anche la P.IVA del cedente (serve al nome file). Le grandezze fiscali
     // vengono dalla cascata già calcolata (data.Calcolo), congelata sugli snapshot
     // dell'avviso: qui non si ricalcola nulla, si mappa.
-    internal static (FatturaOrdinaria Fattura, string CedentePiva) Mappa(AvvisoPdfData data, Fattura fattura, string progressivo, FatturaPaOptions options)
+    internal static (FatturaOrdinaria Fattura, string CedentePiva) Mappa(AvvisoPdfData data, Fattura fattura, string progressivo)
     {
         var studio  = data.Studio;
         var cliente = data.Cliente;
@@ -233,11 +233,10 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         // sarebbe comunque scartato).
         if (c.Cassa > 0m)
         {
-            var tipoCassa = NullSeVuoto(options.TipoCassa)
+            var tipoCassa = NullSeVuoto(studio.TipoCassaFe)
                 ?? throw new FatturaPaDatiMancantiException(
                     "L'avviso applica una cassa previdenziale ma il codice TipoCassa non è " +
-                    "configurato (FatturaPA:TipoCassa, es. TC04 per INARCASSA). Configurarlo " +
-                    "oppure azzerare l'aliquota della cassa per questo cedente.");
+                    "configurato sull'azienda (profilo cedente, es. TC04 per INARCASSA).");
             dgd.DatiCassaPrevidenziale.Add(new DatiCassa
             {
                 TipoCassa = tipoCassa,
@@ -252,17 +251,16 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         // dipende dal cedente (RT01 persona fisica / RT02 soggetti diversi) → configurato.
         if (t.ApplicaRitenuta && c.Ritenuta > 0m)
         {
-            var tipoRitenuta = NullSeVuoto(options.TipoRitenuta)
+            var tipoRitenuta = NullSeVuoto(studio.TipoRitenutaFe)
                 ?? throw new FatturaPaDatiMancantiException(
                     "L'avviso applica la ritenuta d'acconto ma il codice TipoRitenuta non è " +
-                    "configurato (FatturaPA:TipoRitenuta, es. RT02 per studio associato/società). " +
-                    "Configurarlo oppure non marcare il cliente come sostituto d'imposta.");
+                    "configurato sull'azienda (profilo cedente, es. RT02 per studio associato).");
             dgd.DatiRitenuta.Add(new DatiRitenuta
             {
                 TipoRitenuta = tipoRitenuta,
                 ImportoRitenuta = c.Ritenuta,
                 AliquotaRitenuta = t.AliquotaRitenuta,
-                CausalePagamento = NullSeVuoto(options.CausalePagamentoRitenuta) ?? "A",
+                CausalePagamento = NullSeVuoto(studio.CausalePagamentoRitenutaFe) ?? "A",
             });
         }
 

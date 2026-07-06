@@ -21,19 +21,62 @@ public class AvvisoFatturaManagerTests
         public required FakeScadenzaPagamentoRepository Scadenze { get; init; }
         public required FakeAnagraficaRepository        Anag     { get; init; }
         public required FakeAliquotaManager             Aliquote { get; init; }
+        public required FakeAziendaManager              Azienda  { get; init; }
         public required FakeAuditManager                Audit    { get; init; }
     }
 
-    private static Sut NewSut()
+    // Azienda di default per i test: profilo "studio professionale" (cassa + ritenuta
+    // attive), così i test storici che si aspettano CNPAIA/ritenuta continuano a valere.
+    private static Azienda StudioProfessionale() => new()
+    {
+        NomeBreve = "Studio", RagioneSociale = "Studio Test",
+        ApplicaCassaPrevidenziale = true,  TipoCassaFe = "TC04",
+        SoggettoARitenuta = true,          TipoRitenutaFe = "RT02",
+        CausalePagamentoRitenutaFe = "A",
+    };
+
+    private static Sut NewSut(Azienda? azienda = null)
     {
         var repo     = new FakeAvvisoFatturaRepository();
         var scadenze = new FakeScadenzaPagamentoRepository();
         var anag     = new FakeAnagraficaRepository();
         var aliquote = new FakeAliquotaManager();
+        var aziendaM = new FakeAziendaManager(azienda ?? StudioProfessionale());
         var audit    = new FakeAuditManager();
         var manager  = new AvvisoFatturaManager(
-            repo, scadenze, anag, aliquote, new CalcoloFiscaleAvviso(), audit);
-        return new Sut { Manager = manager, Repo = repo, Scadenze = scadenze, Anag = anag, Aliquote = aliquote, Audit = audit };
+            repo, scadenze, anag, aliquote, aziendaM, new CalcoloFiscaleAvviso(), audit);
+        return new Sut { Manager = manager, Repo = repo, Scadenze = scadenze, Anag = anag, Aliquote = aliquote, Azienda = aziendaM, Audit = audit };
+    }
+
+    // L'universo dei filtri della maschera avvisi è l'UNIONE di "attività con residuo"
+    // e "attività con avvisi non fatturati": un'attività le cui scadenze sono tutte
+    // saturate da un avviso NON ancora fatturato deve restare selezionabile (altrimenti
+    // l'utente non può più raggiungere l'avviso per emetterne la fattura).
+    [Fact]
+    public async Task AttivitaFatturabili_UnisceResiduoEAvvisiNonFatturati_EDeduplica()
+    {
+        var sut = NewSut();
+
+        var anaResiduo = Guid.NewGuid(); var attResiduo = Guid.NewGuid(); // solo residuo
+        var anaAvviso  = Guid.NewGuid(); var attAvviso  = Guid.NewGuid(); // solo avviso non fatturato
+        var anaEntrambi = Guid.NewGuid(); var attEntrambi = Guid.NewGuid(); // in entrambi → una volta sola
+
+        // Universo "residuo da fatturare".
+        sut.Scadenze.AttivitaFatturabili.Add(new AttivitaFatturabile(anaResiduo, attResiduo));
+        sut.Scadenze.AttivitaFatturabili.Add(new AttivitaFatturabile(anaEntrambi, attEntrambi));
+
+        // Universo "avvisi non fatturati" (IdFattura null): attività satura ma non fatturata.
+        sut.Repo.Seed(new AvvisoFattura { IdAvviso = Guid.NewGuid(), IdAttivita = attAvviso,
+            IdAnagrafica = anaAvviso, DataAvviso = new DateOnly(2026, 7, 6), IsAttivo = true });
+        sut.Repo.Seed(new AvvisoFattura { IdAvviso = Guid.NewGuid(), IdAttivita = attEntrambi,
+            IdAnagrafica = anaEntrambi, DataAvviso = new DateOnly(2026, 7, 6), IsAttivo = true });
+
+        var universo = await sut.Manager.AttivitaFatturabiliAsync();
+
+        Assert.Equal(3, universo.Count); // dedup: attEntrambi una sola volta
+        Assert.Contains(universo, x => x.IdAttivita == attResiduo);
+        Assert.Contains(universo, x => x.IdAttivita == attAvviso);
+        Assert.Contains(universo, x => x.IdAttivita == attEntrambi);
     }
 
     private static async Task<Guid> SeedAnagraficaAsync(
@@ -158,6 +201,45 @@ public class AvvisoFatturaManagerTests
         var id = await sut.Manager.EmettiAsync(Request(idAnag, new[] { s1 }));
 
         Assert.False((await sut.Repo.GetByIdAsync(id))!.ApplicaRitenuta);
+    }
+
+    [Fact]
+    public async Task EmettiAsync_CedenteSrl_NoCassaNoRitenuta_AncheSeClienteSostituto()
+    {
+        // Profilo S.r.l. commerciale (ICM Solutions): cassa e ritenuta disattivate sul
+        // cedente → l'avviso nasce senza cassa (aliquota 0) e senza ritenuta, anche se
+        // il cliente è sostituto d'imposta.
+        var srl = new Azienda { NomeBreve = "Srl", RagioneSociale = "Società Test S.r.l.",
+            ApplicaCassaPrevidenziale = false, SoggettoARitenuta = false };
+        var sut = NewSut(srl);
+        var idAnag = await SeedAnagraficaAsync(sut.Anag, sostituto: true);
+        var s1 = Guid.NewGuid();
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s1));
+
+        var id = await sut.Manager.EmettiAsync(Request(idAnag, new[] { s1 }));
+
+        var t = (await sut.Repo.GetByIdAsync(id))!;
+        Assert.Equal(0m, t.AliquotaCnpaia);   // cassa non applicata
+        Assert.False(t.ApplicaRitenuta);      // ritenuta non applicata
+    }
+
+    [Fact]
+    public async Task EmettiAsync_ProfiloCedente_CassaERitenutaIndipendenti()
+    {
+        // Cedente che applica la cassa ma NON è soggetto a ritenuta: i due interruttori
+        // del profilo sono indipendenti.
+        var azienda = new Azienda { NomeBreve = "X", RagioneSociale = "X",
+            ApplicaCassaPrevidenziale = true, TipoCassaFe = "TC04", SoggettoARitenuta = false };
+        var sut = NewSut(azienda);
+        var idAnag = await SeedAnagraficaAsync(sut.Anag, sostituto: true);
+        var s1 = Guid.NewGuid();
+        sut.Scadenze.Fatturabili.Add(Fatturabile(s1));
+
+        var id = await sut.Manager.EmettiAsync(Request(idAnag, new[] { s1 }));
+
+        var t = (await sut.Repo.GetByIdAsync(id))!;
+        Assert.Equal(4m, t.AliquotaCnpaia);   // cassa sì
+        Assert.False(t.ApplicaRitenuta);      // ritenuta no
     }
 
     [Fact]

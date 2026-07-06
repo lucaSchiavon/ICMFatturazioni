@@ -164,20 +164,6 @@
         </MudButton>
     </div>
 
-    @if (_erroriValidazione.Count > 0)
-    {
-        <MudAlert Severity="MudBlazor.Severity.Warning" Class="mb-3"
-                  ShowCloseIcon="true" CloseIconClicked="@(() => _erroriValidazione.Clear())">
-            <MudText Typo="Typo.subtitle2">Il tracciato non è valido:</MudText>
-            <ul style="margin:4px 0 0 18px;">
-                @foreach (var e in _erroriValidazione)
-                {
-                    <li>@e</li>
-                }
-            </ul>
-        </MudAlert>
-    }
-
     @if (_caricamentoDocumenti)
     {
         <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">Caricamento…</MudText>
@@ -332,7 +318,6 @@
     private bool _caricamentoAnagrafica = true;
     private bool _caricamentoDocumenti;
     private bool _operazioneInCorso;
-    private readonly List<string> _erroriValidazione = new();
 
     // ── Derivate ────────────────────────────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -409,7 +394,6 @@
         if (_dataDa is null || _dataA is null) { _documenti = new(); return; }
 
         _caricamentoDocumenti = true;
-        _erroriValidazione.Clear();
         try
         {
             var filtro = new FiltroDocumentiXml(
@@ -486,34 +470,54 @@
         }
 
         _operazioneInCorso = true;
-        _erroriValidazione.Clear();
         try
         {
             var esito = await XmlService.GeneraAsync(d.IdFattura);
             Snackbar.Add($"Tracciato XML generato: {esito.NomeFile}", MudBlazor.Severity.Success);
             await CaricaDocumentiAsync();
         }
-        catch (FatturaPaEntePubblicoException ex)
-        {
-            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
-        }
+        // Tutti gli errori che FANNO FALLIRE il tracciato vanno mostrati in una modale
+        // in primo piano (chiudibile solo col pulsante): non devono sparire da soli.
         catch (FatturaPaXmlNonValidoException ex)
         {
-            // Esito di validazione a schermo (miglioria approvata): elenco puntuale.
-            _erroriValidazione.Clear();
-            _erroriValidazione.AddRange(ex.Errori);
-            Snackbar.Add("Il tracciato non ha superato la validazione: vedi il dettaglio.", MudBlazor.Severity.Warning);
+            await MostraEsitoXmlAsync("Tracciato XML non valido",
+                "Il file non è stato generato. Correggere i seguenti punti e riprovare:", ex.Errori);
+        }
+        catch (FatturaPaEntePubblicoException ex)
+        {
+            await MostraEsitoXmlAsync("Cliente ente pubblico", ex.Message);
         }
         catch (FatturaPaDatiMancantiException ex)
         {
-            Snackbar.Add(ex.Message, MudBlazor.Severity.Error);
+            await MostraEsitoXmlAsync("Impossibile generare l'XML", ex.Message);
         }
         catch (Exception ex)
         {
             await LogManager.LogErroreAsync(ex, "Generazione XML fallita.", "GestioneXml.GeneraXmlAsync", entityId: d.IdFattura, entityType: "Fattura");
-            Snackbar.Add("Errore durante la generazione del tracciato XML.", MudBlazor.Severity.Error);
+            await MostraEsitoXmlAsync("Errore imprevisto",
+                "Si è verificato un errore durante la generazione del tracciato XML. Riprovare; se persiste, contattare l'assistenza.");
         }
         finally { _operazioneInCorso = false; }
+    }
+
+    // Mostra una modale (in primo piano, chiudibile solo col pulsante) con l'esito
+    // negativo della generazione: messaggio + eventuale elenco degli errori.
+    private async Task MostraEsitoXmlAsync(string titolo, string messaggio, IReadOnlyList<string>? errori = null)
+    {
+        var parameters = new DialogParameters<EsitoXmlDialog>
+        {
+            { x => x.Titolo, titolo },
+            { x => x.Messaggio, messaggio },
+            { x => x.Errori, errori },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = false, // solo il pulsante "Chiudi" la chiude
+            BackdropClick = false,
+        };
+        await DialogService.ShowAsync<EsitoXmlDialog>(string.Empty, parameters, options);
     }
 
     private async Task ConfermaEsitoAsync(DocumentoXmlRiga d)

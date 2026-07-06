@@ -29,7 +29,7 @@ public class FatturaPaXmlServiceTests
             NomeBreve          = "Studio",
             RagioneSociale     = "Studio Associato Architetti Test",
             PIVA               = PivaStudio,
-            CodiceFiscale      = PivaStudio, // 11 char → soggetto diverso da persona fisica (RT02)
+            CodiceFiscale      = PivaStudio,
             IndirizzoVia       = "Via Roma",
             IndirizzoCivico    = "1",
             IndirizzoCAP       = "37100",
@@ -38,6 +38,12 @@ public class FatturaPaXmlServiceTests
             IndirizzoPaese     = "IT",
             RegimeFiscale      = "RF01",
             Email              = "studio@example.it",
+            // Profilo fiscale "studio professionale": cassa + ritenuta con i codici FE.
+            ApplicaCassaPrevidenziale  = true,
+            TipoCassaFe                = "TC04",
+            SoggettoARitenuta          = true,
+            TipoRitenutaFe             = "RT02",
+            CausalePagamentoRitenutaFe = "A",
         };
 
         var cliente = new Anagrafica
@@ -101,15 +107,6 @@ public class FatturaPaXmlServiceTests
         DataFattura   = new DateOnly(2026, 7, 30),
     };
 
-    // Configurazione "studio professionale": codici cassa/ritenuta valorizzati.
-    private static FatturaPaOptions Options() => new()
-    {
-        CartellaOutput           = "C:\\temp",
-        TipoCassa                = "TC04", // INARCASSA
-        TipoRitenuta             = "RT02", // soggetti diversi da persona fisica
-        CausalePagamentoRitenuta = "A",
-    };
-
     // Dati di una S.r.l. commerciale (caso ICM Solutions): nessuna cassa, nessuna
     // ritenuta — solo imponibile + IVA + spese escluse.
     private static AvvisoPdfData CostruisciDatiSrl()
@@ -136,7 +133,7 @@ public class FatturaPaXmlServiceTests
     [Fact]
     public void Mappa_AvvisoRealistico_ProduceTracciatoValido()
     {
-        var (fo, cedentePiva) = FatturaPaXmlService.Mappa(CostruisciDati(), Fattura(), "00001", Options());
+        var (fo, cedentePiva) = FatturaPaXmlService.Mappa(CostruisciDati(), Fattura(), "00001");
 
         Assert.Equal(PivaStudio, cedentePiva);
 
@@ -149,7 +146,7 @@ public class FatturaPaXmlServiceTests
     [Fact]
     public void Mappa_ContieneCedenteCassaSpeseEPagamento()
     {
-        var (fo, _) = FatturaPaXmlService.Mappa(CostruisciDati(), Fattura(), "00001", Options());
+        var (fo, _) = FatturaPaXmlService.Mappa(CostruisciDati(), Fattura(), "00001");
         var xml = Serializza(fo);
 
         Assert.Contains("FPR12", xml);                 // formato privati/società
@@ -182,7 +179,7 @@ public class FatturaPaXmlServiceTests
             },
         };
 
-        var (fo, _) = FatturaPaXmlService.Mappa(conCf, Fattura(), "00002", Options());
+        var (fo, _) = FatturaPaXmlService.Mappa(conCf, Fattura(), "00002");
         var vr = fo.Validate();
         Assert.True(vr.IsValid,
             "Tracciato non valido: " +
@@ -194,11 +191,8 @@ public class FatturaPaXmlServiceTests
     public void Mappa_Srl_SenzaCassaNeRitenuta_ValidaSenzaCodiciConfigurati()
     {
         // Caso ICM Solutions (S.r.l. commerciale): niente cassa né ritenuta. Il
-        // tracciato deve essere valido ANCHE con TipoCassa/TipoRitenuta non configurati,
-        // e non deve contenere i blocchi/ codici cassa-ritenuta.
-        var opzioniSrl = new FatturaPaOptions { CartellaOutput = "C:\\temp" }; // TipoCassa/TipoRitenuta nulli
-
-        var (fo, _) = FatturaPaXmlService.Mappa(CostruisciDatiSrl(), Fattura(), "00003", opzioniSrl);
+        // tracciato deve essere valido e non contenere i blocchi/codici cassa-ritenuta.
+        var (fo, _) = FatturaPaXmlService.Mappa(CostruisciDatiSrl(), Fattura(), "00003");
 
         var vr = fo.Validate();
         Assert.True(vr.IsValid,

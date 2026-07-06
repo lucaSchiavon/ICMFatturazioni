@@ -23,34 +23,8 @@ public sealed class FatturaPaOptions
     /// FatturaPA (<c>IdPaese+IdCodiceTrasmittente_progressivo.xml</c>).
     /// </summary>
     public string CartellaOutput { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Codice <c>TipoCassa</c> della cassa previdenziale del cedente (codelist AdE:
-    /// es. <c>TC04</c> = INARCASSA per ingegneri/architetti, <c>TC02</c> = dottori
-    /// commercialisti, …). Dipende dalla categoria del cedente, quindi <b>non</b> è
-    /// hardcodato: va configurato solo se il cedente applica una cassa previdenziale.
-    /// Una società commerciale (S.r.l.) NON ha cassa → lasciare vuoto.
-    /// </summary>
-    /// <remarks>
-    /// La cassa finisce nel tracciato solo se il calcolo dell'avviso produce un
-    /// contributo &gt; 0 (aliquota CNPAIA valorizzata). In quel caso questo codice è
-    /// obbligatorio: se vuoto, la generazione XML fallisce con un messaggio chiaro.
-    /// </remarks>
-    public string? TipoCassa { get; set; }
-
-    /// <summary>
-    /// Codice <c>TipoRitenuta</c> del cedente (codelist AdE: <c>RT01</c> = persona
-    /// fisica, <c>RT02</c> = soggetti diversi, es. studio associato/società). Serve
-    /// solo se il cedente subisce ritenuta d'acconto (professionisti/lavoro
-    /// autonomo). Una S.r.l. commerciale NON subisce ritenuta sulle vendite →
-    /// lasciare vuoto.
-    /// </summary>
-    public string? TipoRitenuta { get; set; }
-
-    /// <summary>
-    /// Codice <c>CausalePagamento</c> della ritenuta (tabella modello CU/770: es.
-    /// <c>A</c> = prestazioni di lavoro autonomo). Usato solo quando è presente la
-    /// ritenuta. Default <c>A</c>.
-    /// </summary>
-    public string CausalePagamentoRitenuta { get; set; } = "A";
 }
+// NB: i codici fiscali del tracciato (TipoCassa/TipoRitenuta/CausalePagamento) NON
+// stanno qui: dipendono dalla categoria del CEDENTE e sono configurati sul profilo
+// fiscale di fatt.Azienda (TipoCassaFe/TipoRitenutaFe/CausalePagamentoRitenutaFe,
+// migration 069), letti dal servizio XML tramite l'entità Azienda.

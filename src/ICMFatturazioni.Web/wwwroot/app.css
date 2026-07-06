@@ -328,6 +328,17 @@ h1:focus {
 /* Riga selezionata nella tabella "Avvisi non fatturati" (Emissione Fatture) */
 .icm-row-selected > td { background: var(--mud-palette-primary-hover); }
 
+/* Elenco errori di validazione XML nella modale EsitoXmlDialog */
+.icm-xml-errori {
+    margin: 4px 0 0 0;
+    padding-left: 20px;
+    text-align: left;
+    color: var(--mud-palette-text-primary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.icm-xml-errori li { margin-bottom: 4px; }
+
 /* Card mobile per una scadenza */
 .icm-scad-card {
     border: 1px solid var(--mud-palette-lines-default);

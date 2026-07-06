@@ -59,6 +59,36 @@ public sealed class Azienda
     public string? SocioUnico { get; init; }
     public string? Identificativo { get; init; }
 
+    // --- Profilo fiscale del cedente (migration 069). Rende cassa/ritenuta una
+    //     caratteristica CONFIGURABILE di chi emette, non più cablata "sempre attiva"
+    //     (modello studio architetti). Una S.r.l. commerciale ha entrambi a false. ---
+
+    /// <summary>
+    /// True se il cedente applica la cassa previdenziale (professionista iscritto a
+    /// una cassa: architetti/ingegneri, commercialisti, ...). False per una società
+    /// commerciale. Pilota l'applicazione della maggiorazione cassa in avvisi/fatture.
+    /// </summary>
+    public bool ApplicaCassaPrevidenziale { get; init; }
+
+    /// <summary>
+    /// Codice <c>TipoCassa</c> AdE per la Fattura Elettronica (es. <c>TC04</c> =
+    /// INARCASSA). Usato solo quando <see cref="ApplicaCassaPrevidenziale"/> è true.
+    /// </summary>
+    public string? TipoCassaFe { get; init; }
+
+    /// <summary>
+    /// True se il cedente è soggetto a ritenuta d'acconto (redditi di lavoro autonomo/
+    /// professionale). False per una società (reddito d'impresa). La ritenuta si applica
+    /// solo se questo è true <b>e</b> il cliente è sostituto d'imposta.
+    /// </summary>
+    public bool SoggettoARitenuta { get; init; }
+
+    /// <summary>Codice <c>TipoRitenuta</c> AdE (es. <c>RT02</c>). Usato se <see cref="SoggettoARitenuta"/>.</summary>
+    public string? TipoRitenutaFe { get; init; }
+
+    /// <summary>Codice <c>CausalePagamento</c> della ritenuta (es. <c>A</c>). Usato se <see cref="SoggettoARitenuta"/>.</summary>
+    public string? CausalePagamentoRitenutaFe { get; init; }
+
     /// <summary>Soft-delete (ADR D22). Default <c>true</c>.</summary>
     public bool IsAttivo { get; init; } = true;
 }

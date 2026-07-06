@@ -21,7 +21,10 @@ internal sealed class AziendaRepository : IAziendaRepository
             IndirizzoVia, IndirizzoCivico, IndirizzoComune, IndirizzoProvincia, IndirizzoCAP, IndirizzoPaese,
             Telefono, Telefax, Email, PEC,
             REA, REAFe, CCIAA, CCIAAFe, CapitaleSociale, CapitaleSocialeFe,
-            RegimeFiscale, StatoLiquidazione, SocioUnico, Identificativo, IsAttivo
+            RegimeFiscale, StatoLiquidazione, SocioUnico, Identificativo,
+            ApplicaCassaPrevidenziale, TipoCassaFe,
+            SoggettoARitenuta, TipoRitenutaFe, CausalePagamentoRitenutaFe,
+            IsAttivo
         FROM fatt.Azienda
         WHERE IsAttivo = 1
         ORDER BY RagioneSociale;
