@@ -551,19 +551,9 @@ internal sealed class AvvisoPdfDocument
 
         if (IsFattura)
         {
-            // Fattura di cortesia: blocco firma "PAGATO / studio" + banner esplicito
-            // che il documento non ha valore fiscale (l'emissione vera è XML/SdI).
-            AddSpacer(section, 8);
-            var pPag = section.AddParagraph("PAGATO");
-            pPag.Format.Alignment = ParagraphAlignment.Center;
-            pPag.Format.Font.Bold = true;
-            pPag.Format.Font.Size = 11;
-
-            var pFirma = section.AddParagraph(_data.Studio.RagioneSociale);
-            pFirma.Format.Alignment = ParagraphAlignment.Center;
-            pFirma.Format.Font.Bold = true;
-            pFirma.Format.Font.Size = 10;
-
+            // Fattura di cortesia: banner esplicito che il documento non ha valore
+            // fiscale (l'emissione vera è XML/SdI). Il blocco firma "PAGATO / studio"
+            // del legacy è stato rimosso su richiesta (2026-07-07).
             AddSpacer(section, 18);
             var banner = section.AddParagraph("------  DOCUMENTO NON VALIDO AI FINI FISCALI  ------");
             banner.Format.Alignment = ParagraphAlignment.Center;
