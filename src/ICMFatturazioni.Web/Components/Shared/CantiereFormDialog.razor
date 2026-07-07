@@ -1,0 +1,187 @@
+@*
+    Dialog di creazione/modifica di un cantiere (vista fatt.Cantiere su
+    dbo.Cantiere — entità condivisa con ICMVerbali).
+
+    Pattern (mirror di AnagraficaFormDialog e del CantiereEditDialog di Verbali):
+    - Parametro Iniziale: null = creazione, valorizzato = modifica.
+    - L'attività è obbligatoria (FK NOT NULL a DB): select dalle attività attive,
+      etichettata "Numero — Descrizione [Cliente]" perché il numero è unico solo
+      nello scope di un cliente.
+    - Le CantiereInvalidoException sono flusso previsto di validazione: snackbar
+      warning, nessun log. Gli errori imprevisti vanno in fatt.Log (Regola 6).
+*@
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@inject ICantiereManager CantiereManager
+@inject IAttivitaManager AttivitaManager
+@inject ISnackbar Snackbar
+@inject ILogManager LogManager
+
+<MudDialog>
+    <DialogContent>
+        @if (_caricamento)
+        {
+            <MudProgressLinear Indeterminate="true" Class="my-4" />
+        }
+        else
+        {
+            <MudForm @ref="_form" @bind-IsValid="_isValid">
+                <MudSelect T="Guid?"
+                           @bind-Value="_idAttivita"
+                           Label="Attività *"
+                           Variant="Variant.Outlined"
+                           Margin="Margin.Dense"
+                           Required="true"
+                           RequiredError="L'attività è obbligatoria."
+                           Class="campo-obbligatorio">
+                    @foreach (var a in _attivita)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)a.IdAttivita)">@EtichettaAttivita(a)</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudTextField @bind-Value="_ubicazione"
+                              Label="Ubicazione *"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Required="true"
+                              RequiredError="L'ubicazione è obbligatoria."
+                              MaxLength="300"
+                              Class="campo-obbligatorio mt-3" />
+
+                <MudTextField @bind-Value="_tipologia"
+                              Label="Tipologia lavori *"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Required="true"
+                              RequiredError="La tipologia è obbligatoria."
+                              MaxLength="500"
+                              Lines="2"
+                              Class="campo-obbligatorio mt-3" />
+
+                <MudNumericField T="decimal?"
+                                 @bind-Value="_importoAppalto"
+                                 Label="Importo appalto (€)"
+                                 Variant="Variant.Outlined"
+                                 Margin="Margin.Dense"
+                                 Format="N2"
+                                 Min="0"
+                                 HelperText="Opzionale"
+                                 Class="mt-3" />
+            </MudForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Annulla" Ripple="false">Annulla</MudButton>
+        @* Abilitato solo a form valido (campi obbligatori compilati), come in
+           AnagraficaFormDialog: disabilitato, non nascosto. *@
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="SalvaAsync"
+                   Disabled="@(!_isValid || _salvataggio || _caricamento)"
+                   Ripple="false">
+            @(Iniziale is null ? "Crea" : "Salva")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    /// <summary>Cantiere da modificare; null = creazione.</summary>
+    [Parameter] public Cantiere? Iniziale { get; set; }
+
+    private MudForm _form = null!;
+    private bool _isValid;
+    private bool _caricamento = true;
+    private bool _salvataggio;
+
+    private IReadOnlyList<Attivita> _attivita = Array.Empty<Attivita>();
+
+    // Campi del form (l'entità si costruisce solo al salvataggio).
+    private Guid? _idAttivita;
+    private string? _ubicazione;
+    private string? _tipologia;
+    private decimal? _importoAppalto;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _attivita = await AttivitaManager.ElencoAsync();
+            if (Iniziale is not null)
+            {
+                _idAttivita = Iniziale.IdAttivita;
+                _ubicazione = Iniziale.Ubicazione;
+                _tipologia = Iniziale.Tipologia;
+                _importoAppalto = Iniziale.ImportoAppalto;
+            }
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento delle attività per il dialog cantiere fallito.",
+                "CantiereFormDialog.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento delle attività.", Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    // "Numero — Descrizione [Cliente]": il numero attività è unico solo nello
+    // scope di un cliente, quindi il cliente serve a disambiguare.
+    private static string EtichettaAttivita(Attivita a)
+        => string.IsNullOrWhiteSpace(a.RagioneSociale)
+            ? $"{a.Numero} — {a.Descrizione}"
+            : $"{a.Numero} — {a.Descrizione} [{a.RagioneSociale}]";
+
+    private async Task SalvaAsync()
+    {
+        await _form.ValidateAsync();
+        if (!_isValid) return;
+
+        _salvataggio = true;
+        try
+        {
+            var cantiere = new Cantiere
+            {
+                IdCantiere = Iniziale?.IdCantiere ?? Guid.Empty,
+                IdAttivita = _idAttivita ?? Guid.Empty,
+                Ubicazione = _ubicazione?.Trim() ?? string.Empty,
+                Tipologia = _tipologia?.Trim() ?? string.Empty,
+                ImportoAppalto = _importoAppalto,
+                IsAttivo = Iniziale?.IsAttivo ?? true,
+            };
+
+            if (Iniziale is null)
+            {
+                await CantiereManager.CreaAsync(cantiere);
+            }
+            else
+            {
+                await CantiereManager.AggiornaAsync(cantiere);
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (CantiereInvalidoException ex)
+        {
+            // Flusso previsto di validazione (Regola 6: non si logga).
+            Snackbar.Add(ex.Message, Severity.Warning);
+            _salvataggio = false;
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio del cantiere fallito: errore imprevisto (vincolo o connessione DB).",
+                "CantiereFormDialog.SalvaAsync");
+            Snackbar.Add("Errore durante il salvataggio.", Severity.Error);
+            _salvataggio = false;
+        }
+    }
+
+    private void Annulla() => MudDialog.Cancel();
+}

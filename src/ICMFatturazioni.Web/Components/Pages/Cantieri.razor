@@ -1,0 +1,280 @@
+@*
+    Pagina /cantieri — elenco master dei cantieri (entità condivisa con
+    ICMVerbali: vista fatt.Cantiere su dbo.Cantiere).
+
+    Pattern (mirror di Anagrafiche.razor):
+    - MudDataGrid con virtualization e filtro testo libero (ubicazione,
+      tipologia, attività risolta).
+    - Toolbar con "Aggiungi" sempre attivo; "Modifica"/"Elimina" visibili
+      solo quando c'è una riga selezionata (visibility-driven).
+    - Responsive: scroll orizzontale + sticky della prima colonna
+      (Ubicazione, "chiave umana" — ADR D15).
+    - Aggiungi/Modifica aprono lo stesso dialog (CantiereFormDialog).
+    - Elimina = soft-delete con conferma (i verbali collegati non si rompono:
+      la riga resta a DB disattivata).
+*@
+
+@page "/cantieri"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@inject ICantiereManager CantiereManager
+@inject IAttivitaManager AttivitaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Cantieri · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Cantieri</MudText>
+
+<MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+        <MudTextField @bind-Value="_filtro"
+                      Placeholder="Cerca per ubicazione, tipologia, attività…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Immediate="true"
+                      DebounceInterval="200"
+                      Style="min-width: 280px; flex: 1;" />
+
+        <MudSpacer />
+
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Ripple="false"
+                   OnClick="ApriDialogAggiungi">
+            Aggiungi
+        </MudButton>
+
+        @if (_selezionato is not null)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Edit"
+                       Ripple="false"
+                       OnClick="@(() => ApriDialogModifica(_selezionato))">
+                Modifica
+            </MudButton>
+
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.Delete"
+                       Ripple="false"
+                       OnClick="@(() => ConfermaEdElimina(_selezionato))">
+                Elimina
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+<MudDataGrid T="Cantiere"
+             Items="@CantieriFiltrati"
+             Dense="true"
+             Hover="true"
+             Striped="false"
+             Bordered="false"
+             FixedHeader="true"
+             Height="calc(100vh - 280px)"
+             Virtualize="true"
+             ItemSize="40"
+             SelectedItem="_selezionato"
+             SelectedItemChanged="OnSelezionatoChanged"
+             RowClick="@OnRowClick"
+             RowClassFunc="@RigaClass"
+             Loading="@_caricamento">
+    <Columns>
+        @* Prima colonna "sticky" su mobile: l'ubicazione è la chiave umana
+           che mantiene il contesto durante lo scroll orizzontale (ADR D15). *@
+        <PropertyColumn Property="x => x.Ubicazione"
+                        Title="Ubicazione"
+                        StickyLeft="true" />
+        <TemplateColumn Title="Attività" Sortable="false">
+            <CellTemplate>@RisolviAttivita(context.Item.IdAttivita)</CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.Tipologia" Title="Tipologia" />
+        <TemplateColumn Title="Importo appalto" Sortable="false">
+            <CellTemplate>
+                @(context.Item.ImportoAppalto is decimal imp ? $"€ {imp:N2}" : "—")
+            </CellTemplate>
+        </TemplateColumn>
+        @* Azione rapida per riga: elimina (disattiva) il singolo cantiere
+           senza doverlo prima selezionare in toolbar. *@
+        <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+            <CellTemplate>
+                <MudTooltip Text="Elimina">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   Ripple="false"
+                                   OnClick="@(() => ConfermaEdElimina(context.Item))" />
+                </MudTooltip>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent>
+        <MudText>Nessun cantiere trovato.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Caricamento in corso…</MudText>
+    </LoadingContent>
+</MudDataGrid>
+
+@code {
+    private IReadOnlyList<Cantiere> _cantieri = Array.Empty<Cantiere>();
+    private Cantiere? _selezionato;
+    private string _filtro = string.Empty;
+    private bool _caricamento = true;
+
+    // Mappa Id→etichetta attività per risolvere la FK in griglia ("Numero —
+    // Descrizione"). Ricaricata insieme ai cantieri: le attività possono
+    // cambiare da un'apertura all'altra della pagina.
+    private Dictionary<Guid, string> _attivitaDesc = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RicaricaAsync();
+    }
+
+    private async Task RicaricaAsync()
+    {
+        _caricamento = true;
+        try
+        {
+            var cantieriTask = CantiereManager.ElencoAsync();
+            var attivitaTask = AttivitaManager.ElencoAsync();
+            await Task.WhenAll(cantieriTask, attivitaTask);
+
+            _cantieri = cantieriTask.Result;
+            _attivitaDesc = attivitaTask.Result.ToDictionary(
+                a => a.IdAttivita,
+                a => $"{a.Numero} — {a.Descrizione}");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento dell'elenco cantieri fallito.", "Cantieri.RicaricaAsync");
+            Snackbar.Add("Errore nel caricamento dell'elenco.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    private IEnumerable<Cantiere> CantieriFiltrati
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_filtro)) return _cantieri;
+            var f = _filtro.Trim();
+            return _cantieri.Where(c =>
+                c.Ubicazione.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || c.Tipologia.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || RisolviAttivita(c.IdAttivita).Contains(f, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void OnSelezionatoChanged(Cantiere? c) => _selezionato = c;
+
+    // Riga selezionata evidenziata (stessa classe CSS della pagina Anagrafiche).
+    private string RigaClass(Cantiere c, int _) =>
+        _selezionato is not null && _selezionato.IdCantiere == c.IdCantiere
+            ? "anagrafica-riga-selezionata"
+            : string.Empty;
+
+    // Doppio click su una riga → apre il dettaglio in modifica.
+    private async Task OnRowClick(DataGridRowClickEventArgs<Cantiere> args)
+    {
+        if (args.MouseEventArgs.Detail >= 2)
+        {
+            await ApriDialogModifica(args.Item);
+        }
+    }
+
+    // "—" se l'attività non è più nel catalogo attivo (es. disattivata).
+    private string RisolviAttivita(Guid id) => _attivitaDesc.TryGetValue(id, out var v) ? v : "—";
+
+    private async Task ApriDialogAggiungi()
+    {
+        var parameters = new DialogParameters<CantiereFormDialog>
+        {
+            { x => x.Iniziale, null },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await DialogService.ShowAsync<CantiereFormDialog>("Aggiungi cantiere", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Cantiere creato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ApriDialogModifica(Cantiere? c)
+    {
+        if (c is null) return;
+        var parameters = new DialogParameters<CantiereFormDialog>
+        {
+            { x => x.Iniziale, c },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await DialogService.ShowAsync<CantiereFormDialog>("Modifica cantiere", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Cantiere aggiornato.", MudBlazor.Severity.Success);
+            await RicaricaAsync();
+        }
+    }
+
+    private async Task ConfermaEdElimina(Cantiere? c)
+    {
+        if (c is null) return;
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare cantiere?" },
+            { x => x.NomeElemento, c.Ubicazione },
+            { x => x.Messaggio, "Verrà disattivato e non comparirà più nell'elenco. Gli eventuali verbali collegati restano validi." },
+        };
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraSmall,
+            FullWidth = true,
+            CloseOnEscapeKey = true,
+        };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        var risultato = await dialog.Result;
+        if (risultato is not { Canceled: false }) return;
+
+        try
+        {
+            await CantiereManager.EliminaAsync(c.IdCantiere);
+            Snackbar.Add("Cantiere eliminato.", MudBlazor.Severity.Success);
+            if (_selezionato is not null && _selezionato.IdCantiere == c.IdCantiere)
+            {
+                _selezionato = null;
+            }
+            await RicaricaAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione/disattivazione del cantiere fallita.", "Cantieri.ConfermaEdElimina");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+}
