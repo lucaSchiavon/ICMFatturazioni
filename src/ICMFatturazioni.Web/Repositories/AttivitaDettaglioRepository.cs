@@ -158,8 +158,20 @@ internal sealed class AttivitaDettaglioRepository : IAttivitaDettaglioRepository
         await conn.ExecuteAsync(cmd);
     }
 
-    private const string SqlDisattiva =
-        "UPDATE fatt.AttivitaDettaglio SET IsAttivo = 0 WHERE IdAttivitaDettaglio = @IdAttivitaDettaglio;";
+    // Sentinel di correttezza (doppia difesa, CLAUDE.md): un dettaglio con almeno una
+    // scadenza già inserita in un avviso (IdAvvisoRiga valorizzato) è congelato → il
+    // soft-delete non tocca righe. Il pre-check nel Manager fornisce il messaggio
+    // user-friendly; questo NOT EXISTS protegge dalla race fra check e UPDATE.
+    private const string SqlDisattiva = """
+        UPDATE fatt.AttivitaDettaglio SET IsAttivo = 0
+        WHERE IdAttivitaDettaglio = @IdAttivitaDettaglio
+          AND NOT EXISTS (
+              SELECT 1 FROM fatt.SchedulazionePagamenti sp
+              WHERE sp.IdAttivitaDettaglio = @IdAttivitaDettaglio
+                AND sp.IsAttivo = 1
+                AND sp.IdAvvisoRiga IS NOT NULL
+          );
+        """;
 
     public async Task DisattivaAsync(Guid idAttivitaDettaglio, CancellationToken ct = default)
     {

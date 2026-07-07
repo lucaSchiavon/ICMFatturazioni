@@ -80,6 +80,15 @@ public sealed class AttivitaDettaglioManager : IAttivitaDettaglioManager
                 AttivitaDettaglioMotivoInvalido.HasFattura,
                 "La riga è collegata a una fattura emessa e non può essere modificata.");
 
+        // Il contenitore è congelato se anche una sola delle sue scadenze è già
+        // stata inserita in un avviso: modificarne importo/termine sfaserebbe
+        // l'avviso che ha già "consumato" quelle rate.
+        if (await HaRateInAvvisoAsync(dettaglio.IdAttivitaDettaglio, ct))
+            throw new AttivitaDettaglioInvalidaException(
+                AttivitaDettaglioMotivoInvalido.HasScadenzaInAvviso,
+                "Il dettaglio ha una o più scadenze già inserite in un avviso di fattura: "
+                + "annulla l'avviso prima di poterlo modificare.");
+
         ValidaCampi(dettaglio);
 
         var prima = await _repo.GetByIdAsync(dettaglio.IdAttivitaDettaglio, ct);
@@ -106,6 +115,18 @@ public sealed class AttivitaDettaglioManager : IAttivitaDettaglioManager
             throw new AttivitaDettaglioInvalidaException(
                 AttivitaDettaglioMotivoInvalido.HasFattura,
                 "La riga è collegata a una fattura emessa e non può essere eliminata.");
+
+        // Guardia sul contenitore: non si elimina un dettaglio se anche una sola delle
+        // sue scadenze è già stata inserita in un avviso di fattura. Il lock esiste a
+        // livello di singola rata (SchedulazionePagamenti.IdAvvisoRiga), ma senza questo
+        // controllo il soft-delete del dettaglio "svuoterebbe" il contenitore lasciando
+        // l'avviso a puntare a scadenze di un dettaglio sparito (incoerenza). Doppia
+        // difesa: il sentinel NOT EXISTS nel repository blocca comunque l'UPDATE.
+        if (await HaRateInAvvisoAsync(idAttivitaDettaglio, ct))
+            throw new AttivitaDettaglioInvalidaException(
+                AttivitaDettaglioMotivoInvalido.HasScadenzaInAvviso,
+                "Il dettaglio ha una o più scadenze già inserite in un avviso di fattura: "
+                + "annulla l'avviso prima di poterlo eliminare.");
 
         await _repo.DisattivaAsync(idAttivitaDettaglio, ct);
 
@@ -154,6 +175,18 @@ public sealed class AttivitaDettaglioManager : IAttivitaDettaglioManager
         await _repo.ScambiaOrdineAsync(
             corrente.IdAttivitaDettaglio, successivo.IdAttivitaDettaglio,
             corrente.Ordine, successivo.Ordine, ct);
+    }
+
+    /// <summary>
+    /// True se il dettaglio ha almeno una scadenza già evasa in un avviso di fattura
+    /// (<c>IdAvvisoRiga</c> valorizzato → <see cref="Entities.ScadenzaPagamento.IsEvasa"/>).
+    /// Legge lo stato PERSISTITO tramite il manager delle scadenze (non l'entità in arrivo
+    /// dalla UI, che non porta il lock). Riusa la lettura per-dettaglio già esistente.
+    /// </summary>
+    private async Task<bool> HaRateInAvvisoAsync(Guid idAttivitaDettaglio, CancellationToken ct)
+    {
+        var scadenze = await _scadenze.ElencoPerDettaglioAsync(idAttivitaDettaglio, ct);
+        return scadenze.Any(s => s.IsEvasa);
     }
 
     private static void ValidaCampi(AttivitaDettaglio d)

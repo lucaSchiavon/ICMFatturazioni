@@ -10,6 +10,14 @@ public enum AttivitaDettaglioMotivoInvalido
     /// <summary>La riga è collegata a una fattura emessa e non può essere modificata/eliminata.</summary>
     HasFattura,
 
+    /// <summary>
+    /// Almeno una scadenza (rata) del dettaglio è già inserita in un avviso di fattura
+    /// (<c>SchedulazionePagamenti.IdAvvisoRiga</c> valorizzato). Il contenitore è
+    /// congelato: eliminarlo/modificarlo lascerebbe l'avviso a puntare a scadenze di
+    /// un dettaglio sparito. Valutato subito dopo <see cref="HasFattura"/>.
+    /// </summary>
+    HasScadenzaInAvviso,
+
     /// <summary>Il tipo dettaglio (FK) non è stato selezionato.</summary>
     TipoDettaglioObbligatorio,
 

@@ -227,6 +227,76 @@ public class AttivitaDettaglioManagerTests
         Assert.Equal(AuditOperazione.Eliminazione, voce.Operazione);
     }
 
+    [Fact]
+    public async Task EliminaAsync_ConScadenzaInAvviso_LanciaHasScadenzaInAvviso()
+    {
+        var fake         = new FakeAttivitaDettaglioRepository();
+        var scadenzeRepo = new FakeScadenzaPagamentoRepository();
+        var sut          = NewSut(fake, scadenzeRepo: scadenzeRepo);
+        var id           = await sut.CreaAsync(Det());
+
+        // Simula una rata del dettaglio già "consumata" da un avviso (IdAvvisoRiga valorizzato).
+        await scadenzeRepo.InsertAsync(new ScadenzaPagamento
+        {
+            IdScadenza          = Guid.NewGuid(),
+            IdAttivitaDettaglio = id,
+            DataScadenza        = new DateOnly(2026, 7, 31),
+            Importo             = 500m,
+            IdAvvisoRiga        = Guid.NewGuid(),
+        });
+
+        var ex = await Assert.ThrowsAsync<AttivitaDettaglioInvalidaException>(
+            () => sut.EliminaAsync(id));
+        Assert.Equal(AttivitaDettaglioMotivoInvalido.HasScadenzaInAvviso, ex.Motivo);
+        // Il dettaglio resta attivo: l'eliminazione è stata rifiutata prima del soft-delete.
+        Assert.True((await fake.GetByIdAsync(id))!.IsAttivo);
+    }
+
+    [Fact]
+    public async Task AggiornaAsync_ConScadenzaInAvviso_LanciaHasScadenzaInAvviso()
+    {
+        var fake         = new FakeAttivitaDettaglioRepository();
+        var scadenzeRepo = new FakeScadenzaPagamentoRepository();
+        var sut          = NewSut(fake, scadenzeRepo: scadenzeRepo);
+        var id           = await sut.CreaAsync(Det());
+
+        await scadenzeRepo.InsertAsync(new ScadenzaPagamento
+        {
+            IdScadenza          = Guid.NewGuid(),
+            IdAttivitaDettaglio = id,
+            DataScadenza        = new DateOnly(2026, 7, 31),
+            Importo             = 500m,
+            IdAvvisoRiga        = Guid.NewGuid(),
+        });
+
+        var da = await fake.GetByIdAsync(id);
+        var ex = await Assert.ThrowsAsync<AttivitaDettaglioInvalidaException>(
+            () => sut.AggiornaAsync(da!));
+        Assert.Equal(AttivitaDettaglioMotivoInvalido.HasScadenzaInAvviso, ex.Motivo);
+    }
+
+    [Fact]
+    public async Task EliminaAsync_ScadenzaNonInAvviso_Consente()
+    {
+        var fake         = new FakeAttivitaDettaglioRepository();
+        var scadenzeRepo = new FakeScadenzaPagamentoRepository();
+        var sut          = NewSut(fake, scadenzeRepo: scadenzeRepo);
+        var id           = await sut.CreaAsync(Det());
+
+        // Rata libera (IdAvvisoRiga null): il dettaglio resta eliminabile.
+        await scadenzeRepo.InsertAsync(new ScadenzaPagamento
+        {
+            IdScadenza          = Guid.NewGuid(),
+            IdAttivitaDettaglio = id,
+            DataScadenza        = new DateOnly(2026, 7, 31),
+            Importo             = 500m,
+        });
+
+        await sut.EliminaAsync(id);
+
+        Assert.False((await fake.GetByIdAsync(id))!.IsAttivo);
+    }
+
     // -------------------------------------------------------------------------
     // Riordinamento
     // -------------------------------------------------------------------------
