@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>{{DOC_TITOLO}} — {{AGENZIA_NOME}}</title>
+<style>
+  /* ============================================================
+     TEMPLATE DOCUMENTAZIONE — dual branding (cliente + agenzia)
+     Reso in PDF tramite Chromium/Playwright (render.py)
+     L'unica cosa che cambi per cliente: --accent + i loghi nel JSON
+     ============================================================ */
+
+  :root{
+    --ink:#16202C;        /* titoli / testo forte           */
+    --body:#2B3744;       /* corpo del testo                */
+    --muted:#6B7785;      /* didascalie, metadati           */
+    --line:#DCE2E8;       /* filetti / bordi sottili        */
+    --surface:#F5F7F9;    /* sfondo card                    */
+    --surface-2:#EDF1F4;  /* sfondo codice / tabelle zebra  */
+    --accent:{{ACCENT}};  /* colore di accento del documento */
+    --accent-soft:color-mix(in srgb, var(--accent) 12%, #ffffff);
+
+    --font-sans:'Inter','Segoe UI','Liberation Sans',Arial,sans-serif;
+    --font-mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+  }
+
+  @page{
+    size:A4;
+    margin:24mm 18mm 20mm 18mm;   /* spazio per header (alto) e footer (basso) */
+  }
+  @page:first{ margin:0; }        /* copertina a tutta pagina, header/footer nascosti */
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:var(--font-sans);
+    color:var(--body);
+    font-size:10.5pt;
+    line-height:1.55;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* ---------- utilità ---------- */
+  .page-break{ break-before:page; }
+  .eyebrow{
+    font-size:7.5pt; letter-spacing:.22em; text-transform:uppercase;
+    font-weight:600; color:var(--accent);
+  }
+
+  /* =================== COPERTINA =================== */
+  .cover{
+    position:relative;
+    height:297mm; width:210mm;
+    padding:26mm 22mm 22mm;
+    display:flex; flex-direction:column;
+    color:var(--ink);
+  }
+  .cover::before{   /* barra di brand a sinistra, tutta altezza */
+    content:""; position:absolute; top:0; left:0;
+    width:8mm; height:100%; background:var(--accent);
+  }
+  .cover-top{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .cover-top .eyebrow{ padding-top:4mm; }
+  .cover-logo-client img{ max-height:20mm; max-width:62mm; object-fit:contain; }
+
+  .cover-title{ margin-top:auto; }
+  .cover-title .kicker{
+    font-size:11pt; color:var(--muted); font-weight:500; margin-bottom:6mm;
+  }
+  .cover-title h1{
+    font-size:34pt; line-height:1.08; font-weight:700; letter-spacing:-.015em;
+    margin:0 0 6mm 0; color:var(--ink); max-width:150mm;
+  }
+  .cover-title .subtitle{
+    font-size:14pt; color:var(--accent); font-weight:600; margin:0;
+  }
+  .cover-meta{
+    margin-top:8mm; padding-top:5mm; border-top:1px solid var(--line);
+    display:flex; gap:14mm; font-size:9.5pt; color:var(--muted);
+  }
+  .cover-meta b{ color:var(--ink); font-weight:600; }
+
+  .cover-cards{
+    margin-top:14mm; display:grid; grid-template-columns:1fr 1fr; gap:8mm;
+  }
+  .brand-card{
+    border:1px solid var(--line); border-radius:8px; padding:6mm 6mm 6mm;
+    background:#fff;
+  }
+  .brand-card .role{
+    font-size:7.5pt; letter-spacing:.18em; text-transform:uppercase;
+    font-weight:600; color:var(--muted); margin-bottom:4mm;
+  }
+  .brand-card .logo{ height:14mm; margin-bottom:4mm; display:flex; align-items:center; }
+  .brand-card .logo img{ max-height:14mm; max-width:55mm; object-fit:contain; }
+  .brand-card .org{ font-size:11pt; font-weight:700; color:var(--ink); }
+  .brand-card .lines{ font-size:8.5pt; color:var(--muted); line-height:1.5; margin-top:1mm; }
+
+  /* =================== TESTATA PAGINE INTERNE =================== */
+  h2.section{
+    font-size:17pt; font-weight:700; color:var(--ink); letter-spacing:-.01em;
+    margin:9mm 0 3mm; padding-bottom:2mm; border-bottom:2px solid var(--accent);
+    break-after:avoid;
+  }
+  h2.section .num{ color:var(--accent); margin-right:3mm; font-variant-numeric:tabular-nums; }
+  h3{ font-size:12.5pt; font-weight:600; color:var(--ink); margin:6mm 0 2mm; break-after:avoid; }
+  h4{ font-size:10.5pt; font-weight:600; color:var(--ink); margin:5mm 0 1.5mm; break-after:avoid; }
+  p{ margin:0 0 3mm; }
+  ul,ol{ margin:0 0 3mm; padding-left:5mm; }
+  li{ margin-bottom:1mm; }
+  a{ color:var(--accent); text-decoration:none; }
+  strong{ color:var(--ink); }
+
+  /* tabella metadati documento */
+  table.meta{ width:100%; border-collapse:collapse; margin:4mm 0 2mm; font-size:9.5pt; }
+  table.meta th, table.meta td{ text-align:left; padding:2.4mm 3mm; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.meta th{ width:42mm; color:var(--muted); font-weight:600; background:var(--surface); }
+
+  /* tabella revisioni / generica */
+  table.data{ width:100%; border-collapse:collapse; margin:3mm 0 4mm; font-size:9pt; }
+  table.data thead th{
+    background:var(--ink); color:#fff; font-weight:600; text-align:left;
+    padding:2.4mm 3mm; font-size:8.5pt; letter-spacing:.02em;
+  }
+  table.data td{ padding:2.2mm 3mm; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.data tbody tr:nth-child(even){ background:var(--surface); }
+  table.data, table.meta{ break-inside:auto; }
+  table.data tr, table.meta tr{ break-inside:avoid; }
+
+  /* callout / nota */
+  .callout{
+    border-left:3px solid var(--accent); background:var(--accent-soft);
+    padding:3.5mm 5mm; border-radius:0 6px 6px 0; margin:4mm 0; break-inside:avoid;
+    font-size:9.5pt;
+  }
+  .callout .label{ font-weight:700; color:var(--ink); display:block; margin-bottom:1mm; }
+  .callout.warn{ border-left-color:#A85B00; background:#FBF3E6; }
+  .callout.warn .label{ color:#7A4300; }
+
+  /* codice */
+  pre{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:6px;
+    padding:3.5mm 4mm; font-family:var(--font-mono); font-size:8.5pt; line-height:1.5;
+    overflow:hidden; white-space:pre-wrap; word-break:break-word; margin:3mm 0; break-inside:avoid;
+  }
+  code{ font-family:var(--font-mono); font-size:9pt; background:var(--surface-2);
+        padding:.4mm 1.4mm; border-radius:3px; }
+
+  .toc{ font-size:10pt; }
+  .toc .row{ display:flex; justify-content:space-between; padding:1.6mm 0; border-bottom:1px dotted var(--line); }
+  .toc .row span:first-child{ color:var(--ink); }
+  .toc .row span:last-child{ color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  /* =================== SCHEMI A BLOCCHI =================== */
+  .flow{ display:flex; align-items:stretch; gap:0; margin:4mm 0; break-inside:avoid; }
+  .flow .fbox{
+    flex:1; border:1.5px solid var(--accent); border-radius:6px; background:#fff;
+    padding:2.5mm 3mm; text-align:center; font-size:8.5pt; line-height:1.35;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .flow .fbox b{ color:var(--ink); font-size:9pt; display:block; margin-bottom:.8mm; }
+  .flow .fbox small{ color:var(--muted); font-size:7.5pt; }
+  .flow .fbox.dim{ border-color:var(--line); background:var(--surface); }
+  .flow .fbox.hot{ background:var(--accent-soft); }
+  .flow .farrow{
+    align-self:center; padding:0 1.6mm; color:var(--accent);
+    font-size:12pt; font-weight:700; line-height:1;
+  }
+  .flow-caption{ font-size:8pt; color:var(--muted); text-align:center; margin:1mm 0 4mm; }
+
+  /* diagramma decisionale a due rami */
+  .branching{ margin:4mm 0; break-inside:avoid; }
+  .branching .root{
+    width:78mm; margin:0 auto; border:1.5px solid var(--ink); border-radius:6px;
+    background:var(--surface); padding:2.5mm 3mm; text-align:center; font-size:9pt;
+  }
+  .branching .root b{ color:var(--ink); }
+  .branching .legs{ display:flex; justify-content:center; gap:10mm; margin-top:0; }
+  .branching .leg{ flex:1; max-width:82mm; text-align:center; }
+  .branching .leg .lbl{
+    display:inline-block; margin:1.5mm 0; padding:.6mm 3mm; border-radius:10mm;
+    font-size:7.5pt; font-weight:700; letter-spacing:.06em;
+  }
+  .branching .leg.si .lbl{ background:var(--accent); color:#fff; }
+  .branching .leg.no .lbl{ background:var(--surface-2); color:var(--ink); border:1px solid var(--line); }
+  .branching .leg .card{
+    border:1.5px solid var(--accent); border-radius:6px; background:#fff;
+    padding:3mm 3.5mm; font-size:8.5pt; text-align:left; line-height:1.45;
+  }
+  .branching .leg.no .card{ border-color:var(--line); background:var(--surface); }
+  .branching .leg .card b{ display:block; color:var(--ink); font-size:9.5pt; margin-bottom:1mm; }
+  .branching .leg .card ul{ margin:0; padding-left:4mm; }
+  .branching .leg .card li{ margin-bottom:.6mm; }
+
+  /* schema flussi di denaro (split payment) */
+  .money{ display:flex; justify-content:center; align-items:center; gap:5mm; margin:4mm 0; break-inside:avoid; }
+  .money .actor{
+    border:1.5px solid var(--accent); border-radius:6px; background:#fff;
+    padding:3mm 4mm; min-width:40mm; text-align:center; font-size:8.5pt;
+  }
+  .money .actor b{ display:block; color:var(--ink); font-size:9.5pt; }
+  .money .actor small{ color:var(--muted); }
+  .money .actor.gov{ border-color:var(--ink); background:var(--surface); }
+  .money-flows{ display:flex; flex-direction:column; gap:3.5mm; }
+  .money-flows .mlane{ display:flex; align-items:center; gap:2mm; }
+  .money-flows .amt{
+    font-family:var(--font-mono); font-size:7.8pt; color:var(--ink); font-weight:600;
+    background:var(--accent-soft); border:1px solid var(--accent); border-radius:8mm;
+    padding:.6mm 3mm; white-space:nowrap;
+  }
+  .money-flows .marr{ color:var(--accent); font-size:11pt; font-weight:700; line-height:1; }
+
+  /* etichette di stato inline */
+  .pill{
+    display:inline-block; padding:.4mm 2.4mm; border-radius:8mm; font-size:7.5pt;
+    font-weight:700; letter-spacing:.04em; vertical-align:middle;
+  }
+  .pill.blue{ background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent); }
+  .pill.amber{ background:#FBF3E6; color:#7A4300; border:1px solid #D9A45B; }
+</style>
+</head>
+<body>
+
+<!-- ===================== COPERTINA ===================== -->
+<section class="cover">
+  <div class="cover-top">
+    <div class="eyebrow">{{DOC_TIPOLOGIA}}</div>
+    <div class="cover-logo-client"><img src="{{LOGO_AGENZIA_SRC}}" alt="Logo Vis Logica"></div>
+  </div>
+
+  <div class="cover-title">
+    <div class="kicker">{{PROGETTO_NOME}}</div>
+    <h1>{{DOC_TITOLO}}</h1>
+    <p class="subtitle">{{DOC_SOTTOTITOLO}}</p>
+    <div class="cover-meta">
+      <div>Versione<br><b>{{DOC_VERSIONE}}</b></div>
+      <div>Data<br><b>{{DOC_DATA}}</b></div>
+      <div>Stato<br><b>{{DOC_STATO}}</b></div>
+      <div>Classificazione<br><b>{{DOC_CLASSIFICAZIONE}}</b></div>
+    </div>
+  </div>
+
+  <div class="cover-cards" style="grid-template-columns:1fr;">
+    <div class="brand-card">
+      <div class="role">A cura di</div>
+      <div class="org">{{AGENZIA_NOME}}</div>
+      <div class="lines">{{AGENZIA_INFO}}</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== INFO DOCUMENTO ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Anagrafica documento</div>
+  <h2 class="section"><span class="num">1</span>Informazioni sul documento</h2>
+
+  <table class="meta">
+    <tr><th>Titolo</th><td>{{DOC_TITOLO}}</td></tr>
+    <tr><th>Progetto / prodotto</th><td>{{PROGETTO_NOME}}</td></tr>
+    <tr><th>A cura di</th><td>{{AGENZIA_NOME}}</td></tr>
+    <tr><th>Autore</th><td>{{DOC_AUTORE}}</td></tr>
+    <tr><th>Versione</th><td>{{DOC_VERSIONE}}</td></tr>
+    <tr><th>Data</th><td>{{DOC_DATA}}</td></tr>
+    <tr><th>Stato</th><td>{{DOC_STATO}}</td></tr>
+    <tr><th>Classificazione</th><td>{{DOC_CLASSIFICAZIONE}}</td></tr>
+    <tr><th>Documento precedente</th><td>«La maschera Documenti XML e il tracciato FatturaPA» v1.0 del 06/07/2026 (<code>docs/sviluppo-xml</code>)</td></tr>
+    <tr><th>Riferimento sorgenti</th><td>Commit <code>f3ec639</code> del 07/07/2026 — repository ICMFatturazioni; migration <code>070_FattFattureCigCup.sql</code> — repository ICMVerbali</td></tr>
+  </table>
+
+  <h3>Storico delle revisioni</h3>
+  <table class="data">
+    <thead><tr><th style="width:22mm">Versione</th><th style="width:28mm">Data</th><th>Autore</th><th>Descrizione delle modifiche</th></tr></thead>
+    <tbody>
+      <tr><td>1.0</td><td>{{DOC_DATA}}</td><td>{{DOC_AUTORE}}</td><td>Prima stesura: documenta il ramo FPA12, lo split payment e i codici CIG/CUP introdotti dopo il rilascio del documento Fase D1.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <span class="label">⚠ Stato «Bozza — in verifica fiscale»</span>
+    Le funzionalità descritte in questo documento sono <strong>implementate, compilano senza errori e sono
+    coperte da test automatici (500 verdi)</strong>, ma le scelte fiscali sottostanti sono in attesa di
+    <strong>verifica con Roberto Greppi</strong> (esperto di amministrazione e fiscalità) prima di essere
+    considerate definitive. Il capitolo 12 elenca i punti aperti. Fino ad allora i moduli fiscali
+    (cascata, report, tracciato XML) sono congelati e non vanno estesi.
+  </div>
+
+  <div class="callout">
+    <span class="label">Proprietà</span>
+    Il presente documento è di proprietà di {{AGENZIA_NOME}}.
+    Ne è vietata la riproduzione o distribuzione non autorizzata.
+  </div>
+</section>
+
+<!-- ===================== INDICE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Sommario</div>
+  <h2 class="section"><span class="num">2</span>Indice</h2>
+  <div class="toc">
+    <div class="row"><span>1 — Informazioni sul documento</span><span>2</span></div>
+    <div class="row"><span>2 — Indice</span><span>3</span></div>
+    <div class="row"><span>3 — Scopo del documento e perimetro delle modifiche</span><span>4</span></div>
+    <div class="row"><span>4 — Il quadro fiscale: fatturare alla Pubblica Amministrazione</span><span>5</span></div>
+    <div class="row"><span>5 — Panoramica delle modifiche al codice</span><span>7</span></div>
+    <div class="row"><span>6 — Database: la migration 070 (CIG/CUP)</span><span>8</span></div>
+    <div class="row"><span>7 — Il ramo FPA12 nel servizio di mappatura</span><span>9</span></div>
+    <div class="row"><span>8 — Split payment nel tracciato XML</span><span>11</span></div>
+    <div class="row"><span>9 — Il Codice Destinatario: IPA a 6 caratteri</span><span>13</span></div>
+    <div class="row"><span>10 — CIG e CUP: dal campo a video al blocco DatiOrdineAcquisto</span><span>14</span></div>
+    <div class="row"><span>11 — Copertura di test</span><span>16</span></div>
+    <div class="row"><span>12 — Limiti noti e punti in attesa di verifica fiscale</span><span>17</span></div>
+    <div class="row"><span>13 — Riepilogo degli aspetti fiscali trattati</span><span>18</span></div>
+  </div>
+</section>
+
+<!-- ===================== 3. SCOPO ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Premessa</div>
+  <h2 class="section"><span class="num">3</span>Scopo del documento e perimetro delle modifiche</h2>
+
+  <p>Il documento «La maschera Documenti XML e il tracciato FatturaPA» (v1.0, 06/07/2026) descrive la
+  <strong>Fase D1</strong> dello sviluppo della fatturazione elettronica in <strong>ICMFatturazioni</strong>:
+  la maschera <code>/gestione-xml</code>, la libreria <em>FatturaElettronica</em>, la macchina a stati
+  della fattura e la mappatura del tracciato <strong>FPR12</strong> (fatture verso privati e società).
+  In quella fase i clienti di tipo <strong>ente pubblico</strong> (<code>TipoAnagrafica = 'E'</code>)
+  erano <strong>esplicitamente bloccati</strong>: il tentativo di generare l'XML sollevava
+  <code>FatturaPaEntePubblicoException</code> con un messaggio che rinviava la funzionalità a una tappa futura.</p>
+
+  <p>Quella tappa è arrivata il giorno successivo al rilascio. Questo documento descrive
+  <strong>tutte le modifiche apportate dopo il rilascio</strong> del documento precedente, consolidate nel
+  commit <code>f3ec639</code> del 07/07/2026:</p>
+
+  <ul>
+    <li><strong>Ramo FPA12</strong> — le fatture verso enti pubblici non sono più bloccate: il servizio
+      genera il tracciato nel formato di trasmissione <strong>FPA12</strong> (Pubblica Amministrazione)
+      anziché FPR12, decidendo il ramo dal tipo di anagrafica del cliente.</li>
+    <li><strong>Split payment</strong> (scissione dei pagamenti, art. 17-ter D.P.R. 633/72) — per la PA
+      l'esigibilità IVA nei riepiloghi diventa <code>"S"</code> e l'importo del pagamento è
+      <strong>al netto dell'IVA</strong>, che l'ente versa direttamente all'Erario.</li>
+    <li><strong>Codice Univoco Ufficio (IPA)</strong> — per la PA il Codice Destinatario deve essere il
+      codice ufficio di <strong>6 caratteri</strong> censito su IndicePA, obbligatorio e senza fallback PEC.</li>
+    <li><strong>CIG e CUP</strong> — la fattura può portare i codici di tracciabilità degli appalti pubblici
+      (L. 136/2010), raccolti a video solo per clienti PA, persistiti su <code>fatt.Fatture</code>
+      (migration 070) ed emessi nel blocco XML <code>DatiOrdineAcquisto</code>.</li>
+  </ul>
+
+  <h3>Cosa NON è cambiato</h3>
+  <p>Tutto l'impianto della Fase D1 resta invariato e continua a valere quanto descritto nel documento
+  precedente: la maschera <code>/gestione-xml</code> con filtri e pulsanti dinamici, il progressivo di invio
+  in base 36, il nome file <code>IT&lt;PIVA&gt;_&lt;progressivo&gt;.xml</code>, la validazione offline con
+  esito a schermo, la macchina a stati (da creare → creato → esito confermato), il download con rigenerazione
+  al volo e l'endpoint <code>/api/fatture/{id}/xml</code>. Le fatture verso privati e società continuano a
+  uscire in FPR12 con esigibilità immediata, identiche a prima: i cinque nuovi test includono una
+  <strong>regressione esplicita sul ramo privati</strong>.</p>
+
+  <div class="callout">
+    <span class="label">Perché questa estensione</span>
+    Il destinatario reale dell'applicativo è <strong>ICM Solutions S.r.l.</strong>, che fattura anche a
+    enti pubblici (es. Comuni). Senza il ramo FPA12 una parte del suo ciclo attivo resterebbe fuori
+    dall'applicazione. Le decisioni operative prese con l'utente il 07/07/2026 sono due:
+    <strong>split payment automatico per tutti gli enti pubblici</strong> (nessun flag per-cliente) e
+    <strong>CIG/CUP come campi opzionali</strong> della singola fattura.
+  </div>
+</section>
+
+<!-- ===================== 4. QUADRO FISCALE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Contesto normativo</div>
+  <h2 class="section"><span class="num">4</span>Il quadro fiscale: fatturare alla Pubblica Amministrazione</h2>
+
+  <p>Prima di entrare nel codice conviene fissare le regole fiscali che lo guidano. Fatturare a un ente
+  pubblico italiano differisce dalla fatturazione fra privati su <strong>quattro assi</strong>, tutti
+  recepiti dal tracciato FatturaPA.</p>
+
+  <h3>4.1 — Il formato di trasmissione: FPA12 vs FPR12</h3>
+  <p>Il tracciato «FatturaPA versione 1.2» prevede due formati di trasmissione, dichiarati nell'attributo
+  <code>FormatoTrasmissione</code> del blocco <code>DatiTrasmissione</code>: <strong>FPA12</strong> per le
+  fatture destinate alla Pubblica Amministrazione (D.M. 55/2013, obbligo dal 2014-2015) e
+  <strong>FPR12</strong> per le fatture fra privati (obbligo generalizzato dal 2019). La struttura XML è
+  quasi identica, ma lo schema di validazione applica regole diverse — la più visibile riguarda il Codice
+  Destinatario (§ 4.3).</p>
+
+  <h3>4.2 — La scissione dei pagamenti (split payment)</h3>
+  <p>L'art. <strong>17-ter del D.P.R. 633/72</strong> stabilisce che per le cessioni e prestazioni verso le
+  Pubbliche Amministrazioni l'IVA, pur esposta in fattura dal fornitore, <strong>non viene incassata dal
+  fornitore</strong>: è l'ente acquirente a versarla direttamente all'Erario. Il meccanismo nasce come misura
+  anti-evasione (l'IVA non transita mai dal fornitore) e per il fornitore ha due conseguenze pratiche:</p>
+  <ul>
+    <li>in fattura l'IVA si espone normalmente (imponibile × aliquota), ma nei riepiloghi il campo
+      <code>EsigibilitaIVA</code> vale <strong><code>"S"</code></strong> (scissione dei pagamenti) anziché
+      <code>"I"</code> (esigibilità immediata);</li>
+    <li>l'importo che l'ente paga al fornitore è il <strong>totale al netto dell'IVA</strong>: su una
+      prestazione da 1.000 € + 220 € di IVA, il fornitore riceve 1.000 € e l'ente versa 220 € all'Erario.</li>
+  </ul>
+
+  <div class="money">
+    <div class="actor"><b>Ente pubblico</b><small>cessionario / committente</small></div>
+    <div class="money-flows">
+      <div class="mlane"><span class="amt">imponibile 1.000,00 €</span><span class="marr">→</span><div class="actor"><b>ICM Solutions S.r.l.</b><small>cedente / prestatore</small></div></div>
+      <div class="mlane"><span class="amt">IVA 220,00 €</span><span class="marr">→</span><div class="actor gov"><b>Erario</b><small>versata dall'ente (art. 17-ter)</small></div></div>
+    </div>
+  </div>
+  <p class="flow-caption">Split payment: il fornitore incassa solo l'imponibile; l'IVA va dall'ente direttamente all'Erario.</p>
+
+  <h3>4.3 — Il Codice Univoco Ufficio (IPA)</h3>
+  <p>Per i privati il recapito della fattura passa dal Codice Destinatario a <strong>7 caratteri</strong>
+  (accreditato presso lo SdI) oppure dal fallback <code>0000000</code> + PEC. Per la PA il recapito è il
+  <strong>Codice Univoco Ufficio</strong> di <strong>6 caratteri</strong>, assegnato dall'<em>Indice delle
+  Pubbliche Amministrazioni</em> (IPA, www.indicepa.gov.it) a ogni ufficio destinatario di fatturazione.
+  È <strong>obbligatorio</strong>: senza codice IPA valido lo SdI scarta la fattura, e non esiste fallback PEC.</p>
+
+  <h3>4.4 — CIG e CUP: la tracciabilità degli appalti (L. 136/2010)</h3>
+  <p>La legge 136/2010 («piano straordinario contro le mafie») impone la tracciabilità dei flussi finanziari
+  negli appalti pubblici. In fattura questo si traduce in due codici, che le PA di norma esigono pena il
+  rifiuto del documento:</p>
+  <table class="data">
+    <thead><tr><th style="width:20mm">Codice</th><th style="width:52mm">Nome</th><th>Quando serve</th><th style="width:30mm">Formato</th></tr></thead>
+    <tbody>
+      <tr><td><strong>CIG</strong></td><td>Codice Identificativo Gara</td><td>Ogni contratto d'appalto pubblico soggetto a tracciabilità (rilasciato dall'ANAC)</td><td>10 caratteri alfanumerici</td></tr>
+      <tr><td><strong>CUP</strong></td><td>Codice Unico di Progetto</td><td>Solo per i progetti d'investimento pubblico (rilasciato dal CIPESS)</td><td>15 caratteri alfanumerici</td></tr>
+    </tbody>
+  </table>
+  <p>Nel tracciato confluiscono nel blocco <strong>2.1.2 <code>DatiOrdineAcquisto</code></strong>
+  (campi <code>CodiceCIG</code> e <code>CodiceCUP</code>), che richiede anche un <code>IdDocumento</code>
+  obbligatorio (il riferimento al documento d'ordine).</p>
+
+  <div class="callout">
+    <span class="label">Un asse ortogonale al profilo del cedente</span>
+    Il documento precedente descriveva il <strong>profilo fiscale del cedente</strong> (cassa previdenziale
+    e ritenuta configurabili su <code>fatt.Azienda</code>: entrambe spente per ICM Solutions S.r.l.,
+    accese per uno studio professionale). Il ramo PA qui descritto è <strong>ortogonale</strong>: riguarda
+    il <strong>cessionario</strong> (chi riceve la fattura), non chi la emette. I due assi si combinano
+    liberamente: una fattura di ICM Solutions a un Comune esce FPA12 + split payment, senza cassa né
+    ritenuta perché il profilo del cedente le esclude.
+  </div>
+</section>
+
+<!-- ===================== 5. PANORAMICA MODIFICHE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Le modifiche</div>
+  <h2 class="section"><span class="num">5</span>Panoramica delle modifiche al codice</h2>
+
+  <p>Le modifiche attraversano tutti i layer dell'architettura, rispettando il flusso canonico
+  <em>UI → Manager → Repository → SQL Server</em> e il perimetro dello schema (la migration vive nel
+  repository ICMVerbali, proprietario dello schema del database unificato <code>ICMVerbaliDb</code>).</p>
+
+  <div class="flow">
+    <div class="fbox"><b>AvvisiFattura.razor</b>campi CIG/CUP<br>solo per clienti PA<small>UI Blazor</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>CreaFatturaRequest</b>+ Cig, Cup<br>opzionali<small>Models (DTO)</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>FattureManager</b>normalizza<br>+ audit<small>Business logic</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>FattureRepository</b>SELECT / INSERT<br>con Cig, Cup<small>Dapper</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox hot"><b>fatt.Fatture</b>+ Cig, Cup<br>NVARCHAR(15)<small>migration 070</small></div>
+  </div>
+  <p class="flow-caption">Catena di scrittura dei nuovi campi CIG/CUP, dalla maschera al database.</p>
+
+  <div class="flow">
+    <div class="fbox hot"><b>fatt.Fatture</b>fattura con<br>Cig / Cup<small>lettura</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>AvvisoPdfDataBuilder</b>dati avviso + cliente<br>+ calcolo congelato<small>riuso Fase D1</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>FatturaPaXmlService.Mappa</b>ramo FPA12 / FPR12<br>split payment, CIG/CUP<small>mappatura</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>Validazione offline</b>FluentValidation<br>della libreria<small>FatturaElettronica</small></div>
+    <div class="farrow">→</div>
+    <div class="fbox"><b>File XML</b>IT&lt;PIVA&gt;_&lt;prog&gt;.xml<small>cartella output</small></div>
+  </div>
+  <p class="flow-caption">Catena di generazione: invariata rispetto alla Fase D1, con la mappatura ora biforcata per tipo di cliente.</p>
+
+  <h3>File toccati dal commit <code>f3ec639</code></h3>
+  <table class="data">
+    <thead><tr><th style="width:74mm">File</th><th>Modifica</th></tr></thead>
+    <tbody>
+      <tr><td><code>Entities/Fattura.cs</code></td><td>Nuove proprietà <code>Cig</code> e <code>Cup</code> (nullable, documentate con XML doc).</td></tr>
+      <tr><td><code>Models/CreaFatturaRequest.cs</code></td><td>Il record accetta <code>Cig</code>/<code>Cup</code> opzionali (default <code>null</code>).</td></tr>
+      <tr><td><code>Managers/FattureManager.cs</code></td><td>Normalizzazione vuoto→null e inclusione di CIG/CUP nello snapshot di audit.</td></tr>
+      <tr><td><code>Repositories/FattureRepository.cs</code></td><td>SELECT e INSERT estese con le due colonne (parametri Dapper).</td></tr>
+      <tr><td><code>Services/FatturaPaXmlService.cs</code></td><td>Ramo FPA12: formato, split payment, codice IPA, blocco <code>DatiOrdineAcquisto</code>.</td></tr>
+      <tr><td><code>Services/IFatturaPaXmlService.cs</code></td><td>Documentazione delle eccezioni aggiornata (via l'eccezione ente pubblico).</td></tr>
+      <tr><td><code>FatturaPa/FatturaPaXmlExceptions.cs</code></td><td><strong>Rimossa</strong> <code>FatturaPaEntePubblicoException</code> (il blocco non esiste più).</td></tr>
+      <tr><td><code>Components/Pages/AvvisiFattura.razor</code></td><td>Campi CIG/CUP nel pannello «Crea fattura», visibili solo per clienti ente pubblico.</td></tr>
+      <tr><td><code>Components/Pages/GestioneXml.razor</code></td><td>Rimosso il <code>catch</code> dell'eccezione ente pubblico.</td></tr>
+      <tr><td><code>tests/…/FatturaPaXmlServiceTests.cs</code></td><td>+5 test (ramo PA completo + regressione privati). <code>FakeFattureRepository</code> allineato.</td></tr>
+      <tr><td><code>ICMVerbali/Migrations/070_FattFattureCigCup.sql</code></td><td>Nuova migration additiva (repo ICMVerbali), già applicata su <code>ICMVerbaliDb</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <p>Bilancio del commit: <strong>11 file, +226/−37 righe</strong> nel repository ICMFatturazioni, build a
+  0 errori, <strong>500 test verdi</strong>.</p>
+</section>
+
+<!-- ===================== 6. DATABASE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Persistenza</div>
+  <h2 class="section"><span class="num">6</span>Database: la migration 070 (CIG/CUP)</h2>
+
+  <p>L'unica modifica di schema riguarda i codici di tracciabilità. La scelta di modellazione è stata
+  discussa esplicitamente: CIG e CUP sono <strong>riferimenti propri della fattura</strong> (identificano
+  l'appalto a cui il singolo documento si riferisce), non dell'avviso né dell'anagrafica cliente → le
+  colonne vivono su <code>fatt.Fatture</code>.</p>
+
+  <p>Come da regola vincolante del progetto, la migration è scritta nel repository <strong>ICMVerbali</strong>
+  (proprietario dello schema del DB unificato) e la cartella <code>Migrations/</code> di ICMFatturazioni
+  resta congelata:</p>
+
+  <pre>-- ICMVerbali/src/ICMVerbali.Web/Migrations/070_FattFattureCigCup.sql
+IF COL_LENGTH(N'fatt.Fatture', N'Cig') IS NULL
+BEGIN
+    ALTER TABLE fatt.Fatture ADD Cig NVARCHAR(15) NULL;
+END
+GO
+IF COL_LENGTH(N'fatt.Fatture', N'Cup') IS NULL
+BEGIN
+    ALTER TABLE fatt.Fatture ADD Cup NVARCHAR(15) NULL;
+END
+GO</pre>
+
+  <p>Caratteristiche della migration:</p>
+  <ul>
+    <li><strong>Additiva e idempotente</strong> — le guardie <code>COL_LENGTH … IS NULL</code> permettono
+      la riesecuzione senza errori; le fatture storiche restano valide con CIG/CUP <code>NULL</code>.</li>
+    <li><strong>Dimensionamento</strong> — <code>NVARCHAR(15)</code> copre sia il CIG (10 caratteri
+      alfanumerici, specifica ANAC) sia il CUP (15 caratteri) con un'unica taglia.</li>
+    <li><strong>Nullable per progetto</strong> — una fattura verso privati, o verso una PA senza appalto
+      tracciato, lascia entrambe le colonne a <code>NULL</code> e il blocco XML corrispondente
+      semplicemente non viene emesso.</li>
+    <li><strong>Già applicata</strong> su <code>ICMVerbaliDb</code> al momento del commit.</li>
+  </ul>
+
+  <div class="callout">
+    <span class="label">Perché non su fatt.AvvisiFattura</span>
+    L'avviso è il documento «pro-forma» interno che precede la fattura; il CIG/CUP è un requisito del
+    <em>documento fiscale</em> emesso verso la PA. Metterli sulla fattura mantiene l'avviso neutro e
+    consente di valorizzarli nel momento in cui l'operatore ha davvero i codici: la conferma di emissione.
+  </div>
+</section>
+
+<!-- ===================== 7. RAMO FPA12 ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Il servizio di mappatura</div>
+  <h2 class="section"><span class="num">7</span>Il ramo FPA12 nel servizio di mappatura</h2>
+
+  <p>Il cuore delle modifiche è in <code>FatturaPaXmlService</code>. Nella Fase D1 il metodo di caricamento
+  dati conteneva un blocco esplicito:</p>
+
+  <pre>// Fase D1 (rimosso): solo privati/società (FPR12). Enti pubblici bloccati.
+if (data.Cliente.TipoAnagrafica == TipoAnagrafica.EntePubblico)
+    throw new FatturaPaEntePubblicoException();</pre>
+
+  <p>Il blocco è stato <strong>rimosso</strong>, insieme all'eccezione dedicata e al relativo
+  <code>catch</code> nella maschera <code>/gestione-xml</code>. La decisione del formato è ora presa
+  <strong>dentro il metodo <code>Mappa</code></strong>, dal tipo di anagrafica del cliente:</p>
+
+  <pre>var entePubblico = cliente.TipoAnagrafica == TipoAnagrafica.EntePubblico;
+
+// FPA12 per la PA (Instance.PubblicaAmministrazione), altrimenti FPR12.
+var fo = FatturaOrdinaria.CreateInstance(
+    entePubblico ? Instance.PubblicaAmministrazione : Instance.Privati);</pre>
+
+  <p>La libreria <em>FatturaElettronica</em> incapsula la differenza di formato nella factory
+  <code>CreateInstance</code>: passando <code>Instance.PubblicaAmministrazione</code> l'header nasce con
+  <code>FormatoTrasmissione = FPA12</code> e il validatore offline applica le regole PA (fra cui la
+  lunghezza a 6 del Codice Destinatario). Il flag locale <code>entePubblico</code> guida poi
+  <strong>quattro punti</strong> della mappatura:</p>
+
+  <div class="branching">
+    <div class="root">Il cliente della fattura è un <b>ente pubblico</b>?<br><code>cliente.TipoAnagrafica == TipoAnagrafica.EntePubblico</code></div>
+    <div class="legs">
+      <div class="leg si">
+        <div class="lbl">SÌ — RAMO PA</div>
+        <div class="card">
+          <b>FPA12 — Pubblica Amministrazione</b>
+          <ul>
+            <li><code>Instance.PubblicaAmministrazione</code> → <code>FormatoTrasmissione = FPA12</code></li>
+            <li>Codice Destinatario = <strong>Codice Univoco Ufficio IPA a 6 caratteri, obbligatorio</strong> (niente fallback PEC)</li>
+            <li>Riepiloghi IVA: <code>EsigibilitaIVA = "S"</code> (scissione dei pagamenti)</li>
+            <li><code>ImportoPagamento = TotaleNostroAvere − IVA</code></li>
+            <li>CIG/CUP (se presenti) → blocco <code>DatiOrdineAcquisto</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="leg no">
+        <div class="lbl">NO — RAMO PRIVATI</div>
+        <div class="card">
+          <b>FPR12 — privati e società (invariato)</b>
+          <ul>
+            <li><code>Instance.Privati</code> → <code>FormatoTrasmissione = FPR12</code></li>
+            <li>Codice Destinatario a 7 caratteri se presente, altrimenti <code>0000000</code> + PEC del cliente</li>
+            <li>Riepiloghi IVA: <code>EsigibilitaIVA = "I"</code> (immediata)</li>
+            <li><code>ImportoPagamento = TotaleNostroAvere</code> (lordo IVA, netto ritenuta)</li>
+            <li>Nessun <code>DatiOrdineAcquisto</code></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="flow-caption">La biforcazione FPA12/FPR12 dentro <code>FatturaPaXmlService.Mappa</code>: un solo metodo, due rami coerenti.</p>
+
+  <div class="callout">
+    <span class="label">Perché niente flag manuale «split payment»</span>
+    Si è scelto (decisione utente 07/07/2026) di derivare lo split payment <strong>automaticamente</strong>
+    dal tipo di anagrafica, senza flag per-cliente: per il perimetro di ICM Solutions ogni cliente censito
+    come ente pubblico è una PA soggetta a scissione ex art. 17-ter. Se in futuro emergesse una casistica
+    diversa (es. società a partecipazione pubblica in regime speciale), il punto di estensione naturale è
+    un flag su <code>fatt.Anagrafica</code> — da valutare con il consulente fiscale (cap. 12).
+  </div>
+
+  <h3>Costanti introdotte</h3>
+  <pre>private const string EsigibilitaScissione = "S";  // scissione dei pagamenti (split payment, art. 17-ter)
+private const int    LunghezzaCodiceUfficioPA = 6; // Codice Univoco Ufficio IPA (FPA12)</pre>
+
+  <p>Le costanti affiancano quelle già esistenti (<code>EsigibilitaImmediata = "I"</code>,
+  <code>CodiceDestinatarioNullo = "0000000"</code>): i valori del tracciato restano centralizzati in testa
+  al servizio, mai sparsi come stringhe magiche nel corpo della mappatura.</p>
+</section>
+
+<!-- ===================== 8. SPLIT PAYMENT ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Aspetti fiscali — scissione dei pagamenti</div>
+  <h2 class="section"><span class="num">8</span>Split payment nel tracciato XML</h2>
+
+  <p>Lo split payment tocca il tracciato in <strong>due punti distinti</strong>, entrambi governati dal
+  flag <code>entePubblico</code>.</p>
+
+  <h3>8.1 — Esigibilità IVA nei riepiloghi (blocco 2.2.2 DatiRiepilogo)</h3>
+  <p>Il riepilogo della prestazione (imponibile + eventuale cassa, con l'aliquota IVA del documento) dichiara
+  ora l'esigibilità in funzione del destinatario:</p>
+
+  <pre>body.DatiBeniServizi.DatiRiepilogo.Add(new DatiRiepilogo
+{
+    AliquotaIVA = t.AliquotaIva,
+    ImponibileImporto = c.ImponibilePiuCassa,
+    Imposta = c.Iva,
+    // PA → scissione dei pagamenti (l'IVA la versa la PA all'Erario).
+    EsigibilitaIVA = entePubblico ? EsigibilitaScissione : EsigibilitaImmediata,
+});</pre>
+
+  <p>I valori ammessi dal tracciato per <code>EsigibilitaIVA</code> sono tre: <code>"I"</code> (immediata,
+  il caso ordinario), <code>"D"</code> (differita, non usata dall'applicativo) e <code>"S"</code>
+  (scissione dei pagamenti). L'eventuale riepilogo aggiuntivo per le spese escluse ex art. 15
+  (natura <code>N1</code>) <strong>non è toccato</strong>: le somme escluse dal campo IVA non hanno
+  esigibilità da dichiarare.</p>
+
+  <h3>8.2 — Importo del pagamento (blocco 2.4 DatiPagamento)</h3>
+  <p>Il <code>DettaglioPagamento</code> espone l'importo che il cliente deve materialmente bonificare.
+  Per la PA, all'importo netto già calcolato dalla cascata fiscale va sottratta anche l'IVA:</p>
+
+  <pre>// Pagamento: importo netto effettivamente dovuto dal cliente (post ritenuta).
+// In split payment (PA) si sottrae anche l'IVA: la PA la versa all'Erario,
+// al fornitore arriva l'imponibile (+ eventuali spese art.15, − ritenuta).
+var importoPagamento = entePubblico
+    ? c.TotaleNostroAvere - c.Iva
+    : c.TotaleNostroAvere;</pre>
+
+  <h3>8.3 — Esempio numerico completo</h3>
+  <p>Prestazione da 1.000,00 € con IVA 22%, cedente ICM Solutions S.r.l. (profilo fiscale: niente cassa
+  previdenziale, niente ritenuta), 80,00 € di spese anticipate escluse ex art. 15:</p>
+
+  <table class="data">
+    <thead><tr><th>Grandezza</th><th style="width:34mm">Cliente privato (FPR12)</th><th style="width:34mm">Ente pubblico (FPA12)</th><th>Nota</th></tr></thead>
+    <tbody>
+      <tr><td>Imponibile</td><td>1.000,00 €</td><td>1.000,00 €</td><td>identico: la cascata fiscale non cambia</td></tr>
+      <tr><td>IVA 22%</td><td>220,00 €</td><td>220,00 €</td><td>esposta in fattura in entrambi i casi</td></tr>
+      <tr><td>Spese escluse art. 15</td><td>80,00 €</td><td>80,00 €</td><td>riepilogo natura N1, fuori campo IVA</td></tr>
+      <tr><td>Totale documento</td><td>1.300,00 €</td><td>1.300,00 €</td><td><code>ImportoTotaleDocumento</code>, lordo</td></tr>
+      <tr><td>Esigibilità IVA</td><td><code>"I"</code> immediata</td><td><code>"S"</code> scissione</td><td>blocco <code>DatiRiepilogo</code></td></tr>
+      <tr><td><strong>Importo pagamento</strong></td><td><strong>1.300,00 €</strong></td><td><strong>1.080,00 €</strong></td><td>la PA trattiene i 220,00 € di IVA e li versa all'Erario</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.4 — Il frammento XML risultante (ramo PA)</h3>
+  <pre>&lt;DatiRiepilogo&gt;
+  &lt;AliquotaIVA&gt;22.00&lt;/AliquotaIVA&gt;
+  &lt;ImponibileImporto&gt;1000.00&lt;/ImponibileImporto&gt;
+  &lt;Imposta&gt;220.00&lt;/Imposta&gt;
+  &lt;EsigibilitaIVA&gt;S&lt;/EsigibilitaIVA&gt;          &lt;!-- scissione dei pagamenti --&gt;
+&lt;/DatiRiepilogo&gt;
+…
+&lt;DettaglioPagamento&gt;
+  &lt;ModalitaPagamento&gt;MP05&lt;/ModalitaPagamento&gt;  &lt;!-- bonifico --&gt;
+  &lt;ImportoPagamento&gt;1080.00&lt;/ImportoPagamento&gt; &lt;!-- al netto dell'IVA --&gt;
+  &lt;IBAN&gt;IT…&lt;/IBAN&gt;
+&lt;/DettaglioPagamento&gt;</pre>
+
+  <div class="callout warn">
+    <span class="label">⚠ Incoerenza nota con avviso PDF e cascata (in attesa di Greppi)</span>
+    Lo split payment è oggi gestito <strong>solo nel tracciato XML</strong>. La cascata fiscale
+    (<code>CalcoloFiscaleAvviso</code>) e il PDF dell'avviso (<code>AvvisoPdfDocument</code>) continuano a
+    esporre un «TOTALE NOSTRO AVERE» <strong>comprensivo di IVA</strong> (nell'esempio: 1.300,00 €), mentre
+    l'XML dichiara un pagamento di 1.080,00 €. Il capitolo 12 descrive l'ipotesi di soluzione, volutamente
+    <strong>non attuata</strong> in attesa della verifica fiscale.
+  </div>
+</section>
+
+<!-- ===================== 9. CODICE DESTINATARIO ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Aspetti fiscali — recapito SdI</div>
+  <h2 class="section"><span class="num">9</span>Il Codice Destinatario: IPA a 6 caratteri</h2>
+
+  <p>Il campo <code>CodiceDestinatario</code> del blocco <code>DatiTrasmissione</code> era già gestito per i
+  privati (codice a 7 caratteri, oppure <code>0000000</code> con PEC del cliente). Per la PA la logica è
+  diversa e <strong>più severa</strong>:</p>
+
+  <pre>var codiceDest = Pulisci(cliente.CodiceDestinatario).ToUpperInvariant();
+if (entePubblico)
+{
+    // PA: il Codice Univoco Ufficio (IPA) di 6 caratteri è obbligatorio e non
+    // ammette il fallback su PEC previsto per i privati.
+    if (codiceDest.Length != LunghezzaCodiceUfficioPA)
+        throw new FatturaPaDatiMancantiException(
+            $"Il cliente «{cliente.RagioneSociale}» è un ente pubblico: per la fattura " +
+            $"elettronica FPA12 serve il Codice Univoco Ufficio (IPA) di 6 " +
+            $"caratteri. Valore attuale: «{(codiceDest.Length == 0 ? "(vuoto)" : codiceDest)}».");
+    dt.CodiceDestinatario = codiceDest;
+}</pre>
+
+  <p>Punti qualificanti della scelta:</p>
+  <ul>
+    <li><strong>Errore parlante, non scarto SdI.</strong> Il controllo avviene <em>prima</em> della
+      validazione offline della libreria: l'operatore vede subito un messaggio in italiano che nomina il
+      cliente e il valore attuale del codice, invece di un errore di schema. L'eccezione usata è la già
+      esistente <code>FatturaPaDatiMancantiException</code>: è un difetto di configurazione dei dati, un
+      flusso previsto che la maschera mostra a video senza log d'errore.</li>
+    <li><strong>Nessun fallback PEC.</strong> Per i privati un codice assente degrada a
+      <code>0000000</code> + PEC; per la PA il tracciato FPA12 non lo consente, quindi il codice mancante o
+      di lunghezza sbagliata blocca la generazione.</li>
+    <li><strong>Normalizzazione uniforme.</strong> Il codice viene ripulito e portato a maiuscole
+      (<code>ToUpperInvariant</code>) per entrambi i rami, prima del controllo di lunghezza.</li>
+    <li><strong>Nessun campo nuovo.</strong> Il Codice Univoco Ufficio si inserisce nel campo «Codice
+      destinatario» già presente sull'anagrafica cliente: per un ente pubblico l'operatore vi digita il
+      codice IPA a 6 caratteri anziché il codice SdI a 7.</li>
+  </ul>
+
+  <div class="callout">
+    <span class="label">Dove si trova il codice IPA</span>
+    Ogni ente pubblico pubblica i propri Codici Univoci Ufficio sull'Indice delle Pubbliche Amministrazioni
+    (<strong>www.indicepa.gov.it</strong>). Un ente può avere più uffici di fatturazione con codici diversi:
+    va usato quello indicato nell'ordine o nel contratto. In assenza, il codice «ufficio centrale» (spesso
+    <code>UFE***</code>/<code>UF****</code>) è il default dell'ente.
+  </div>
+</section>
+
+<!-- ===================== 10. CIG/CUP ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Aspetti fiscali — tracciabilità appalti</div>
+  <h2 class="section"><span class="num">10</span>CIG e CUP: dal campo a video al blocco DatiOrdineAcquisto</h2>
+
+  <p>I codici di tracciabilità attraversano l'intera architettura. Seguiamo il percorso di scrittura e
+  poi quello di emissione nel tracciato.</p>
+
+  <h3>10.1 — Raccolta a video (AvvisiFattura.razor)</h3>
+  <p>Nel pannello «Crea fattura» della maschera <code>/avvisi-fattura</code> compaiono due campi opzionali,
+  <strong>solo quando il cliente selezionato è un ente pubblico</strong>. La condizione è una proprietà
+  derivata, senza stato aggiuntivo da tenere sincronizzato:</p>
+
+  <pre>// True se il cliente selezionato è un ente pubblico → fattura FPA12: mostra CIG/CUP.
+private bool _clienteEntePubblico
+    => _anagraficaSelezionata?.TipoAnagrafica == TipoAnagrafica.EntePubblico;</pre>
+
+  <pre>@if (_clienteEntePubblico)
+{
+    &lt;MudTextField @bind-Value="_cigFattura" Label="CIG" MaxLength="10"
+                  HelperText="Codice Identificativo Gara (opz.)" … /&gt;
+    &lt;MudTextField @bind-Value="_cupFattura" Label="CUP" MaxLength="15"
+                  HelperText="Codice Unico di Progetto (opz.)" … /&gt;
+}</pre>
+
+  <p>I <code>MaxLength</code> riflettono i formati normativi (CIG 10, CUP 15). Alla conferma, i valori sono
+  passati al manager <strong>solo se il cliente è PA</strong> — doppia difesa: per un privato i campi non
+  sono a video, e comunque non verrebbero inoltrati:</p>
+
+  <pre>var idFattura = await FattureManager.CreaAsync(new CreaFatturaRequest(
+    _idAvvisoInModifica.Value, _numeroFattura, DateOnly.FromDateTime(_dataFattura.Value),
+    _clienteEntePubblico ? _cigFattura : null,
+    _clienteEntePubblico ? _cupFattura : null));</pre>
+
+  <h3>10.2 — Normalizzazione e audit (FattureManager)</h3>
+  <p>Il manager normalizza i valori (stringa vuota o spazi → <code>null</code>, trim degli estremi), così una
+  fattura senza appalto non porta stringhe vuote nel database né nel tracciato. I due campi entrano inoltre
+  nello <strong>snapshot di audit</strong> della creazione fattura (<code>fatt.Audit</code>, regola
+  vincolante del progetto):</p>
+
+  <pre>Cig = NullSeVuoto(request.Cig),
+Cup = NullSeVuoto(request.Cup),
+…
+private static string? NullSeVuoto(string? s)
+    => string.IsNullOrWhiteSpace(s) ? null : s.Trim();</pre>
+
+  <h3>10.3 — Persistenza (FattureRepository)</h3>
+  <p>SELECT di base e INSERT sono estese con le due colonne, sempre con parametri Dapper
+  (<code>@Cig</code>, <code>@Cup</code>) e mai per concatenazione. La riga interna di mapping
+  (<code>record</code> privato → entità) riporta i valori sull'entità <code>Fattura</code>.</p>
+
+  <h3>10.4 — Emissione nel tracciato (blocco 2.1.2 DatiOrdineAcquisto)</h3>
+  <p>In <code>Mappa</code>, il blocco è emesso solo se il cliente è PA <em>e</em> almeno uno dei due codici
+  è presente:</p>
+
+  <pre>// Riferimenti appalto pubblico (CIG/CUP): solo per la PA, se valorizzati.
+// Confluiscono in DatiOrdineAcquisto (2.1.2); l'IdDocumento obbligatorio del
+// blocco è il numero della fattura, non tracciando l'app il numero d'ordine.
+var cig = NullSeVuoto(fattura.Cig);
+var cup = NullSeVuoto(fattura.Cup);
+if (entePubblico && (cig is not null || cup is not null))
+{
+    body.DatiGenerali.DatiOrdineAcquisto.Add(new DatiOrdineAcquistoFe
+    {
+        IdDocumento = fattura.NumeroFattura.ToString(CultureInfo.InvariantCulture),
+        CodiceCIG = cig,
+        CodiceCUP = cup,
+    });
+}</pre>
+
+  <div class="callout">
+    <span class="label">IdDocumento = numero fattura: una scelta dichiarata</span>
+    Il tracciato rende <code>IdDocumento</code> (2.1.2.2) obbligatorio dentro <code>DatiOrdineAcquisto</code>:
+    è pensato per il numero dell'<em>ordine d'acquisto</em> della PA. ICMFatturazioni però non gestisce gli
+    ordini: in assenza del dato reale si usa il <strong>numero della fattura stessa</strong>, prassi comune
+    e accettata dallo SdI quando l'ordine non è tracciato. Se in futuro l'applicativo censisse i numeri
+    d'ordine PA, questo è il punto da raffinare.
+  </div>
+
+  <p>Il frammento risultante per una fattura n. 12 con CIG e CUP:</p>
+  <pre>&lt;DatiOrdineAcquisto&gt;
+  &lt;IdDocumento&gt;12&lt;/IdDocumento&gt;
+  &lt;CodiceCUP&gt;J51B21005690006&lt;/CodiceCUP&gt;
+  &lt;CodiceCIG&gt;8535240EB5&lt;/CodiceCIG&gt;
+&lt;/DatiOrdineAcquisto&gt;</pre>
+</section>
+
+<!-- ===================== 11. TEST ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Qualità</div>
+  <h2 class="section"><span class="num">11</span>Copertura di test</h2>
+
+  <p>Coerentemente con la disciplina del progetto (ogni funzionalità coperta da unit test <em>prima</em> di
+  avanzare), il ramo PA arriva con <strong>cinque nuovi test</strong> su
+  <code>FatturaPaXmlServiceTests</code>, che portano la suite a <strong>500 test verdi</strong>. Come per la
+  Fase D1, i test lavorano sul metodo <code>Mappa</code> — <code>internal static</code> e quindi testabile
+  offline, senza database né filesystem — e validano il tracciato con il validatore FluentValidation della
+  libreria.</p>
+
+  <table class="data">
+    <thead><tr><th style="width:78mm">Test</th><th>Cosa verifica</th></tr></thead>
+    <tbody>
+      <tr><td><code>Mappa_EntePubblico_ProduceFpa12ConSplitPayment_Valido</code></td>
+          <td>Una fattura verso PA produce <code>FormatoTrasmissione = FPA12</code>, esigibilità <code>"S"</code> e supera per intero la validazione offline.</td></tr>
+      <tr><td><code>Mappa_EntePubblico_ImportoPagamentoAlNettoDellIva</code></td>
+          <td>L'<code>ImportoPagamento</code> è <code>TotaleNostroAvere − IVA</code>: la matematica dello split payment (§ 8.3).</td></tr>
+      <tr><td><code>Mappa_EntePubblico_SenzaCodiceUfficioA6Cifre_Lancia</code></td>
+          <td>Codice destinatario assente o di lunghezza ≠ 6 → <code>FatturaPaDatiMancantiException</code> con messaggio parlante (§ 9).</td></tr>
+      <tr><td><code>Mappa_EntePubblico_ConCigCup_FinisconoInDatiOrdineAcquisto</code></td>
+          <td>CIG e CUP valorizzati confluiscono nel blocco 2.1.2 con <code>IdDocumento</code> = numero fattura (§ 10.4).</td></tr>
+      <tr><td><code>Mappa_Privati_NessunOrdineAcquisto_EsigibilitaImmediata</code></td>
+          <td><strong>Regressione</strong>: il ramo privati resta FPR12, esigibilità <code>"I"</code>, nessun <code>DatiOrdineAcquisto</code>, importo pagamento invariato.</td></tr>
+    </tbody>
+  </table>
+
+  <p>A supporto, il <code>FakeFattureRepository</code> dei test è stato allineato ai nuovi campi
+  dell'entità. Sono inoltre presenti (fuori dal perimetro XML) tre test sul blocco di
+  modifica/eliminazione dei dettagli attività con scadenze già in avviso, introdotti dal commit
+  <code>15b8236</code> nello stesso intervallo temporale.</p>
+
+  <div class="callout warn">
+    <span class="label">⚠ Collaudo a runtime non eseguito</span>
+    A differenza della Fase D1 (collaudata end-to-end con Playwright), il ramo PA è verificato
+    <strong>solo a livello di unit test</strong>: il commit è dichiaratamente <em>work-in-progress</em>
+    («DA VERIFICARE CON GREPPI») e non è stato collaudato a runtime con dati reali di un ente pubblico.
+    Il collaudo completo è parte della sessione di verifica fiscale (cap. 12).
+  </div>
+</section>
+
+<!-- ===================== 12. LIMITI E STAND-BY ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Punti aperti</div>
+  <h2 class="section"><span class="num">12</span>Limiti noti e punti in attesa di verifica fiscale</h2>
+
+  <p>Per decisione dell'utente (07/07/2026) i moduli fiscali dell'applicativo — cascata di calcolo,
+  abbinamenti cedente/cessionario e relativi flag, report di avviso/fattura e generazione dei tracciati XML —
+  sono in <strong>stand-by</strong>: sono imbastiti e testati, ma non vanno più modificati né estesi finché
+  non saranno riesaminati insieme a <strong>Roberto Greppi</strong>, esperto di amministrazione e fiscalità.
+  Questo capitolo censisce, con trasparenza, ciò che quella revisione dovrà affrontare.</p>
+
+  <h3>12.1 — Incoerenza split payment: XML vs avviso PDF e cascata <span class="pill amber">APERTO</span></h3>
+  <p>È il punto più rilevante. Oggi la scissione dei pagamenti vive <strong>solo</strong> nella mappatura
+  XML: la cascata fiscale (<code>CalcoloFiscaleAvviso</code>) e il PDF dell'avviso
+  (<code>AvvisoPdfDocument</code>) non ne sanno nulla. Per una fattura da 1.000 € + 220 € IVA verso un
+  Comune:</p>
+  <ul>
+    <li>il PDF dell'avviso espone <strong>TOTALE NOSTRO AVERE = 1.220,00 €</strong> (IVA compresa);</li>
+    <li>l'XML dichiara <strong>ImportoPagamento = 1.000,00 €</strong> (IVA scissa).</li>
+  </ul>
+  <p>I due documenti raccontano importi diversi al cliente. L'ipotesi di soluzione, <strong>volutamente non
+  attuata</strong> in attesa della verifica fiscale, è delineata: uno snapshot <code>Scissione</code> su
+  <code>fatt.AvvisiFattura</code>, un passo <code>ApplicaScissione</code> nella cascata, una riga
+  «Scissione dei pagamenti −IVA» nel PDF con il nostro avere netto, e l'XML che legge il flag dallo
+  snapshot anziché ricalcolare.</p>
+
+  <h3>12.2 — Derivazione automatica dello split payment <span class="pill amber">DA CONFERMARE</span></h3>
+  <p>Ogni <code>TipoAnagrafica = 'E'</code> è trattato come PA in split payment. Da confermare con il
+  consulente che il perimetro clienti di ICM Solutions non includa enti in regime diverso (e che non serva
+  un flag per-cliente).</p>
+
+  <h3>12.3 — IdDocumento nel blocco DatiOrdineAcquisto <span class="pill amber">DA CONFERMARE</span></h3>
+  <p>In assenza di gestione ordini, <code>IdDocumento</code> = numero fattura (§ 10.4). Da validare che le
+  PA clienti di ICM Solutions non pretendano il numero d'ordine reale (in tal caso servirebbe un campo
+  dedicato a video).</p>
+
+  <h3>12.4 — Nessuna validazione di formato su CIG/CUP <span class="pill blue">SCELTA CONSAPEVOLE</span></h3>
+  <p>I campi limitano la lunghezza (10/15) ma non validano la struttura del codice (checksum ANAC/CIPESS):
+  un refuso passerebbe. Lo SdI non valida il contenuto di questi campi; l'eventuale rifiuto arriverebbe
+  dall'ente. Una regex di plausibilità (alfanumerico stretto) è un miglioramento a basso costo da valutare.</p>
+
+  <h3>12.5 — Perimetro volutamente minimo</h3>
+  <p>Per il resto vale il principio concordato: <strong>si sviluppa solo ciò che serve realmente a
+  ICM Solutions</strong>. Non sono state costruite casistiche teoriche (reverse charge, esigibilità differita
+  <code>"D"</code>, fatture semplificate, autofatture…) che il suo parco clienti non richiede.</p>
+</section>
+
+<!-- ===================== 13. RIEPILOGO FISCALE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Sintesi</div>
+  <h2 class="section"><span class="num">13</span>Riepilogo degli aspetti fiscali trattati</h2>
+
+  <p>La tabella chiude il documento riassumendo, per ogni aspetto fiscale toccato dalle modifiche, la norma
+  di riferimento, dove vive nel codice e lo stato di verifica.</p>
+
+  <table class="data">
+    <thead><tr><th style="width:36mm">Aspetto fiscale</th><th style="width:34mm">Riferimento normativo</th><th>Dove nel codice / tracciato</th><th style="width:26mm">Stato</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Formato FPA12</strong> per fatture alla PA</td>
+        <td>D.M. 55/2013 (FatturaPA); D.Lgs. 127/2015</td>
+        <td><code>CreateInstance(Instance.PubblicaAmministrazione)</code> → <code>FormatoTrasmissione</code></td>
+        <td>Implementato, test verdi — collaudo runtime con Greppi</td>
+      </tr>
+      <tr>
+        <td><strong>Split payment</strong> (scissione dei pagamenti)</td>
+        <td>Art. 17-ter D.P.R. 633/72</td>
+        <td><code>EsigibilitaIVA = "S"</code> nei riepiloghi; <code>ImportoPagamento = TotaleNostroAvere − IVA</code></td>
+        <td>Nel solo XML — incoerenza con PDF/cascata aperta (§ 12.1)</td>
+      </tr>
+      <tr>
+        <td><strong>Codice Univoco Ufficio</strong> (recapito SdI per la PA)</td>
+        <td>D.M. 55/2013; IndicePA</td>
+        <td>Controllo 6 caratteri obbligatorio in <code>Mappa</code>, errore parlante; nessun fallback PEC</td>
+        <td>Implementato, test verdi</td>
+      </tr>
+      <tr>
+        <td><strong>CIG / CUP</strong> (tracciabilità appalti)</td>
+        <td>L. 136/2010; delibere ANAC / CIPESS</td>
+        <td>Colonne su <code>fatt.Fatture</code> (mig. 070) → blocco 2.1.2 <code>DatiOrdineAcquisto</code></td>
+        <td>Implementato, test verdi — formato non validato (§ 12.4)</td>
+      </tr>
+      <tr>
+        <td><strong>Spese escluse art. 15</strong> (invariato)</td>
+        <td>Art. 15 D.P.R. 633/72</td>
+        <td>Riepilogo natura <code>N1</code>, fuori campo IVA: non toccato dallo split payment</td>
+        <td>Invariato dalla Fase D1</td>
+      </tr>
+      <tr>
+        <td><strong>Profilo fiscale cedente</strong> (invariato)</td>
+        <td>Cassa: L. 3/1943 e ss.; ritenuta: art. 25 D.P.R. 600/73</td>
+        <td>Flag su <code>fatt.Azienda</code> (mig. 069): per ICM Solutions S.r.l. cassa e ritenuta spente</td>
+        <td>Invariato — asse ortogonale al ramo PA (§ 4)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Prossimi passi</h3>
+  <ol>
+    <li><strong>Sessione di verifica fiscale con Roberto Greppi</strong>: validare split payment automatico,
+      sanare l'incoerenza XML/PDF (§ 12.1), confermare <code>IdDocumento</code> e il perimetro delle
+      casistiche.</li>
+    <li><strong>Collaudo end-to-end</strong> su un cliente ente pubblico reale (codice IPA vero), fino alla
+      validazione del file su un canale di prova SdI.</li>
+    <li><strong>Dati di go-live del cedente</strong>: valorizzare REA e PEC di ICM Solutions su
+      <code>fatt.Azienda</code> (oggi <code>NULL</code>; l'XML è valido anche senza, ma vanno inseriti).</li>
+  </ol>
+
+  <div class="callout">
+    <span class="label">In una riga</span>
+    Dopo la Fase D1 l'applicativo ha smesso di rifiutare le fatture verso la Pubblica Amministrazione:
+    le genera in FPA12 con scissione dei pagamenti, pretende il codice IPA corretto, traccia CIG e CUP —
+    e dichiara apertamente, in questo documento, ciò che resta da validare con il consulente fiscale.
+  </div>
+</section>
+
+</body>
+</html>

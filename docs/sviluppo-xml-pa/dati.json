@@ -1,0 +1,18 @@
+{
+  "TEMPLATE": "template-vislogica.html",
+  "ACCENT": "#102050",
+
+  "DOC_TIPOLOGIA": "Documentazione tecnica di sviluppo",
+  "DOC_TITOLO": "FatturaPA verso la Pubblica Amministrazione",
+  "DOC_SOTTOTITOLO": "FPA12, split payment e CIG/CUP — gli sviluppi successivi alla Fase D1",
+  "PROGETTO_NOME": "ICMFatturazioni",
+  "DOC_VERSIONE": "1.0",
+  "DOC_DATA": "07/07/2026",
+  "DOC_STATO": "Bozza — in verifica fiscale",
+  "DOC_CLASSIFICAZIONE": "Interno",
+  "DOC_AUTORE": "Luca Schiavon",
+
+  "AGENZIA_NOME": "Vis Logica",
+  "AGENZIA_INFO": "Automazioni e software per PMI<br>vislogica.com",
+  "LOGO_AGENZIA_SRC": "loghi/logo-vislogica.png"
+}
