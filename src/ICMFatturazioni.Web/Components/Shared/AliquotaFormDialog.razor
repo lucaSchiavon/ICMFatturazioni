@@ -15,21 +15,27 @@
             </MudAlert>
         }
 
-        <MudGrid Spacing="2">
-            <MudItem xs="12" sm="8">
-                <MudTextField @bind-Value="_descrizione"
-                              Label="Descrizione *"
-                              MaxLength="200"
-                              Immediate="true"
-                              Variant="Variant.Outlined" Margin="Margin.Dense" />
-            </MudItem>
-            <MudItem xs="12" sm="4">
-                <MudNumericField T="decimal" @bind-Value="_valore"
-                                 Label="Valore % *"
-                                 Min="0m" Max="100m" Format="0.##" Culture="_itCulture"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
-            </MudItem>
-        </MudGrid>
+        <MudForm @ref="_form" @bind-IsValid="_isValid">
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_descrizione"
+                                  Label="Descrizione *"
+                                  Required="true"
+                                  RequiredError="La descrizione è obbligatoria."
+                                  MaxLength="200"
+                                  Immediate="true"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Class="campo-obbligatorio" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudNumericField T="decimal" @bind-Value="_valore"
+                                     Label="Valore % *"
+                                     Min="0m" Max="100m" Format="0.##" Culture="_itCulture"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Class="campo-obbligatorio" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
 
         @if (!string.IsNullOrWhiteSpace(_errore))
         {
@@ -38,8 +44,10 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Annulla" Variant="Variant.Text">Annulla</MudButton>
+        @* Abilitato solo a form valido (campi obbligatori compilati), come negli
+           altri dialog: disabilitato, non nascosto. *@
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
-                   Disabled="_salvataggio" OnClick="SalvaAsync">
+                   Disabled="@(!_isValid || _salvataggio)" OnClick="SalvaAsync">
             @(_salvataggio ? "Salvataggio…" : "Salva")
         </MudButton>
     </DialogActions>
@@ -53,6 +61,8 @@
 
     private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
 
+    private MudForm _form = null!;
+    private bool    _isValid;
     private string  _descrizione = string.Empty;
     private decimal _valore;
     private bool    _salvataggio;
