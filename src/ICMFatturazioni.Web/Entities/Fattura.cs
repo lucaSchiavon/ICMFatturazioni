@@ -52,6 +52,22 @@ public sealed class Fattura
     /// <summary>Istante (UTC) in cui è stato confermato l'esito OK dell'invio allo SdI.</summary>
     public DateTime? DataEsitoXmlUtc { get; init; }
 
+    // ── Riferimenti appalto pubblico (ramo PA / FPA12, migration 070) ──────────
+    // Opzionali: valorizzati solo per fatture verso enti pubblici con appalto.
+    // Confluiscono nel blocco XML 2.1.2 DatiOrdineAcquisto (CodiceCIG/CodiceCUP).
+
+    /// <summary>
+    /// C.I.G. — Codice Identificativo Gara (10 caratteri alfanumerici, L. 136/2010).
+    /// <c>null</c> per fatture verso privati o PA senza appalto tracciato.
+    /// </summary>
+    public string? Cig { get; init; }
+
+    /// <summary>
+    /// C.U.P. — Codice Unico di Progetto (15 caratteri alfanumerici), richiesto per
+    /// gli investimenti pubblici. <c>null</c> quando non pertinente.
+    /// </summary>
+    public string? Cup { get; init; }
+
     /// <summary>Soft-delete (ADR D22). Default <c>true</c>.</summary>
     public bool IsAttivo { get; init; } = true;
 }

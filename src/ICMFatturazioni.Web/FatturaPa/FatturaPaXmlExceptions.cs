@@ -12,20 +12,6 @@ public sealed class FatturaPaXmlNonTrovataException : Exception
 }
 
 /// <summary>
-/// Il cliente è un ente pubblico (<c>TipoAnagrafica = 'E'</c>): la Fase D1 genera
-/// solo il formato privati/società <b>FPR12</b>. La fatturazione verso la PA
-/// (FPA12 + split payment) è rinviata a una tappa futura (decisione utente
-/// 2026-07-06). Flusso previsto: non va loggato.
-/// </summary>
-public sealed class FatturaPaEntePubblicoException : Exception
-{
-    public FatturaPaEntePubblicoException()
-        : base("Il cliente è un ente pubblico: la fatturazione elettronica verso la " +
-               "Pubblica Amministrazione (FPA12 con split payment) non è ancora gestita. " +
-               "Per ora si generano solo fatture verso privati e società (FPR12).") { }
-}
-
-/// <summary>
 /// Dati indispensabili mancanti/incoerenti per comporre il tracciato (es. azienda
 /// emittente senza P.IVA, cliente senza codice fiscale/P.IVA). È un errore di
 /// configurazione dei dati: <b>va loggato</b>.

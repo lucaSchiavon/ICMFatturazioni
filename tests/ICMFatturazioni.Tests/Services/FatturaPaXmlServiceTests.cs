@@ -213,6 +213,108 @@ public class FatturaPaXmlServiceTests
     public void CodificaProgressivo_Base36Padded5(long seq, string atteso)
         => Assert.Equal(atteso, FatturaPaXmlService.CodificaProgressivo(seq));
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Ramo Pubblica Amministrazione (FPA12 + split payment)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Cliente ente pubblico su profilo S.r.l. commerciale (no cassa/ritenuta): il
+    // caso tipico di ICM Solutions che fattura a un Comune. Codice Univoco Ufficio
+    // IPA a 6 caratteri, P.IVA a 11 cifre.
+    private static AvvisoPdfData CostruisciDatiPa(string codiceUfficio = "UFAB12")
+    {
+        var dati = CostruisciDatiSrl();
+        var cliente = new Anagrafica
+        {
+            TipoAnagrafica     = TipoAnagrafica.EntePubblico,
+            RagioneSociale     = "Comune di Verona",
+            PIVA               = PivaCliente,   // 11 cifre → IdFiscaleIVA
+            Indirizzo          = "Piazza Bra 1",
+            CAP                = "37121",
+            City               = "Verona",
+            Provincia          = "VR",
+            SiglaPaese         = "IT",
+            CodiceDestinatario = codiceUfficio,
+        };
+        return dati with { Cliente = cliente };
+    }
+
+    private static Fattura FatturaPaConCigCup(string? cig = null, string? cup = null) => new()
+    {
+        IdFattura     = Guid.NewGuid(),
+        IdAvviso      = Guid.NewGuid(),
+        NumeroFattura = 5,
+        Anno          = 2026,
+        DataFattura   = new DateOnly(2026, 7, 30),
+        Cig           = cig,
+        Cup           = cup,
+    };
+
+    [Fact]
+    public void Mappa_EntePubblico_ProduceFpa12ConSplitPayment_Valido()
+    {
+        var (fo, _) = FatturaPaXmlService.Mappa(CostruisciDatiPa(), FatturaPaConCigCup(), "0000A");
+
+        var vr = fo.Validate();
+        Assert.True(vr.IsValid,
+            "Tracciato non valido: " +
+            string.Join(" | ", vr.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+
+        Assert.Equal("FPA12", fo.FatturaElettronicaHeader.DatiTrasmissione.FormatoTrasmissione);
+        // Scissione dei pagamenti sul riepilogo della prestazione.
+        var riepilogo = fo.FatturaElettronicaBody[0].DatiBeniServizi.DatiRiepilogo[0];
+        Assert.Equal("S", riepilogo.EsigibilitaIVA);
+    }
+
+    [Fact]
+    public void Mappa_EntePubblico_ImportoPagamentoAlNettoDellIva()
+    {
+        // Srl a un Comune: imponibile 1000, IVA 220, totale 1220. In split payment
+        // il fornitore incassa 1000 (la PA versa i 220 di IVA all'Erario).
+        var (fo, _) = FatturaPaXmlService.Mappa(CostruisciDatiPa(), FatturaPaConCigCup(), "0000A");
+
+        var dett = fo.FatturaElettronicaBody[0].DatiPagamento[0].DettaglioPagamento[0];
+        Assert.Equal(1000m, dett.ImportoPagamento);
+    }
+
+    [Fact]
+    public void Mappa_EntePubblico_SenzaCodiceUfficioA6Cifre_Lancia()
+    {
+        // Codice destinatario a 7 caratteri (formato privati): non valido per la PA.
+        var dati = CostruisciDatiPa(codiceUfficio: "ABCDEFG");
+        Assert.Throws<FatturaPaDatiMancantiException>(
+            () => FatturaPaXmlService.Mappa(dati, FatturaPaConCigCup(), "0000A"));
+    }
+
+    [Fact]
+    public void Mappa_EntePubblico_ConCigCup_FinisconoInDatiOrdineAcquisto()
+    {
+        var (fo, _) = FatturaPaXmlService.Mappa(
+            CostruisciDatiPa(), FatturaPaConCigCup(cig: "1234567890", cup: "B12H34567890123"), "0000A");
+
+        var ordine = fo.FatturaElettronicaBody[0].DatiGenerali.DatiOrdineAcquisto;
+        var doc = Assert.Single(ordine);
+        Assert.Equal("1234567890", doc.CodiceCIG);
+        Assert.Equal("B12H34567890123", doc.CodiceCUP);
+
+        var vr = fo.Validate();
+        Assert.True(vr.IsValid,
+            "Tracciato non valido: " +
+            string.Join(" | ", vr.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}")));
+    }
+
+    [Fact]
+    public void Mappa_Privati_NessunOrdineAcquisto_EsigibilitaImmediata()
+    {
+        // Regressione: un privato/società resta FPR12, esigibilità "I", niente
+        // DatiOrdineAcquisto anche se la fattura portasse CIG/CUP (campi non PA).
+        var (fo, _) = FatturaPaXmlService.Mappa(
+            CostruisciDati(), FatturaPaConCigCup(cig: "1234567890"), "00001");
+
+        Assert.Equal("FPR12", fo.FatturaElettronicaHeader.DatiTrasmissione.FormatoTrasmissione);
+        Assert.Empty(fo.FatturaElettronicaBody[0].DatiGenerali.DatiOrdineAcquisto);
+        Assert.Equal("I", fo.FatturaElettronicaBody[0].DatiBeniServizi.DatiRiepilogo[0].EsigibilitaIVA);
+    }
+
     private static string Serializza(FatturaElettronica.Ordinaria.FatturaOrdinaria fo)
     {
         var sb = new StringBuilder();

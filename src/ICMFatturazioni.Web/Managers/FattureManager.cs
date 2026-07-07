@@ -86,6 +86,10 @@ public sealed class FattureManager : IFattureManager
             DataFattura   = request.DataFattura,
             CreatoXML     = false,
             EsitoXML      = 0,
+            // CIG/CUP dell'appalto pubblico: normalizzati (vuoto → null), così una
+            // fattura verso privati non porta stringhe vuote nel tracciato.
+            Cig           = NullSeVuoto(request.Cig),
+            Cup           = NullSeVuoto(request.Cup),
             IsAttivo      = true,
         };
 
@@ -102,6 +106,8 @@ public sealed class FattureManager : IFattureManager
                     fattura.NumeroFattura,
                     fattura.Anno,
                     fattura.DataFattura,
+                    fattura.Cig,
+                    fattura.Cup,
                 }),
                 cancellationToken: ct);
         }
@@ -221,4 +227,6 @@ public sealed class FattureManager : IFattureManager
 
     // Etichetta breve leggibile per l'audit: "Fattura 38/2026".
     private static string DescrizioneAudit(Fattura f) => $"Fattura {f.NumeroFattura}/{f.Anno}";
+
+    private static string? NullSeVuoto(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }

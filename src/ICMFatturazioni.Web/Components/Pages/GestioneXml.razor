@@ -483,10 +483,6 @@
             await MostraEsitoXmlAsync("Tracciato XML non valido",
                 "Il file non è stato generato. Correggere i seguenti punti e riprovare:", ex.Errori);
         }
-        catch (FatturaPaEntePubblicoException ex)
-        {
-            await MostraEsitoXmlAsync("Cliente ente pubblico", ex.Message);
-        }
         catch (FatturaPaDatiMancantiException ex)
         {
             await MostraEsitoXmlAsync("Impossibile generare l'XML", ex.Message);

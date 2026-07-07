@@ -668,6 +668,20 @@
                                            DateFormat="dd/MM/yyyy" Culture="_itCulture" Editable="true"
                                            Variant="Variant.Outlined" Margin="Margin.Dense" Class="campo-obbligatorio" />
                         </MudItem>
+                        @* CIG/CUP: riferimenti appalto pubblico, solo per clienti ente pubblico (FPA12). *@
+                        @if (_clienteEntePubblico)
+                        {
+                            <MudItem xs="6" sm="3">
+                                <MudTextField @bind-Value="_cigFattura" Label="CIG" MaxLength="10"
+                                              HelperText="Codice Identificativo Gara (opz.)"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="6" sm="3">
+                                <MudTextField @bind-Value="_cupFattura" Label="CUP" MaxLength="15"
+                                              HelperText="Codice Unico di Progetto (opz.)"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                        }
                         <MudItem xs="12" sm="6" Class="d-flex justify-end align-center">
                             <MudButton Variant="Variant.Filled" Color="Color.Success" Ripple="false"
                                        StartIcon="@Icons.Material.Filled.PictureAsPdf" Disabled="_emissioneInCorso"
@@ -759,6 +773,12 @@
     // ── Creazione fattura (in modifica) ──────────────────────────────────
     private int       _numeroFattura;
     private DateTime? _dataFattura = DateTime.Today;
+    private string?   _cigFattura;   // CIG appalto pubblico (solo PA, opz.)
+    private string?   _cupFattura;   // CUP investimento pubblico (solo PA, opz.)
+
+    // True se il cliente selezionato è un ente pubblico → fattura FPA12: mostra CIG/CUP.
+    private bool _clienteEntePubblico
+        => _anagraficaSelezionata?.TipoAnagrafica == TipoAnagrafica.EntePubblico;
 
     // Riga della bozza avviso: reale (da una scadenza) o descrittiva (solo testo).
     private sealed class RigaBozza
@@ -984,6 +1004,8 @@
         _avvisoOrig         = null;
         _numeroFattura      = 0;
         _dataFattura        = DateTime.Today;
+        _cigFattura         = null;
+        _cupFattura         = null;
     }
 
     // Esce dalla modalità modifica: azzera la bozza e ricarica il contesto
@@ -1334,8 +1356,11 @@
         _emissioneInCorso = true;
         try
         {
+            // CIG/CUP passati solo per la PA (per i privati i campi non sono a video).
             var idFattura = await FattureManager.CreaAsync(new CreaFatturaRequest(
-                _idAvvisoInModifica.Value, _numeroFattura, DateOnly.FromDateTime(_dataFattura.Value)));
+                _idAvvisoInModifica.Value, _numeroFattura, DateOnly.FromDateTime(_dataFattura.Value),
+                _clienteEntePubblico ? _cigFattura : null,
+                _clienteEntePubblico ? _cupFattura : null));
             Snackbar.Add($"Fattura {_numeroFattura}/{_dataFattura.Value.Year} creata.", MudBlazor.Severity.Success);
             await JS.InvokeVoidAsync("open", $"/api/fatture/{idFattura}/pdf", "_blank");
 

@@ -175,6 +175,8 @@ internal sealed class FakeFattureRepository : IFattureRepository
         NomeFileXml         = nomeFile ?? src.NomeFileXml,
         DataCreazioneXmlUtc = creatoUtc ?? src.DataCreazioneXmlUtc,
         DataEsitoXmlUtc     = azzeraEsitoUtc ? null : (esitoUtc ?? src.DataEsitoXmlUtc),
+        Cig                 = src.Cig,
+        Cup                 = src.Cup,
         IsAttivo            = isAttivo  ?? src.IsAttivo,
     };
 }

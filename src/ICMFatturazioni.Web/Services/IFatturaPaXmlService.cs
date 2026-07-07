@@ -27,8 +27,7 @@ public interface IFatturaPaXmlService
     /// rigenerazioni riusa quello già persistito (stesso nome file).
     /// </summary>
     /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonTrovataException">Fattura inesistente/annullata.</exception>
-    /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaEntePubblicoException">Cliente ente pubblico (FPR12 non applicabile).</exception>
-    /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaDatiMancantiException">Dati azienda/cliente indispensabili mancanti.</exception>
+    /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaDatiMancantiException">Dati azienda/cliente indispensabili mancanti (es. Codice Univoco Ufficio PA).</exception>
     /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonValidoException">Il tracciato non supera la validazione offline.</exception>
     Task<GenerazioneXmlRisultato> GeneraAsync(Guid idFattura, CancellationToken ct = default);
 

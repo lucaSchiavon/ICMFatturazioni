@@ -21,6 +21,7 @@ using DatiCassa          = FatturaElettronica.Ordinaria.FatturaElettronicaBody.D
 using DatiRitenuta       = FatturaElettronica.Ordinaria.FatturaElettronicaBody.DatiGenerali.DatiRitenuta;
 using DatiPagamentoFe    = FatturaElettronica.Ordinaria.FatturaElettronicaBody.DatiPagamento.DatiPagamento;
 using DettaglioPagamento = FatturaElettronica.Ordinaria.FatturaElettronicaBody.DatiPagamento.DettaglioPagamento;
+using DatiOrdineAcquistoFe = FatturaElettronica.Ordinaria.FatturaElettronicaBody.DatiGenerali.DatiOrdineAcquisto;
 
 namespace ICMFatturazioni.Web.Services;
 
@@ -57,9 +58,11 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
     private const string Divisa               = "EUR";
     private const string NaturaEsclusaArt15   = "N1";   // operazioni escluse ex art. 15 D.P.R. 633/72
     private const string EsigibilitaImmediata = "I";
+    private const string EsigibilitaScissione = "S";    // scissione dei pagamenti (split payment, art. 17-ter)
     private const string CondizioniCompleto   = "TP02"; // pagamento completo
     private const string ModalitaBonifico     = "MP05"; // bonifico
     private const string CodiceDestinatarioNullo = "0000000";
+    private const int    LunghezzaCodiceUfficioPA = 6;  // Codice Univoco Ufficio IPA (FPA12)
 
     /// <inheritdoc/>
     public async Task<GenerazioneXmlRisultato> GeneraAsync(Guid idFattura, CancellationToken ct = default)
@@ -117,17 +120,20 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
 
         var data = await _builder.CostruisciAsync(fattura.IdAvviso, fattura, ct);
 
-        // Fase D1: solo privati/società (FPR12). Enti pubblici bloccati.
-        if (data.Cliente.TipoAnagrafica == TipoAnagrafica.EntePubblico)
-            throw new FatturaPaEntePubblicoException();
-
+        // Privati/società → FPR12; enti pubblici → FPA12 con split payment. Il ramo
+        // è deciso in Mappa dal TipoAnagrafica del cliente (nessun blocco a monte).
         return (data, fattura);
     }
 
-    // ── Mappatura AvvisoPdfData → tracciato FatturaOrdinaria (FPR12) ──────────
+    // ── Mappatura AvvisoPdfData → tracciato FatturaOrdinaria (FPR12 / FPA12) ──
     // Ritorna anche la P.IVA del cedente (serve al nome file). Le grandezze fiscali
     // vengono dalla cascata già calcolata (data.Calcolo), congelata sugli snapshot
     // dell'avviso: qui non si ricalcola nulla, si mappa.
+    //
+    // Il cliente ente pubblico (TipoAnagrafica='E') attiva il ramo PA: formato FPA12,
+    // scissione dei pagamenti (split payment, EsigibilitaIVA='S'), Codice Univoco
+    // Ufficio IPA a 6 caratteri obbligatorio, ImportoPagamento al netto dell'IVA
+    // (che la PA versa direttamente all'Erario) ed eventuali CIG/CUP dell'appalto.
     internal static (FatturaOrdinaria Fattura, string CedentePiva) Mappa(AvvisoPdfData data, Fattura fattura, string progressivo)
     {
         var studio  = data.Studio;
@@ -135,12 +141,16 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         var t       = data.Testata;
         var c       = data.Calcolo;
 
+        var entePubblico = cliente.TipoAnagrafica == TipoAnagrafica.EntePubblico;
+
         var cedentePiva = Pulisci(studio.PIVA);
         if (string.IsNullOrEmpty(cedentePiva))
             throw new FatturaPaDatiMancantiException(
                 "L'azienda emittente non ha la Partita IVA configurata: impossibile generare l'XML.");
 
-        var fo = FatturaOrdinaria.CreateInstance(Instance.Privati); // FormatoTrasmissione = FPR12
+        // FPA12 per la PA (Instance.PubblicaAmministrazione), altrimenti FPR12.
+        var fo = FatturaOrdinaria.CreateInstance(
+            entePubblico ? Instance.PubblicaAmministrazione : Instance.Privati);
         var header = fo.FatturaElettronicaHeader;
 
         // ── DatiTrasmissione (il trasmittente coincide col cedente) ──
@@ -148,11 +158,22 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         dt.IdTrasmittente.IdPaese = "IT";
         dt.IdTrasmittente.IdCodice = cedentePiva;
         dt.ProgressivoInvio = progressivo;
-        // FormatoTrasmissione = FPR12 già impostato da CreateInstance.
-        var codiceDest = Pulisci(cliente.CodiceDestinatario);
-        if (!string.IsNullOrEmpty(codiceDest))
+        // FormatoTrasmissione (FPR12/FPA12) già impostato da CreateInstance.
+        var codiceDest = Pulisci(cliente.CodiceDestinatario).ToUpperInvariant();
+        if (entePubblico)
         {
-            dt.CodiceDestinatario = codiceDest.ToUpperInvariant();
+            // PA: il Codice Univoco Ufficio (IPA) di 6 caratteri è obbligatorio e non
+            // ammette il fallback su PEC previsto per i privati.
+            if (codiceDest.Length != LunghezzaCodiceUfficioPA)
+                throw new FatturaPaDatiMancantiException(
+                    $"Il cliente «{cliente.RagioneSociale}» è un ente pubblico: per la fattura " +
+                    $"elettronica FPA12 serve il Codice Univoco Ufficio (IPA) di {LunghezzaCodiceUfficioPA} " +
+                    $"caratteri. Valore attuale: «{(codiceDest.Length == 0 ? "(vuoto)" : codiceDest)}».");
+            dt.CodiceDestinatario = codiceDest;
+        }
+        else if (!string.IsNullOrEmpty(codiceDest))
+        {
+            dt.CodiceDestinatario = codiceDest;
         }
         else
         {
@@ -225,6 +246,21 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         dgd.ImportoTotaleDocumento = c.Totale + c.SpeseArt15;
         AggiungiCausale(dgd.Causale, t.Oggetto);
         AggiungiCausale(dgd.Causale, t.NotaSintetica);
+
+        // Riferimenti appalto pubblico (CIG/CUP): solo per la PA, se valorizzati.
+        // Confluiscono in DatiOrdineAcquisto (2.1.2); l'IdDocumento obbligatorio del
+        // blocco è il numero della fattura, non tracciando l'app il numero d'ordine.
+        var cig = NullSeVuoto(fattura.Cig);
+        var cup = NullSeVuoto(fattura.Cup);
+        if (entePubblico && (cig is not null || cup is not null))
+        {
+            body.DatiGenerali.DatiOrdineAcquisto.Add(new DatiOrdineAcquistoFe
+            {
+                IdDocumento = fattura.NumeroFattura.ToString(CultureInfo.InvariantCulture),
+                CodiceCIG = cig,
+                CodiceCUP = cup,
+            });
+        }
 
         // Cassa previdenziale (contributo integrativo soggetto a IVA). Il TIPO cassa
         // dipende dalla categoria del cedente → viene dalla configurazione, non è
@@ -305,7 +341,8 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
                 AliquotaIVA = t.AliquotaIva,
                 ImponibileImporto = c.ImponibilePiuCassa,
                 Imposta = c.Iva,
-                EsigibilitaIVA = EsigibilitaImmediata,
+                // PA → scissione dei pagamenti (l'IVA la versa la PA all'Erario).
+                EsigibilitaIVA = entePubblico ? EsigibilitaScissione : EsigibilitaImmediata,
             });
         }
         if (c.SpeseArt15 > 0m)
@@ -321,11 +358,16 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         }
 
         // Pagamento: importo netto effettivamente dovuto dal cliente (post ritenuta).
+        // In split payment (PA) si sottrae anche l'IVA: la PA la versa all'Erario,
+        // al fornitore arriva l'imponibile (+ eventuali spese art.15, − ritenuta).
+        var importoPagamento = entePubblico
+            ? c.TotaleNostroAvere - c.Iva
+            : c.TotaleNostroAvere;
         var pagamento = new DatiPagamentoFe { CondizioniPagamento = CondizioniCompleto };
         var dettPag = new DettaglioPagamento
         {
             ModalitaPagamento = ModalitaBonifico,
-            ImportoPagamento = c.TotaleNostroAvere,
+            ImportoPagamento = importoPagamento,
             Beneficiario = studio.RagioneSociale,
         };
         if (!string.IsNullOrWhiteSpace(data.BancaIban))

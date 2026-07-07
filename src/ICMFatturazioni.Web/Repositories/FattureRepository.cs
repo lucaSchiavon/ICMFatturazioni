@@ -37,6 +37,8 @@ internal sealed class FattureRepository : IFattureRepository
         public string?   NomeFileXml         { get; init; }
         public DateTime? DataCreazioneXmlUtc { get; init; }
         public DateTime? DataEsitoXmlUtc     { get; init; }
+        public string?   Cig                 { get; init; }
+        public string?   Cup                 { get; init; }
         public bool      IsAttivo            { get; init; }
     }
 
@@ -53,13 +55,15 @@ internal sealed class FattureRepository : IFattureRepository
         NomeFileXml         = r.NomeFileXml,
         DataCreazioneXmlUtc = r.DataCreazioneXmlUtc,
         DataEsitoXmlUtc     = r.DataEsitoXmlUtc,
+        Cig                 = r.Cig,
+        Cup                 = r.Cup,
         IsAttivo            = r.IsAttivo,
     };
 
     private const string SqlSelectBase = """
         SELECT IdFattura, IdAvviso, NumeroFattura, Anno, DataFattura,
                CreatoXML, EsitoXML, ProgressivoInvio, NomeFileXml,
-               DataCreazioneXmlUtc, DataEsitoXmlUtc, IsAttivo
+               DataCreazioneXmlUtc, DataEsitoXmlUtc, Cig, Cup, IsAttivo
         FROM fatt.Fatture
         """;
 
@@ -97,9 +101,9 @@ internal sealed class FattureRepository : IFattureRepository
 
     private const string SqlInsert = """
         INSERT INTO fatt.Fatture
-            (IdFattura, IdAvviso, NumeroFattura, Anno, DataFattura, CreatoXML, EsitoXML, IsAttivo)
+            (IdFattura, IdAvviso, NumeroFattura, Anno, DataFattura, CreatoXML, EsitoXML, Cig, Cup, IsAttivo)
         VALUES
-            (@IdFattura, @IdAvviso, @NumeroFattura, @Anno, @DataFattura, @CreatoXML, @EsitoXML, @IsAttivo);
+            (@IdFattura, @IdAvviso, @NumeroFattura, @Anno, @DataFattura, @CreatoXML, @EsitoXML, @Cig, @Cup, @IsAttivo);
         """;
 
     public async Task CreateAsync(Fattura fattura, CancellationToken ct = default)
@@ -114,6 +118,8 @@ internal sealed class FattureRepository : IFattureRepository
             DataFattura = ToSqlDate(fattura.DataFattura),
             fattura.CreatoXML,
             fattura.EsitoXML,
+            fattura.Cig,
+            fattura.Cup,
             fattura.IsAttivo,
         }, cancellationToken: ct);
 
