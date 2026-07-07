@@ -437,8 +437,15 @@ Se un documento più basso contraddice uno più alto, vince il più alto. Se la 
 ### Autenticazione (D4)
 
 - Tabella `fatt.Utenti` con GUID v7 PK, `PasswordHash` PBKDF2 (`Microsoft.AspNetCore.Cryptography.KeyDerivation`, nessun NuGet aggiuntivo), `IdRuolo` FK→`fatt.Ruoli`, `IsAttivo`, `TemaPreferito`.
-- Mai password in chiaro. Reset/invito = token monouso via email (MailKit/Brevo), l'utente sceglie la nuova password dal link.
+- Mai password in chiaro. Reset/invito = token monouso via email, l'utente sceglie la nuova password dal link.
 - Password policy: min 10 caratteri, almeno 1 maiuscola, 1 minuscola, 1 cifra (enforced da `PasswordPolicy` in `Authentication/`).
+
+#### Invio email (2026-07-07, mirror di ICMVerbali)
+
+- Provider selezionato da `Email:Provider` in appsettings: `Graph` | `Smtp` | `Log` | `Auto` (default). In `Auto`: **Microsoft Graph** se la sezione `Graph` è configurata, altrimenti **SMTP** (MailKit/Brevo) se `Smtp:Host` è presente, altrimenti `LogEmailSender` (sviluppo, link nei log).
+- **Produzione ISO 27001 → obbligatorio `Graph`** (OAuth 2.0 Client Credentials, App Registration "ICMWEBAPP"; vedi `C:\SVILUPPO\GIT\ICMVerbali\InvioPostaElettronica.pdf`): pacchetti `Azure.Identity` + `Microsoft.Graph`, `GraphServiceClient` singleton, mittente vincolato dalla Application Access Policy a `noreply@icmsolutions.it`.
+- Segreto: `Graph:ClientSecret` in user-secrets (dev) o variabile d'ambiente di sistema `Graph__ClientSecret` (prod); MAI in appsettings versionato.
+- `IEmailSender.SendAsync` supporta allegati (`IReadOnlyList<EmailAttachment>?`, parametro opzionale **prima** del `CancellationToken`: nelle chiamate passare il token nominato). Gli errori di invio Graph escono come `EmailSendException` con messaggio diagnostico (secret scaduto, 403 policy, ecc.): i chiamanti che non rilanciano loggano via `LogErroreAsync` (Regola 6).
 
 ### UI / MudBlazor (D10, D11, D12, D13, D15, D17, D18)
 

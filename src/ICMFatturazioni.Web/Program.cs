@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Azure.Identity;
 using ICMFatturazioni.Web.Authentication;
 using ICMFatturazioni.Web.Components;
 using ICMFatturazioni.Web.Data;
@@ -18,6 +19,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph;
 using MudBlazor.Services;
 using System.Threading.RateLimiting;
 
@@ -190,13 +192,45 @@ builder.Services.Configure<UtenteTokenOptions>(
     builder.Configuration.GetSection(UtenteTokenOptions.SectionName));
 builder.Services.Configure<SmtpOptions>(
     builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.Configure<GraphOptions>(
+    builder.Configuration.GetSection(GraphOptions.SectionName));
 builder.Services.AddScoped<IUtenteTokenRepository, UtenteTokenRepository>();
 builder.Services.AddScoped<IUtenteTokenManager, UtenteTokenManager>();
 
-// IEmailSender: SMTP reale (MailKit) se "Smtp:Host" è configurato; altrimenti
-// il LogEmailSender di sviluppo (il link finisce nel log, nessun invio reale).
+// Selezione del provider di invio email (mirror di ICMVerbali). Discriminatore
+// esplicito "Email:Provider" (Graph | Smtp | Log | Auto). In produzione ISO 27001
+// va impostato "Graph": è il canale conforme (Entra ID), l'SMTP resta disponibile
+// come fallback per dev/demo. "Auto" (default retrocompatibile): Graph se
+// configurato, altrimenti SMTP se "Smtp:Host" è presente, altrimenti il
+// LogEmailSender di sviluppo (link nei log).
 var smtpOptions = builder.Configuration.GetSection(SmtpOptions.SectionName).Get<SmtpOptions>();
-if (smtpOptions?.IsConfigured == true)
+var graphOptions = builder.Configuration.GetSection(GraphOptions.SectionName).Get<GraphOptions>();
+var emailProvider = builder.Configuration["Email:Provider"] ?? "Auto";
+
+var useGraph = emailProvider.Equals("Graph", StringComparison.OrdinalIgnoreCase)
+    || (emailProvider.Equals("Auto", StringComparison.OrdinalIgnoreCase) && graphOptions?.IsConfigured == true);
+var useSmtp = !useGraph
+    && (emailProvider.Equals("Smtp", StringComparison.OrdinalIgnoreCase)
+        || (emailProvider.Equals("Auto", StringComparison.OrdinalIgnoreCase) && smtpOptions?.IsConfigured == true));
+
+if (useGraph)
+{
+    if (graphOptions?.IsConfigured != true)
+        throw new InvalidOperationException(
+            "Email:Provider=Graph ma la sezione 'Graph' non è configurata (TenantId/ClientId/ClientSecret/SenderAddress). " +
+            "Il ClientSecret va in user-secrets (dev) o nella variabile d'ambiente Graph__ClientSecret (prod).");
+
+    // GraphServiceClient come singleton: incapsula HttpClient + ClientSecretCredential
+    // (Client Credentials Flow, rinnovo token automatico). Riusato da GraphEmailSender.
+    builder.Services.AddSingleton(_ =>
+    {
+        var credential = new ClientSecretCredential(
+            graphOptions.TenantId, graphOptions.ClientId, graphOptions.ClientSecret);
+        return new GraphServiceClient(credential);
+    });
+    builder.Services.AddScoped<IEmailSender, GraphEmailSender>();
+}
+else if (useSmtp)
 {
     builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 }
@@ -302,7 +336,16 @@ if (!app.Environment.IsDevelopment())
 // In sviluppo resta la developer exception page automatica di WebApplication
 // (più ricca per il debug); anch'essa logga a Error → catturata dal provider.
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
+
+// Redirezione HTTPS solo fuori da Development: in dev si gira col profilo "http"
+// (nessun endpoint HTTPS) e il middleware loggherebbe a ogni avvio il Warning
+// "Failed to determine the https port for redirect", che il DbLoggerProvider
+// persisterebbe in fatt.Log (rumore). In produzione (IIS con binding HTTPS) la
+// redirezione resta attiva e l'eventuale warning torna a essere un segnale utile.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 // L'ordine è vincolante: Authentication deve precedere Authorization,
 // ed entrambe devono stare prima di Antiforgery e dei map endpoint.
@@ -458,6 +501,7 @@ app.MapPost("/auth/forgot-password", async Task<IResult> (
     IUtenteTokenManager tokenManager,
     IEmailSender emailSender,
     IOptions<UtenteTokenOptions> tokenOptions,
+    ILogManager logManager,
     CancellationToken cancellationToken) =>
 {
     if (!string.IsNullOrWhiteSpace(Email))
@@ -467,10 +511,26 @@ app.MapPost("/auth/forgot-password", async Task<IResult> (
         // un invitato non ancora attivato usa il link di attivazione, non il reset.
         if (utente is { Attivo: true, Email: not null } && !string.IsNullOrEmpty(utente.PasswordHash))
         {
-            var token = await tokenManager.CreaResetAsync(utente.IdUtente, cancellationToken);
-            var link = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password/{token}";
-            var (subject, htmlBody) = AccountEmailTemplates.Reset(link, utente.Username, tokenOptions.Value.ResetOreDefault);
-            await emailSender.SendAsync(utente.Email, subject, htmlBody, cancellationToken);
+            try
+            {
+                var token = await tokenManager.CreaResetAsync(utente.IdUtente, cancellationToken);
+                var link = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/reset-password/{token}";
+                var (subject, htmlBody) = AccountEmailTemplates.Reset(link, utente.Username, tokenOptions.Value.ResetOreDefault);
+                await emailSender.SendAsync(utente.Email, subject, htmlBody, cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // L'invio non deve mai rivelare l'esito al chiamante: logga e prosegui.
+                // La causa comprensibile (es. secret Graph scaduto o config SMTP) è nel
+                // messaggio dell'eccezione (EmailSendException per il canale Graph).
+                await logManager.LogErroreAsync(ex,
+                    "Invio dell'email di reset password fallito. Verificare il provider email attivo " +
+                    "(Email:Provider) e la relativa configurazione (Graph o SMTP). " +
+                    "Causa e azione correttiva nel dettaglio dell'eccezione.",
+                    "Auth.ForgotPassword",
+                    utenteId: utente.IdUtente, entityId: utente.IdUtente, entityType: nameof(Utente),
+                    cancellationToken: CancellationToken.None);
+            }
         }
     }
     // Esito neutro a prescindere: non riveliamo se l'email esiste.

@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Dapper" Version="2.1.79" />
     <PackageReference Include="FatturaElettronica" Version="4.0.8" />
     <!-- MailKit: invio email SMTP per i magic-link (invito/reset password, T4).
@@ -16,6 +17,7 @@
          System.Net.Mail.SmtpClient è deprecato da Microsoft per nuovo sviluppo. -->
     <PackageReference Include="MailKit" Version="4.16.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
+    <PackageReference Include="Microsoft.Graph" Version="6.2.0" />
     <PackageReference Include="MudBlazor" Version="9.4.0" />
     <!-- PDFsharp-MigraDoc: generazione del PDF di cortesia dell'Avviso di fattura.
          Stessa libreria e versione di ICMVerbali (VerbalePdfService), licenza MIT.

@@ -21,13 +21,25 @@ public sealed class SmtpEmailSender : IEmailSender
         _logger = logger;
     }
 
-    public async Task SendAsync(string toAddress, string subject, string htmlBody, CancellationToken cancellationToken = default)
+    public async Task SendAsync(
+        string toAddress,
+        string subject,
+        string htmlBody,
+        IReadOnlyList<EmailAttachment>? attachments = null,
+        CancellationToken cancellationToken = default)
     {
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(_options.FromName, _options.FromAddress));
         message.To.Add(MailboxAddress.Parse(toAddress));
         message.Subject = subject;
-        message.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
+
+        var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+        if (attachments is not null)
+        {
+            foreach (var att in attachments)
+                bodyBuilder.Attachments.Add(att.FileName, att.Content, ContentType.Parse(att.ContentType));
+        }
+        message.Body = bodyBuilder.ToMessageBody();
 
         using var client = new SmtpClient();
         var socketOptions = _options.UseStartTls
@@ -49,6 +61,8 @@ public sealed class SmtpEmailSender : IEmailSender
 
         // Niente indirizzo completo o contenuto nel log (privacy / no link in
         // chiaro nei log di produzione): solo conferma operativa.
-        _logger.LogInformation("Email inviata via SMTP (oggetto: {Subject}).", subject);
+        _logger.LogInformation(
+            "Email inviata via SMTP (oggetto: {Subject}, allegati: {Allegati}).",
+            subject, attachments?.Count ?? 0);
     }
 }
