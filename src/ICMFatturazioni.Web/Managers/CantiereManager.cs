@@ -53,6 +53,9 @@ internal sealed class CantiereManager : ICantiereManager
     public Task<IReadOnlyList<Cantiere>> ElencoAsync(CancellationToken cancellationToken = default)
         => _repository.GetAttiviAsync(cancellationToken);
 
+    public Task<IReadOnlyList<Cantiere>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default)
+        => _repository.GetByAttivitaAsync(idAttivita, cancellationToken);
+
     public Task<Cantiere?> GetByIdAsync(Guid idCantiere, CancellationToken cancellationToken = default)
         => _repository.GetByIdAsync(idCantiere, cancellationToken);
 

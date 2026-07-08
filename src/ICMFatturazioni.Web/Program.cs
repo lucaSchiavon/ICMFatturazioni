@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Claims;
 using Azure.Identity;
 using ICMFatturazioni.Web.Authentication;
@@ -107,6 +108,8 @@ builder.Services.AddScoped<IAliquotaRepository, AliquotaRepository>();
 builder.Services.AddScoped<IAvvisoFatturaRepository, AvvisoFatturaRepository>();
 builder.Services.AddScoped<IFattureRepository, FattureRepository>();
 builder.Services.AddScoped<IAziendaRepository, AziendaRepository>();
+// Sola lettura sui verbali firmati (dominio ICMVerbali, vista fatt.VerbaliConsultazione).
+builder.Services.AddScoped<IVerbaleConsultazioneRepository, VerbaleConsultazioneRepository>();
 
 // LookupRepository singleton: read-only, stateless, dipende solo dalla
 // SqlConnectionFactory; alimenta dropdown su più maschere.
@@ -134,6 +137,15 @@ builder.Services.AddScoped<IAliquotaManager, AliquotaManager>();
 builder.Services.AddScoped<IAvvisoFatturaManager, AvvisoFatturaManager>();
 builder.Services.AddScoped<IFattureManager, FattureManager>();
 builder.Services.AddScoped<IAziendaManager, AziendaManager>();
+// Consultazione verbali firmati (sola lettura, dominio ICMVerbali).
+builder.Services.AddScoped<IVerbaleConsultazioneManager, VerbaleConsultazioneManager>();
+
+// Storage dei PDF dei verbali: sorgente filesystem condiviso (cartella uploads
+// di ICMVerbali, sola lettura). Stateless → singleton. Le opzioni (BasePath)
+// arrivano dalla sezione "VerbaliReport" di appsettings.
+builder.Services.Configure<VerbaliReportOptions>(
+    builder.Configuration.GetSection(VerbaliReportOptions.SectionName));
+builder.Services.AddSingleton<IVerbaleReportStorage, VerbaleReportStorage>();
 
 // Servizio puro di calcolo scadenze (stateless) → singleton.
 builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();
@@ -719,11 +731,142 @@ app.MapGet("/api/report/scadenzario", async Task<IResult> (
 })
 .RequireAuthorization();
 
+// ----------------------------------------------------------------------------
+// PDF di un VERBALE firmato (maschera Consultazione verbali). Sola lettura dal
+// filesystem condiviso: si serve il file archiviato da ICMVerbali, MAI lo si
+// rigenera. Si espongono solo i verbali esportabili (firmati con PDF presente):
+// un id non fra questi → 404. Apertura inline (nuova scheda).
+// ----------------------------------------------------------------------------
+app.MapGet("/api/verbali/{id:guid}/pdf", async Task<IResult> (
+    Guid id,
+    HttpContext httpContext,
+    IVerbaleConsultazioneManager verbaliManager,
+    IVerbaleReportStorage reportStorage,
+    ILogManager logManager,
+    CancellationToken ct) =>
+{
+    try
+    {
+        // L'elenco esportabile garantisce già "firmato + file presente".
+        var esportabili = await verbaliManager.ElencoEsportabiliAsync(ct);
+        var verbale = esportabili.FirstOrDefault(v => v.IdVerbale == id);
+        if (verbale is null)
+        {
+            return Results.NotFound();
+        }
+
+        var pdf = await reportStorage.LeggiAsync(verbale.ReportPath, ct);
+        if (pdf is null)
+        {
+            // File sparito fra l'elenco e la lettura (race con eliminazione manuale).
+            return Results.NotFound();
+        }
+
+        var nomeFile = $"Verbale_{verbale.Numero}-{verbale.Anno}.pdf";
+        httpContext.Response.Headers.ContentDisposition = $"inline; filename=\"{nomeFile}\"";
+        return Results.File(pdf, "application/pdf");
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Apertura del PDF del verbale fallita. Cause tipiche: cartella dei report di " +
+            "ICMVerbali non accessibile all'App Pool, o file rimosso dal filesystem.",
+            "VerbaliConsultazione.Pdf", entityId: id, entityType: "Verbale", cancellationToken: ct);
+        return Results.Problem("Errore durante l'apertura del PDF del verbale.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
+
+// ----------------------------------------------------------------------------
+// ZIP di TUTTI i verbali esportabili del filtro corrente (maschera Consultazione
+// verbali). I filtri viaggiano in query string: idAnagrafica obbligatorio,
+// idAttivita/idCantiere opzionali (restringono al livello selezionato). Lo ZIP
+// contiene tutti i verbali del filtro (non solo la pagina visibile). Sola
+// lettura: i PDF si leggono dal filesystem, mai rigenerati.
+// ----------------------------------------------------------------------------
+app.MapGet("/api/verbali/zip", async Task<IResult> (
+    HttpContext httpContext,
+    IVerbaleConsultazioneManager verbaliManager,
+    IVerbaleReportStorage reportStorage,
+    ILogManager logManager,
+    CancellationToken ct,
+    Guid idAnagrafica,
+    Guid? idAttivita = null,
+    Guid? idCantiere = null) =>
+{
+    if (idAnagrafica == Guid.Empty)
+    {
+        return Results.BadRequest("idAnagrafica è obbligatorio.");
+    }
+
+    try
+    {
+        var verbali = await verbaliManager.ElencoPerFiltroAsync(idAnagrafica, idAttivita, idCantiere, ct);
+        if (verbali.Count == 0)
+        {
+            return Results.NotFound("Nessun verbale esportabile per il filtro selezionato.");
+        }
+
+        using var buffer = new MemoryStream();
+        // ZipArchive in memoria: i volumi (decine di PDF) lo rendono adeguato.
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            // Numero/Anno può ripetersi fra cantieri diversi: si disambigua il
+            // nome dentro lo ZIP con un suffisso progressivo.
+            var nomiUsati = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var v in verbali)
+            {
+                var pdf = await reportStorage.LeggiAsync(v.ReportPath, ct);
+                if (pdf is null)
+                {
+                    continue;   // file sparito nel frattempo: lo si salta, non blocca l'export
+                }
+
+                var nome = NomeUnivocoZip($"Verbale_{v.Numero}-{v.Anno}", nomiUsati);
+                var entry = archive.CreateEntry(nome, CompressionLevel.Fastest);
+                await using var entryStream = entry.Open();
+                await entryStream.WriteAsync(pdf, ct);
+            }
+        }
+
+        // Se nessun file è finito nello ZIP (tutti spariti), è un 404 sensato.
+        if (buffer.Length == 0)
+        {
+            return Results.NotFound("Nessun verbale esportabile per il filtro selezionato.");
+        }
+
+        var nomeZip = $"Verbali_{DateTime.Today:yyyy-MM-dd}.zip";
+        return Results.File(buffer.ToArray(), "application/zip", fileDownloadName: nomeZip);
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Creazione dello ZIP dei verbali fallita. Cause tipiche: cartella dei report di " +
+            "ICMVerbali non accessibile all'App Pool.",
+            "VerbaliConsultazione.Zip", cancellationToken: ct);
+        return Results.Problem("Errore durante la creazione dello ZIP dei verbali.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
+
 // Il seed degli utenti Admin/Superadmin è gestito da DatabaseSeeder
 // (IHostedService idempotente, registrato sopra): legge le password da
 // user-secrets/env e crea gli utenti all'avvio se non esistono.
 
 app.Run();
+
+// Genera un nome-file univoco dentro lo ZIP: "base.pdf", poi "base (2).pdf", …
+static string NomeUnivocoZip(string baseNome, HashSet<string> usati)
+{
+    var candidato = $"{baseNome}.pdf";
+    var i = 2;
+    while (!usati.Add(candidato))
+    {
+        candidato = $"{baseNome} ({i}).pdf";
+        i++;
+    }
+    return candidato;
+}
 
 // ============================================================================
 // Helper locali condivisi dagli endpoint di autenticazione

@@ -1,0 +1,475 @@
+@*
+    Pagina /consultazione-verbali — "Consultazione verbali".
+
+    Consultazione (sola lettura) dei VERBALI di cantiere, che sono dominio di
+    ICMVerbali: qui si leggono dal DB condiviso (vista fatt.VerbaliConsultazione)
+    e si aprono/scaricano i PDF archiviati da ICMVerbali sul filesystem comune.
+
+      • FILTRO a TRE livelli in cascata, come le maschere sorelle (Stampe fatture):
+          [Anagrafica] → [Attività] → [Cantiere].
+        La griglia reagisce al livello selezionato: solo anagrafica = tutti i
+        verbali del cliente; + attività = quelli dell'attività; + cantiere =
+        quelli del cantiere.
+      • Solo verbali FIRMATI dal CSE (non bozze) e con PDF fisicamente presente:
+        il filtro è applicato dal Manager (i firmati senza file sono legacy).
+      • GRIGLIA: Cliente · Attività · Cantiere · Data · Verbale · Stato (semaforo
+        conformità sull'esito) · CSE · Impresa · Prescrizioni, + icona "apri PDF".
+      • Link "Scarica tutti (ZIP)": impacchetta TUTTI i verbali del filtro
+        corrente (non solo la pagina visibile) via GET /api/verbali/zip.
+    Lettura pura: nessun audit (Regola 7 non si applica), solo log errori.
+*@
+
+@page "/consultazione-verbali"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+
+@inject IVerbaleConsultazioneManager VerbaliManager
+@inject IAnagraficaManager AnagraficaManager
+@inject IAttivitaManager AttivitaManager
+@inject ICantiereManager CantiereManager
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+@inject IJSRuntime JS
+
+<PageTitle>Consultazione verbali · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Consultazione verbali</MudText>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Riga dei tre selettori in cascata: [Anagrafica] [Attività] [Cantiere].
+   ═══════════════════════════════════════════════════════════════════ *@
+<MudGrid Spacing="2" Class="mb-0">
+
+    @* ── Col 1: Anagrafica ──────────────────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Anagrafica</MudText>
+
+            <MudRadioGroup T="FiltroTipo" Value="_filtroTipo" ValueChanged="OnFiltroTipoChanged" Class="mb-1">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Tutti"   Dense="true" Size="Size.Small">Tutti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Enti"    Dense="true" Size="Size.Small">Enti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Societa" Dense="true" Size="Size.Small">Soc.</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Privati" Dense="true" Size="Size.Small">Privati</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudTextField @bind-Value="_filtroRagioneSociale"
+                          Placeholder="Filtra per ragione sociale…"
+                          Immediate="true" DebounceInterval="150"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Clear"
+                          OnAdornmentClick="@(() => _filtroRagioneSociale = string.Empty)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="mb-2" />
+
+            <div class="icm-sellist mb-1" style="height:240px;">
+                @if (_caricamento)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AnagraficheFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun cliente con verbali firmati.</div>
+                }
+                else
+                {
+                    @foreach (var a in AnagraficheFiltrate)
+                    {
+                        <div class="icm-sellist-item @(a.IdAnagrafica == _anagraficaSelezionata?.IdAnagrafica ? "selected" : "")"
+                             @onclick="@(() => SelezionaAnagraficaAsync(a))">
+                            <span class="icm-tipo-badge">@a.TipoAnagrafica.ToDbCode()</span>@a.RagioneSociale
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 2: Attività (Tipo · Numero · Descrizione) ──────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Attività</MudText>
+
+            <div class="icm-att-row icm-att-head">
+                <span>Tipo</span>
+                <span>Numero</span>
+                <span>Attività</span>
+            </div>
+
+            <div class="icm-sellist" style="height:262px;">
+                @if (_anagraficaSelezionata is null)
+                {
+                    <div class="icm-sellist-placeholder">Selezionare un cliente.</div>
+                }
+                else if (_caricamentoAttivita)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AttivitaFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessuna attività con verbali per questo cliente.</div>
+                }
+                else
+                {
+                    @foreach (var a in AttivitaFiltrate)
+                    {
+                        <div class="icm-sellist-item icm-att-row @(a.IdAttivita == _attivitaSelezionata?.IdAttivita ? "selected" : "")"
+                             @onclick="@(() => SelezionaAttivitaAsync(a))">
+                            <span class="icm-att-tipo">@(string.IsNullOrWhiteSpace(a.TipoAttivitaDescrizione) ? "—" : a.TipoAttivitaDescrizione)</span>
+                            <span class="icm-nr">@a.Numero</span>
+                            <span class="icm-desc">@a.Descrizione</span>
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 3: Cantiere ────────────────────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Cantiere</MudText>
+            <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary);">
+                Opzionale: restringe al singolo cantiere.
+            </MudText>
+
+            <div class="icm-sellist" style="height:262px;">
+                @if (_attivitaSelezionata is null)
+                {
+                    <div class="icm-sellist-placeholder">Selezionare un'attività.</div>
+                }
+                else if (_caricamentoCantieri)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!CantieriFiltrati.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun cantiere con verbali per questa attività.</div>
+                }
+                else
+                {
+                    @* "Tutti i cantieri": deseleziona → griglia a livello attività. *@
+                    <div class="icm-sellist-item @(_cantiereSelezionato is null ? "selected" : "")"
+                         @onclick="@(() => SelezionaCantiere(null))">
+                        <em>Tutti i cantieri dell'attività</em>
+                    </div>
+                    @foreach (var c in CantieriFiltrati)
+                    {
+                        <div class="icm-sellist-item @(c.IdCantiere == _cantiereSelezionato?.IdCantiere ? "selected" : "")"
+                             @onclick="@(() => SelezionaCantiere(c))">
+                            @c.Ubicazione
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Corpo — verbali del livello di filtro selezionato
+   ═══════════════════════════════════════════════════════════════════ *@
+@if (_anagraficaSelezionata is not null)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
+
+        <div class="d-flex align-center flex-wrap gap-2 mb-3">
+            <MudText Typo="Typo.h6" Class="ma-0">
+                @LivelloDescrizione
+            </MudText>
+            <MudChip T="string" Color="Color.Default" Variant="Variant.Text" Size="Size.Small" Class="ma-0">
+                @VerbaliFiltrati.Count verbali
+            </MudChip>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.FolderZip" Ripple="false" Size="Size.Small"
+                       Disabled="@(VerbaliFiltrati.Count == 0)"
+                       OnClick="ScaricaZipAsync">
+                Scarica tutti (ZIP)
+            </MudButton>
+        </div>
+
+        @if (VerbaliFiltrati.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Style="color:var(--mud-palette-text-secondary);">
+                Nessun verbale firmato per il filtro selezionato.
+            </MudText>
+        }
+        else
+        {
+            <MudDataGrid T="VerbaleConsultazione"
+                         Items="@VerbaliFiltrati"
+                         Dense="true" Hover="true" Striped="false" Bordered="false"
+                         FixedHeader="true" Height="calc(100vh - 420px)"
+                         Virtualize="true" ItemSize="40">
+                <Columns>
+                    @* Prima colonna sticky: il cliente è la chiave umana (ADR D15). *@
+                    <PropertyColumn Property="x => x.RagioneSocialeCliente" Title="Cliente" StickyLeft="true" />
+                    <TemplateColumn Title="Attività" Sortable="false">
+                        <CellTemplate>@context.Item.NumeroAttivita – @context.Item.DescrizioneAttivita</CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="x => x.UbicazioneCantiere" Title="Cantiere" />
+                    <TemplateColumn Title="Data" Sortable="true" SortBy="x => x.Data">
+                        <CellTemplate>@context.Item.Data.ToString("dd/MM/yyyy")</CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="x => x.NomeVerbale" Title="Verbale" />
+                    <TemplateColumn Title="Stato" Sortable="false">
+                        <CellTemplate>
+                            <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+                                <MudIcon Icon="@Icons.Material.Filled.Circle" Size="Size.Small"
+                                         Style="@($"color:{ColoreEsito(context.Item.EsitoSeverita)};")" />
+                                @(context.Item.EsitoEtichetta ?? "—")
+                            </span>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="CSE" Sortable="false">
+                        <CellTemplate>@(string.IsNullOrWhiteSpace(context.Item.CseNominativo) ? "—" : context.Item.CseNominativo)</CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Impresa" Sortable="false">
+                        <CellTemplate>@(string.IsNullOrWhiteSpace(context.Item.ImpresaAppaltatrice) ? "—" : context.Item.ImpresaAppaltatrice)</CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Prescr." Sortable="false">
+                        <CellTemplate>@context.Item.NumeroPrescrizioni</CellTemplate>
+                    </TemplateColumn>
+                    @* Azione: apre il PDF del verbale in nuova scheda. *@
+                    <TemplateColumn Title="" Sortable="false" Filterable="false" StickyRight="true">
+                        <CellTemplate>
+                            <MudTooltip Text="Apri PDF del verbale">
+                                <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
+                                               Color="Color.Primary" Size="Size.Small" Ripple="false"
+                                               OnClick="@(() => ApriPdfAsync(context.Item))" />
+                            </MudTooltip>
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <NoRecordsContent>
+                    <MudText>Nessun verbale.</MudText>
+                </NoRecordsContent>
+            </MudDataGrid>
+        }
+    </MudPaper>
+}
+
+@code {
+    private enum FiltroTipo { Tutti, Enti, Societa, Privati }
+
+    // ── Cataloghi/filtri ────────────────────────────────────────────────
+    private IReadOnlyList<Anagrafica> _anagrafiche  = Array.Empty<Anagrafica>();
+    private IReadOnlyList<Attivita>   _attivitaLista = Array.Empty<Attivita>();
+    private IReadOnlyList<Cantiere>   _cantieriLista = Array.Empty<Cantiere>();
+
+    // Universo dei verbali esportabili (firmati + PDF presente): caricato una
+    // volta, alimenta sia i filtri (quali voci hanno verbali) sia la griglia.
+    private IReadOnlyList<VerbaleConsultazione> _verbali = Array.Empty<VerbaleConsultazione>();
+    private HashSet<Guid> _anagraficheConVerbali = new();
+    private HashSet<Guid> _attivitaConVerbali    = new();
+    private HashSet<Guid> _cantieriConVerbali     = new();
+
+    // Selezioni correnti.
+    private FiltroTipo  _filtroTipo = FiltroTipo.Tutti;
+    private string      _filtroRagioneSociale = string.Empty;
+    private Anagrafica? _anagraficaSelezionata;
+    private Attivita?   _attivitaSelezionata;
+    private Cantiere?   _cantiereSelezionato;
+
+    // Flag di caricamento.
+    private bool _caricamento = true;
+    private bool _caricamentoAttivita;
+    private bool _caricamentoCantieri;
+
+    // ── Proprietà derivate (filtri UI) ──────────────────────────────────
+    private IEnumerable<Anagrafica> AnagraficheFiltrate
+    {
+        get
+        {
+            var q = _anagrafiche.AsEnumerable();
+            q = _filtroTipo switch
+            {
+                FiltroTipo.Enti    => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.EntePubblico),
+                FiltroTipo.Societa => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Societa),
+                FiltroTipo.Privati => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Privato),
+                _                  => q,
+            };
+            // Solo clienti con almeno un verbale esportabile.
+            q = q.Where(a => _anagraficheConVerbali.Contains(a.IdAnagrafica));
+            if (!string.IsNullOrWhiteSpace(_filtroRagioneSociale))
+                q = q.Where(a => a.RagioneSociale.Contains(
+                    _filtroRagioneSociale.Trim(), StringComparison.OrdinalIgnoreCase));
+            return q;
+        }
+    }
+
+    private IEnumerable<Attivita> AttivitaFiltrate
+        => _attivitaLista.Where(a => _attivitaConVerbali.Contains(a.IdAttivita));
+
+    private IEnumerable<Cantiere> CantieriFiltrati
+        => _cantieriLista.Where(c => _cantieriConVerbali.Contains(c.IdCantiere));
+
+    // Griglia: verbali del livello di filtro selezionato (in memoria).
+    private IReadOnlyList<VerbaleConsultazione> VerbaliFiltrati
+    {
+        get
+        {
+            if (_anagraficaSelezionata is null) return Array.Empty<VerbaleConsultazione>();
+            return _verbali.Where(v =>
+                v.IdAnagrafica == _anagraficaSelezionata.IdAnagrafica
+                && (_attivitaSelezionata is null || v.IdAttivita == _attivitaSelezionata.IdAttivita)
+                && (_cantiereSelezionato is null || v.IdCantiere == _cantiereSelezionato.IdCantiere))
+                .ToList();
+        }
+    }
+
+    private string LivelloDescrizione
+    {
+        get
+        {
+            if (_cantiereSelezionato is not null) return $"Cantiere: {_cantiereSelezionato.Ubicazione}";
+            if (_attivitaSelezionata is not null) return $"Attività: {_attivitaSelezionata.Numero} – {_attivitaSelezionata.Descrizione}";
+            return $"Cliente: {_anagraficaSelezionata?.RagioneSociale}";
+        }
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tAnag = AnagraficaManager.ElencoAsync();
+            var tVerb = VerbaliManager.ElencoEsportabiliAsync();
+            await Task.WhenAll(tAnag, tVerb);
+            _anagrafiche = tAnag.Result;
+            _verbali     = tVerb.Result;
+
+            // Universi derivati dall'elenco verbali (una sola sorgente di verità).
+            _anagraficheConVerbali = _verbali.Select(v => v.IdAnagrafica).ToHashSet();
+            _attivitaConVerbali    = _verbali.Select(v => v.IdAttivita).ToHashSet();
+            _cantieriConVerbali    = _verbali.Select(v => v.IdCantiere).ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento iniziale della maschera Consultazione verbali fallito.",
+                "ConsultazioneVerbali.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento della maschera.", MudBlazor.Severity.Error);
+        }
+        finally
+        {
+            _caricamento = false;
+        }
+    }
+
+    // ── Selezione filtri (cascata) ───────────────────────────────────────
+    private async Task SelezionaAnagraficaAsync(Anagrafica a)
+    {
+        if (_anagraficaSelezionata?.IdAnagrafica == a.IdAnagrafica) return;
+        _anagraficaSelezionata = a;
+        _attivitaLista = Array.Empty<Attivita>();
+        _cantieriLista = Array.Empty<Cantiere>();
+        _attivitaSelezionata = null;
+        _cantiereSelezionato = null;
+        await CaricaAttivitaAsync();
+    }
+
+    private async Task CaricaAttivitaAsync()
+    {
+        if (_anagraficaSelezionata is null) return;
+        _caricamentoAttivita = true;
+        try
+        {
+            _attivitaLista = await AttivitaManager.ElencoPerAnagraficaAsync(_anagraficaSelezionata.IdAnagrafica);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento attività fallito.", "ConsultazioneVerbali.CaricaAttivitaAsync");
+            Snackbar.Add("Errore nel caricamento delle attività.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoAttivita = false; }
+    }
+
+    private async Task SelezionaAttivitaAsync(Attivita a)
+    {
+        if (_attivitaSelezionata?.IdAttivita == a.IdAttivita) return;
+        _attivitaSelezionata = a;
+        _cantieriLista = Array.Empty<Cantiere>();
+        _cantiereSelezionato = null;
+        await CaricaCantieriAsync();
+    }
+
+    private async Task CaricaCantieriAsync()
+    {
+        if (_attivitaSelezionata is null) return;
+        _caricamentoCantieri = true;
+        try
+        {
+            _cantieriLista = await CantiereManager.ElencoPerAttivitaAsync(_attivitaSelezionata.IdAttivita);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento cantieri fallito.", "ConsultazioneVerbali.CaricaCantieriAsync");
+            Snackbar.Add("Errore nel caricamento dei cantieri.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoCantieri = false; }
+    }
+
+    private void SelezionaCantiere(Cantiere? c) => _cantiereSelezionato = c;
+
+    private void OnFiltroTipoChanged(FiltroTipo nuovo)
+    {
+        _filtroTipo = nuovo;
+        // Se il cliente selezionato non rientra più nel filtro tipo, azzera la cascata.
+        if (_anagraficaSelezionata is not null
+            && !AnagraficheFiltrate.Any(a => a.IdAnagrafica == _anagraficaSelezionata.IdAnagrafica))
+        {
+            _anagraficaSelezionata = null;
+            _attivitaLista = Array.Empty<Attivita>();
+            _cantieriLista = Array.Empty<Cantiere>();
+            _attivitaSelezionata = null;
+            _cantiereSelezionato = null;
+        }
+    }
+
+    // ── Azioni PDF / ZIP ─────────────────────────────────────────────────
+    private async Task ApriPdfAsync(VerbaleConsultazione v)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("open", $"/api/verbali/{v.IdVerbale}/pdf", "_blank");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Apertura PDF verbale fallita.", "ConsultazioneVerbali.ApriPdfAsync");
+            Snackbar.Add("Impossibile aprire il PDF del verbale.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private async Task ScaricaZipAsync()
+    {
+        if (_anagraficaSelezionata is null) return;
+        try
+        {
+            var url = $"/api/verbali/zip?idAnagrafica={_anagraficaSelezionata.IdAnagrafica}";
+            if (_attivitaSelezionata is not null) url += $"&idAttivita={_attivitaSelezionata.IdAttivita}";
+            if (_cantiereSelezionato is not null) url += $"&idCantiere={_cantiereSelezionato.IdCantiere}";
+            await JS.InvokeVoidAsync("open", url, "_blank");
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Download ZIP verbali fallito.", "ConsultazioneVerbali.ScaricaZipAsync");
+            Snackbar.Add("Impossibile scaricare lo ZIP dei verbali.", MudBlazor.Severity.Error);
+        }
+    }
+
+    // Semaforo conformità: colore del pallino per la gravità dell'esito.
+    private static string ColoreEsito(SeveritaEsito? s) => s switch
+    {
+        SeveritaEsito.Conforme            => "#2e7d32",  // verde
+        SeveritaEsito.NonConformitaMinori => "#f9a825",  // giallo
+        SeveritaEsito.NonConformitaGravi  => "#ef6c00",  // arancio
+        SeveritaEsito.Sospensione         => "#c62828",  // rosso
+        _                                  => "#9e9e9e",  // grigio (esito non impostato)
+    };
+}

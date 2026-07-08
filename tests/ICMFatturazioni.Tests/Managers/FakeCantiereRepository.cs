@@ -24,6 +24,11 @@ internal sealed class FakeCantiereRepository : ICantiereRepository
         => Task.FromResult<IReadOnlyList<Cantiere>>(
             _store.Values.Where(c => c.IsAttivo).OrderBy(c => c.Ubicazione).ToList());
 
+    // Solo gli attivi dell'attività indicata (WHERE IdAttivita = @id AND IsAttivo = 1).
+    public Task<IReadOnlyList<Cantiere>> GetByAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Cantiere>>(
+            _store.Values.Where(c => c.IsAttivo && c.IdAttivita == idAttivita).OrderBy(c => c.Ubicazione).ToList());
+
     public Task<Cantiere?> GetByIdAsync(Guid idCantiere, CancellationToken cancellationToken = default)
         => Task.FromResult(_store.TryGetValue(idCantiere, out var c) ? c : null);
 

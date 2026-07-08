@@ -36,6 +36,22 @@ internal sealed class CantiereRepository : ICantiereRepository
         return rows.ToList();
     }
 
+    // Cantieri attivi di una specifica attività: alimenta il terzo filtro della
+    // maschera "Consultazione verbali".
+    private const string SqlSelectByAttivita =
+        SqlSelectColumns + " WHERE IdAttivita = @IdAttivita AND IsAttivo = 1 ORDER BY Ubicazione;";
+
+    public async Task<IReadOnlyList<Cantiere>> GetByAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(
+            SqlSelectByAttivita,
+            parameters: new { IdAttivita = idAttivita },
+            cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<Cantiere>(cmd);
+        return rows.ToList();
+    }
+
     private const string SqlSelectById = SqlSelectColumns + " WHERE IdCantiere = @IdCantiere;";
 
     public async Task<Cantiere?> GetByIdAsync(Guid idCantiere, CancellationToken cancellationToken = default)

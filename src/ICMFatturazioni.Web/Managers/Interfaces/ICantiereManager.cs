@@ -11,6 +11,9 @@ public interface ICantiereManager
     /// <summary>Cantieri attivi, ordinati per Ubicazione.</summary>
     Task<IReadOnlyList<Cantiere>> ElencoAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Cantieri attivi di una specifica attività, ordinati per Ubicazione.</summary>
+    Task<IReadOnlyList<Cantiere>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default);
+
     /// <summary>Restituisce un cantiere per id, o null.</summary>
     Task<Cantiere?> GetByIdAsync(Guid idCantiere, CancellationToken cancellationToken = default);
 
