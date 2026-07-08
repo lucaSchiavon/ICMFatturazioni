@@ -35,6 +35,20 @@ public enum FatturaMotivoInvalido
     /// non è ancora stato generato (Fase D1): prima si crea l'XML, poi si conferma.
     /// </summary>
     XmlNonCreato,
+
+    /// <summary>
+    /// Si è tentato di eliminare una fattura che ha già un tracciato XML generato.
+    /// Va prima rimosso l'XML (dalla maschera Documenti XML), poi la fattura:
+    /// così l'ordine di eliminazione è simmetrico a quello di creazione.
+    /// </summary>
+    FatturaConXmlNonEliminabile,
+
+    /// <summary>
+    /// Si è tentato di eliminare il tracciato XML di una fattura il cui esito è già
+    /// stato confermato OK (segnata come inviata allo SdI): prima si toglie l'esito,
+    /// poi si può eliminare l'XML.
+    /// </summary>
+    XmlConEsitoConfermato,
 }
 
 /// <summary>

@@ -40,15 +40,18 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
     private readonly AvvisoPdfDataBuilder _builder;
     private readonly IFattureManager      _fatture;
     private readonly FatturaPaOptions     _options;
+    private readonly ILogManager          _log;
 
     internal FatturaPaXmlService(
         AvvisoPdfDataBuilder builder,
         IFattureManager fatture,
-        IOptions<FatturaPaOptions> options)
+        IOptions<FatturaPaOptions> options,
+        ILogManager log)
     {
         _builder = builder;
         _fatture = fatture;
         _options = options.Value;
+        _log     = log;
     }
 
     // Codici del tracciato FatturaPA fissi (indipendenti dalla categoria del cedente).
@@ -109,6 +112,44 @@ public sealed class FatturaPaXmlService : IFatturaPaXmlService
         var (data, _) = await CaricaAsync(idFattura, ct);
         var (fo, _)   = Mappa(data, fattura, fattura.ProgressivoInvio);
         return (Serializza(fo), fattura.NomeFileXml);
+    }
+
+    /// <inheritdoc/>
+    public async Task EliminaAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        var fattura = await _fatture.GetByIdAsync(idFattura, ct);
+        if (fattura is null || !fattura.IsAttivo)
+            throw new FatturaPaXmlNonTrovataException(idFattura);
+
+        // Niente XML da eliminare: idempotente (nessun file, nessun reset).
+        if (!fattura.CreatoXML)
+            return;
+
+        // Nome file catturato PRIMA del reset (dopo, NomeFileXml sarà NULL).
+        var nomeFile = fattura.NomeFileXml;
+
+        // Reset dello stato XML sul DB (valida l'esito OK e lancia in quel caso):
+        // va prima della cancellazione del file, così un blocco lascia il file intatto.
+        await _fatture.ResetXmlAsync(idFattura, ct);
+
+        // File best-effort. File.Delete non solleva se il file non esiste; se fallisce
+        // per altri motivi (permessi) il DB è già pulito → resta un file orfano
+        // innocuo (verrà ignorato), ma lo si traccia.
+        if (!string.IsNullOrEmpty(nomeFile) && !string.IsNullOrWhiteSpace(_options.CartellaOutput))
+        {
+            try
+            {
+                File.Delete(Path.Combine(_options.CartellaOutput, nomeFile));
+            }
+            catch (Exception ex)
+            {
+                await _log.LogErroreAsync(ex,
+                    "Stato XML azzerato sul DB, ma la cancellazione del file XML dal disco è " +
+                    "fallita: resta un file orfano (innocuo). Verificare i permessi sulla " +
+                    "cartella di output FatturaPA.",
+                    "FatturaPaXml.Elimina", entityId: idFattura, entityType: "Fattura", cancellationToken: ct);
+            }
+        }
     }
 
     // ── Caricamento + guardie comuni a generazione e download ────────────────

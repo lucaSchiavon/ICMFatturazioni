@@ -175,7 +175,8 @@ builder.Services.AddScoped<IFatturaPaXmlService>(sp =>
     new FatturaPaXmlService(
         sp.GetRequiredService<AvvisoPdfDataBuilder>(),
         sp.GetRequiredService<IFattureManager>(),
-        sp.GetRequiredService<IOptions<FatturaPaOptions>>()));
+        sp.GetRequiredService<IOptions<FatturaPaOptions>>(),
+        sp.GetRequiredService<ILogManager>()));
 
 // === Menu dinamico / autorizzazione per ruolo ===
 // MenuService scoped: calcola una volta per circuit l'albero visibile e le

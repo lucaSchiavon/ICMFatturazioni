@@ -40,4 +40,18 @@ public interface IFatturaPaXmlService
     /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonTrovataException">Fattura inesistente/annullata.</exception>
     /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonGeneratoException">XML mai generato per questa fattura.</exception>
     Task<(byte[] Contenuto, string NomeFile)> ScaricaAsync(Guid idFattura, CancellationToken ct = default);
+
+    /// <summary>
+    /// Elimina il tracciato XML della fattura: azzera lo stato XML sul DB (via
+    /// manager) e cancella il file dalla cartella configurata. Riporta la fattura a
+    /// "XML da creare". Non rigenera nulla. Idempotente se l'XML non c'è.
+    /// </summary>
+    /// <remarks>
+    /// Il reset del DB avviene <b>prima</b> della cancellazione del file: se il
+    /// reset è bloccato (esito OK), il file non viene toccato. La cancellazione del
+    /// file è best-effort (un eventuale file orfano è innocuo e viene loggato).
+    /// </remarks>
+    /// <exception cref="ICMFatturazioni.Web.FatturaPa.FatturaPaXmlNonTrovataException">Fattura inesistente/annullata.</exception>
+    /// <exception cref="Managers.FatturaInvalidaException">Motivo <c>XmlConEsitoConfermato</c> se l'esito è già OK.</exception>
+    Task EliminaAsync(Guid idFattura, CancellationToken ct = default);
 }

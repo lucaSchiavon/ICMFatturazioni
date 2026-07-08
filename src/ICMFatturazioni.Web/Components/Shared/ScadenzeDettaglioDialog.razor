@@ -47,15 +47,17 @@
 
         <MudDivider Class="mb-3" />
 
-        @* Le scadenze dovrebbero ripartire l'intero importo del dettaglio, ma la
-           ripartizione parziale è ammessa: il residuo resta gestito a valle (avviso). *@
+        @* Le scadenze devono ripartire l'INTERO importo del dettaglio: finché lo
+           schedulato non coincide con l'importo riga la maschera non si può chiudere
+           (le scadenze inserite restano comunque salvate). *@
         @if (!Dettaglio.HasFattura && _sbilanciato)
         {
             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
                 Schedula l'intero importo del dettaglio (@Dettaglio.Importo.ToString("N2", _itCulture) €)
                 con una o più scadenze. Residuo da schedulare:
                 <strong>@_residuo.ToString("N2", _itCulture) €</strong>.
-                Puoi comunque chiudere: le scadenze già inserite <strong>restano salvate</strong>.
+                Per chiudere lo schedulato deve coincidere con l'importo riga; le scadenze
+                già inserite <strong>restano salvate</strong>.
             </MudAlert>
         }
 
@@ -195,19 +197,22 @@
         }
     </DialogContent>
     <DialogActions>
-        @* Chiusura sempre NON distruttiva: le scadenze sono già persistite a ogni azione
-           e restano salvate anche se la ripartizione è parziale. Una somma < importo del
-           dettaglio è uno stato ammesso (il residuo è gestito a valle in fase di avviso):
-           in uscita non si cancella nulla, così non si perde il pregresso. *@
+        @* La chiusura è consentita solo quando l'intero importo del dettaglio è
+           schedulato: se lo schedulato differisce dall'importo riga il pulsante è
+           disabilitato (le scadenze restano comunque persistite a ogni azione, non si
+           perde nulla). Per le righe in sola lettura (fatturate) non c'è nulla da
+           bilanciare, quindi la chiusura è sempre possibile. *@
         @if (!Dettaglio.HasFattura && _sbilanciato)
         {
             <MudText Typo="Typo.caption" Color="Color.Warning" Class="mr-2 my-2">
                 <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="mr-1" />
-                Dettaglio parzialmente schedulato — residuo @_residuo.ToString("N2", _itCulture) €.
-                Le scadenze restano salvate.
+                Schedula l'intero importo per poter chiudere — residuo @_residuo.ToString("N2", _itCulture) €.
             </MudText>
         }
-        <MudButton OnClick="Chiudi" Variant="Variant.Text">Chiudi</MudButton>
+        <MudButton OnClick="Chiudi" Variant="Variant.Text"
+                   Disabled="@(!Dettaglio.HasFattura && _sbilanciato)">
+            Chiudi
+        </MudButton>
     </DialogActions>
 </MudDialog>
 

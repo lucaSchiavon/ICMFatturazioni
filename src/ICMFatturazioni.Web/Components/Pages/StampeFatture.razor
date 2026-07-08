@@ -198,10 +198,24 @@
                                            Size="Size.Small" Ripple="false" Color="Color.Primary"
                                            aria-label="Stampa PDF fattura" title="Stampa PDF fattura"
                                            OnClick="@(() => StampaPdfAsync(context))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                           Size="Size.Small" Ripple="false" Color="Color.Error"
-                                           aria-label="Elimina fattura" title="Elimina fattura"
-                                           OnClick="@(() => EliminaFatturaAsync(context))" />
+                            @* Una fattura con tracciato XML non è eliminabile finché l'XML
+                               non viene rimosso (da Documenti XML): pulsante disabilitato
+                               con spiegazione, invece di far fallire l'operazione. *@
+                            @if (context.CreatoXML)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small" Ripple="false" Color="Color.Default"
+                                               Disabled="true"
+                                               aria-label="Eliminazione bloccata: la fattura ha un tracciato XML"
+                                               title="Ha un tracciato XML: eliminalo prima dalla maschera Documenti XML" />
+                            }
+                            else
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small" Ripple="false" Color="Color.Error"
+                                               aria-label="Elimina fattura" title="Elimina fattura"
+                                               OnClick="@(() => EliminaFatturaAsync(context))" />
+                            }
                         </MudTd>
                     </RowTemplate>
                 </MudTable>
@@ -401,6 +415,14 @@
             await FattureManager.AnnullaAsync(f.IdFattura);
             Snackbar.Add("Fattura eliminata.", MudBlazor.Severity.Success);
             // Aggiorna l'universo (la coppia potrebbe non avere più fatture) e la griglia.
+            await RicaricaDopoEliminazioneAsync();
+        }
+        // Rete di sicurezza: se fra il render e il click è stato generato un XML, il
+        // manager blocca l'eliminazione con un'eccezione tipizzata (flusso previsto,
+        // non un errore da loggare) → messaggio chiaro invece di un errore generico.
+        catch (ICMFatturazioni.Web.Managers.FatturaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
             await RicaricaDopoEliminazioneAsync();
         }
         catch (Exception ex)

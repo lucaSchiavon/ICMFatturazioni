@@ -62,6 +62,102 @@ public class FattureManagerXmlTests
     }
 
     // =====================================================================
+    // Coerenza lifecycle fattura ↔ XML (eliminazione)
+    // =====================================================================
+
+    [Fact]
+    public async Task Annulla_BloccataSeFatturaHaXml()
+    {
+        var sut = NewSut();
+        var id  = await SeedFatturaAsync(sut);
+        await sut.Manager.SegnaXmlCreatoAsync(id, "00001", "IT01961500236_00001.xml");
+
+        // Con un XML presente la fattura NON è eliminabile: eccezione tipizzata.
+        var ex = await Assert.ThrowsAsync<FatturaInvalidaException>(
+            () => sut.Manager.AnnullaAsync(id));
+        Assert.Equal(FatturaMotivoInvalido.FatturaConXmlNonEliminabile, ex.Motivo);
+
+        var f = await sut.Manager.GetByIdAsync(id);
+        Assert.True(f!.IsAttivo); // resta attiva
+    }
+
+    [Fact]
+    public async Task Annulla_ConsentitaSenzaXml()
+    {
+        var sut = NewSut();
+        var id  = await SeedFatturaAsync(sut);
+
+        await sut.Manager.AnnullaAsync(id); // nessun XML → soft-delete regolare
+
+        var f = await sut.Manager.GetByIdAsync(id);
+        Assert.False(f!.IsAttivo);
+    }
+
+    [Fact]
+    public async Task ResetXml_AzzeraStatoEMetadati_EAudita()
+    {
+        var sut = NewSut();
+        var id  = await SeedFatturaAsync(sut);
+        await sut.Manager.SegnaXmlCreatoAsync(id, "00001", "IT01961500236_00001.xml");
+        sut.Audit.Voci.Clear();
+
+        await sut.Manager.ResetXmlAsync(id);
+
+        var f = await sut.Manager.GetByIdAsync(id);
+        Assert.False(f!.CreatoXML);
+        Assert.Null(f.ProgressivoInvio);
+        Assert.Null(f.NomeFileXml);
+        Assert.Null(f.DataCreazioneXmlUtc);
+
+        var voce = Assert.Single(sut.Audit.Voci);
+        Assert.Equal(AuditOperazione.Modifica, voce.Operazione);
+        Assert.Contains("EliminaXML", voce.Dati);
+    }
+
+    [Fact]
+    public async Task ResetXml_BloccatoSeEsitoOk()
+    {
+        var sut = NewSut();
+        var id  = await SeedFatturaAsync(sut);
+        await sut.Manager.SegnaXmlCreatoAsync(id, "00001", "IT01961500236_00001.xml");
+        await sut.Manager.ConfermaEsitoXmlAsync(id); // EsitoXML = 1
+
+        var ex = await Assert.ThrowsAsync<FatturaInvalidaException>(
+            () => sut.Manager.ResetXmlAsync(id));
+        Assert.Equal(FatturaMotivoInvalido.XmlConEsitoConfermato, ex.Motivo);
+
+        var f = await sut.Manager.GetByIdAsync(id);
+        Assert.True(f!.CreatoXML); // l'XML resta
+    }
+
+    [Fact]
+    public async Task ResetXml_IdempotenteSenzaXml()
+    {
+        var sut = NewSut();
+        var id  = await SeedFatturaAsync(sut);
+        sut.Audit.Voci.Clear();
+
+        await sut.Manager.ResetXmlAsync(id); // niente XML → no-op
+
+        Assert.Empty(sut.Audit.Voci);
+    }
+
+    [Fact]
+    public async Task ResetXml_RiabilitaLEliminazioneDellaFattura()
+    {
+        var sut = NewSut();
+        var id  = await SeedFatturaAsync(sut);
+        await sut.Manager.SegnaXmlCreatoAsync(id, "00001", "IT01961500236_00001.xml");
+
+        // Prima l'XML, poi la fattura: l'ordine simmetrico ora funziona end-to-end.
+        await sut.Manager.ResetXmlAsync(id);
+        await sut.Manager.AnnullaAsync(id);
+
+        var f = await sut.Manager.GetByIdAsync(id);
+        Assert.False(f!.IsAttivo);
+    }
+
+    // =====================================================================
     // Creazione XML
     // =====================================================================
 

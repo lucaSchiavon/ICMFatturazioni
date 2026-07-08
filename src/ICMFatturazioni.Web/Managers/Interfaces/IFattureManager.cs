@@ -46,6 +46,10 @@ public interface IFattureManager
     /// Annulla una fattura (soft-delete): l'avviso di origine torna fatturabile e il
     /// numero è riutilizzabile. Idempotente: no-op se già annullata o inesistente.
     /// </summary>
+    /// <exception cref="FatturaInvalidaException">
+    /// Motivo <c>FatturaConXmlNonEliminabile</c> se la fattura ha già un tracciato XML:
+    /// va prima eliminato l'XML (<see cref="ResetXmlAsync"/>), poi la fattura.
+    /// </exception>
     Task AnnullaAsync(Guid idFattura, CancellationToken ct = default);
 
     // ── Fase D1 — maschera "Creazione-Gestione XML Documenti" ─────────────────
@@ -80,4 +84,16 @@ public interface IFattureManager
     /// <summary>Riporta l'esito in attesa (<c>EsitoXML = 0</c>), con audit.</summary>
     /// <exception cref="FatturaInvalidaException">Motivo <c>FatturaNonTrovata</c>.</exception>
     Task TogliEsitoXmlAsync(Guid idFattura, CancellationToken ct = default);
+
+    /// <summary>
+    /// Elimina il tracciato XML: riporta la fattura a "da creare" azzerando i
+    /// metadati XML (<c>CreatoXML = 0</c>, progressivo/nome file/date), con audit.
+    /// Idempotente se l'XML non c'è. La cancellazione del file su disco è a carico
+    /// del servizio XML (<see cref="ICMFatturazioni.Web.Services.IFatturaPaXmlService"/>).
+    /// </summary>
+    /// <exception cref="FatturaInvalidaException">
+    /// Motivo <c>FatturaNonTrovata</c>, oppure <c>XmlConEsitoConfermato</c> se l'esito
+    /// è già OK (va prima tolto l'esito).
+    /// </exception>
+    Task ResetXmlAsync(Guid idFattura, CancellationToken ct = default);
 }

@@ -15,6 +15,8 @@ namespace ICMFatturazioni.Web.Models;
 /// <param name="TipoAttivitaDescrizione">Descrizione del tipo attività (colonna "Tipo").</param>
 /// <param name="NumeroAttivita">Codice/numero dell'attività (parte della colonna "Attività").</param>
 /// <param name="DescrizioneAttivita">Descrizione dell'attività (parte della colonna "Attività").</param>
+/// <param name="CreatoXML">True se la fattura ha già un tracciato XML: in tal caso non è eliminabile finché l'XML non viene rimosso.</param>
+/// <param name="EsitoXML">Esito SdI dell'XML: 0 = attesa, 1 = OK (marcato come inviato).</param>
 public sealed record FatturaEmessa(
     Guid     IdFattura,
     Guid     IdAvviso,
@@ -24,4 +26,6 @@ public sealed record FatturaEmessa(
     string   ClienteRagioneSociale,
     string?  TipoAttivitaDescrizione,
     string   NumeroAttivita,
-    string   DescrizioneAttivita);
+    string   DescrizioneAttivita,
+    bool     CreatoXML,
+    int      EsitoXML);

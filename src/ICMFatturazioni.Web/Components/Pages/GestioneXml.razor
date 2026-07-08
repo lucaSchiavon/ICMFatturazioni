@@ -279,6 +279,15 @@
                                        OnClick="@(() => ConfermaEsitoAsync(_selezionata))">
                                 Conferma esito XML
                             </MudButton>
+
+                            @* Elimina l'XML: consentito solo finché l'esito non è OK.
+                               Riporta la fattura a "da creare" e la rende di nuovo
+                               eliminabile (simmetria con l'ordine di creazione). *@
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" Ripple="false"
+                                       StartIcon="@Icons.Material.Filled.Delete" Disabled="_operazioneInCorso"
+                                       OnClick="@(() => EliminaXmlAsync(_selezionata))">
+                                Elimina XML
+                            </MudButton>
                         }
                         else
                         {
@@ -539,6 +548,19 @@
 
     private async Task TogliEsitoAsync(DocumentoXmlRiga d)
     {
+        // Conferma prima di rimuovere l'esito: stessa maschera di "Elimina XML".
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Togliere l'esito XML?" },
+            { x => x.NomeElemento, $"XML fattura {d.NumeroFattura}/{d.Anno}" },
+            { x => x.Messaggio, "L'esito tornerà «in attesa». La fattura resterà con il tracciato XML; " +
+                                "potrai poi riconfermare l'esito, rigenerare o eliminare l'XML." },
+            { x => x.TestoConferma, "Togli esito" },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        if (await dialog.Result is not { Canceled: false }) return;
+
         _operazioneInCorso = true;
         try
         {
@@ -554,6 +576,43 @@
         {
             await LogManager.LogErroreAsync(ex, "Rimozione esito XML fallita.", "GestioneXml.TogliEsitoAsync", entityId: d.IdFattura, entityType: "Fattura");
             Snackbar.Add("Errore durante la rimozione dell'esito.", MudBlazor.Severity.Error);
+        }
+        finally { _operazioneInCorso = false; }
+    }
+
+    // Elimina il tracciato XML (file + stato) previa conferma. Consentito solo se
+    // l'esito non è OK: il pulsante è mostrato solo in quel caso, e il servizio/
+    // manager lo ribadiscono come difesa (blocco su esito confermato).
+    private async Task EliminaXmlAsync(DocumentoXmlRiga d)
+    {
+        var parameters = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare il tracciato XML?" },
+            { x => x.NomeElemento, $"XML fattura {d.NumeroFattura}/{d.Anno}" },
+            { x => x.Messaggio, "Il file XML verrà cancellato e la fattura tornerà «da creare». " +
+                                "Potrai poi rigenerarlo (con un nuovo progressivo) o eliminare la fattura." },
+            { x => x.TestoConferma, "Elimina XML" },
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var dialog = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, parameters, options);
+        if (await dialog.Result is not { Canceled: false }) return;
+
+        _operazioneInCorso = true;
+        try
+        {
+            await XmlService.EliminaAsync(d.IdFattura);
+            Snackbar.Add("Tracciato XML eliminato.", MudBlazor.Severity.Success);
+            await CaricaDocumentiAsync();
+        }
+        catch (Managers.FatturaInvalidaException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+            await CaricaDocumentiAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Eliminazione XML fallita.", "GestioneXml.EliminaXmlAsync", entityId: d.IdFattura, entityType: "Fattura");
+            Snackbar.Add("Errore durante l'eliminazione del tracciato XML.", MudBlazor.Severity.Error);
         }
         finally { _operazioneInCorso = false; }
     }

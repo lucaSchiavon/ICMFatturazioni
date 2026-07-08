@@ -122,6 +122,16 @@ public sealed class FattureManager : IFattureManager
         var fattura = await _repo.GetByIdAsync(idFattura, ct);
         if (fattura is null || !fattura.IsAttivo) return; // idempotente
 
+        // Doppia difesa (TOCTOU): una fattura con tracciato XML NON si elimina
+        // direttamente. Prima va rimosso l'XML (e solo se non ha esito OK), poi la
+        // fattura — ordine simmetrico alla creazione. Il pre-check dà il messaggio
+        // UX; il sentinel `AND CreatoXML = 0` nell'UPDATE copre la race condition.
+        if (fattura.CreatoXML)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.FatturaConXmlNonEliminabile,
+                "La fattura ha un tracciato XML: elimina prima l'XML dalla maschera " +
+                "Documenti XML, poi potrai eliminare la fattura.");
+
         await _repo.AnnullaAsync(idFattura, ct);
 
         try
@@ -220,6 +230,44 @@ public sealed class FattureManager : IFattureManager
             await _audit.RegistraModificaAsync(
                 "Fattura", idFattura, DescrizioneAudit(fattura),
                 AuditDettaglio.Snapshot(new { Operazione = "TogliEsitoXML" }),
+                cancellationToken: ct);
+        }
+        catch { /* audit best-effort */ }
+    }
+
+    /// <inheritdoc/>
+    public async Task ResetXmlAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        var fattura = await _repo.GetByIdAsync(idFattura, ct);
+        if (fattura is null || !fattura.IsAttivo)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.FatturaNonTrovata,
+                "La fattura non esiste più o è stata annullata.");
+
+        // Niente XML da eliminare: idempotente.
+        if (!fattura.CreatoXML) return;
+
+        // Blocco simmetrico a quello dell'eliminazione fattura: un XML con esito OK
+        // (segnato come inviato allo SdI) non si elimina. Prima si toglie l'esito.
+        // Pre-check UX + sentinel `AND EsitoXML = 0` nell'UPDATE (doppia difesa).
+        if (fattura.EsitoXML == 1)
+            throw new FatturaInvalidaException(
+                FatturaMotivoInvalido.XmlConEsitoConfermato,
+                "L'XML risulta con esito OK (segnato come inviato allo SdI): togli prima " +
+                "l'esito, poi potrai eliminare l'XML.");
+
+        await _repo.ResetXmlAsync(idFattura, ct);
+
+        try
+        {
+            await _audit.RegistraModificaAsync(
+                "Fattura", idFattura, DescrizioneAudit(fattura),
+                AuditDettaglio.Snapshot(new
+                {
+                    Operazione = "EliminaXML",
+                    ProgressivoInvioRimosso = fattura.ProgressivoInvio,
+                    NomeFileXmlRimosso = fattura.NomeFileXml,
+                }),
                 cancellationToken: ct);
         }
         catch { /* audit best-effort */ }

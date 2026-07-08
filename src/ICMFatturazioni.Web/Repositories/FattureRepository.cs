@@ -144,13 +144,34 @@ internal sealed class FattureRepository : IFattureRepository
         }
     }
 
+    // Sentinel `AND CreatoXML = 0`: una fattura con tracciato XML non si annulla
+    // (va prima eliminato l'XML). Difende dalla race col pre-check del manager.
     private const string SqlAnnulla =
-        "UPDATE fatt.Fatture SET IsAttivo = 0 WHERE IdFattura = @IdFattura;";
+        "UPDATE fatt.Fatture SET IsAttivo = 0 WHERE IdFattura = @IdFattura AND CreatoXML = 0;";
 
     public async Task AnnullaAsync(Guid idFattura, CancellationToken ct = default)
     {
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
         var cmd = new CommandDefinition(SqlAnnulla, new { IdFattura = idFattura }, cancellationToken: ct);
+        await conn.ExecuteAsync(cmd);
+    }
+
+    // Reset dello stato XML: riporta la fattura a "da creare" azzerando i metadati.
+    // Sentinel `AND EsitoXML = 0`: non tocca le fatture con esito OK (protezione
+    // sotto race col pre-check del manager). DataEsitoXmlUtc è già NULL se EsitoXML=0.
+    private const string SqlResetXml = """
+        UPDATE fatt.Fatture
+        SET CreatoXML = 0,
+            ProgressivoInvio    = NULL,
+            NomeFileXml         = NULL,
+            DataCreazioneXmlUtc = NULL
+        WHERE IdFattura = @IdFattura AND IsAttivo = 1 AND EsitoXML = 0;
+        """;
+
+    public async Task ResetXmlAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd = new CommandDefinition(SqlResetXml, new { IdFattura = idFattura }, cancellationToken: ct);
         await conn.ExecuteAsync(cmd);
     }
 
@@ -170,17 +191,22 @@ internal sealed class FattureRepository : IFattureRepository
         public string?  TipoAttivitaDescrizione { get; init; }
         public string   NumeroAttivita          { get; init; } = string.Empty;
         public string   DescrizioneAttivita     { get; init; } = string.Empty;
+        public bool     CreatoXML               { get; init; }
+        public int      EsitoXML                { get; init; }
     }
 
     // Fatture attive di un'attività, arricchite via l'avviso di origine con
     // cliente/tipo/attività (join sulle viste fatt.Anagrafica e fatt.Attivita).
+    // Porta anche i flag XML (CreatoXML/EsitoXML): la UI ne ha bisogno per decidere
+    // se la fattura è eliminabile (una con XML non lo è finché l'XML non è rimosso).
     private const string SqlEmesseByAttivita = """
         SELECT
             f.IdFattura, f.IdAvviso, f.NumeroFattura, f.Anno, f.DataFattura,
             an.RagioneSociale AS ClienteRagioneSociale,
             ta.TipoAttivita   AS TipoAttivitaDescrizione,
             att.Numero        AS NumeroAttivita,
-            att.Descrizione   AS DescrizioneAttivita
+            att.Descrizione   AS DescrizioneAttivita,
+            f.CreatoXML, f.EsitoXML
         FROM fatt.Fatture f
         JOIN fatt.AvvisiFattura a   ON a.IdAvviso        = f.IdAvviso
         JOIN fatt.Attivita      att ON att.IdAttivita    = a.IdAttivita
@@ -199,7 +225,8 @@ internal sealed class FattureRepository : IFattureRepository
             r.IdFattura, r.IdAvviso, r.NumeroFattura, r.Anno,
             DateOnly.FromDateTime(r.DataFattura),
             r.ClienteRagioneSociale, r.TipoAttivitaDescrizione,
-            r.NumeroAttivita, r.DescrizioneAttivita)).ToList();
+            r.NumeroAttivita, r.DescrizioneAttivita,
+            r.CreatoXML, r.EsitoXML)).ToList();
     }
 
     private const string SqlAnniConFatture = """

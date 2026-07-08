@@ -276,7 +276,7 @@
                 <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Class="ma-0">In modifica</MudChip>
                 <MudSpacer />
                 <MudButton Size="Size.Small" Ripple="false" StartIcon="@Icons.Material.Filled.Close" OnClick="ChiudiEditAsync">
-                    Chiudi modifica
+                    Termina senza salvare
                 </MudButton>
             }
             else if (_wizardFase == WizardFase.Righe)
@@ -637,7 +637,7 @@
 
             <div class="d-flex justify-end gap-2 mt-3 flex-wrap">
                 <MudButton Ripple="false" StartIcon="@Icons.Material.Filled.Cancel" OnClick="ChiudiEditAsync">
-                    @(_idAvvisoInModifica is null ? "Annulla bozza" : "Chiudi modifica")
+                    @(_idAvvisoInModifica is null ? "Annulla bozza" : "Termina senza salvare")
                 </MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
                            StartIcon="@Icons.Material.Filled.Check"
@@ -1120,8 +1120,21 @@
 
     private async Task TerminaInserimentoAsync()
     {
-        // In modifica di un avviso esistente il pulsante salva le modifiche.
-        if (_idAvvisoInModifica is not null) { await SalvaModificheAsync(); return; }
+        // In modifica di un avviso esistente il pulsante salva le modifiche e poi
+        // applica lo STESSO stato finale di "Termina inserimento": salvato l'avviso si
+        // esce dalla modifica e la maschera torna pulita (ricaricando il contesto
+        // dell'attività). Il reset sta qui e non in SalvaModificheAsync perché quel
+        // metodo è riusato come step intermedio da SviluppaFatturaAsync (che deve
+        // restare in modifica per creare poi la fattura).
+        if (_idAvvisoInModifica is not null)
+        {
+            if (await SalvaModificheAsync())
+            {
+                ResetWizard();
+                await CaricaContestoAttivitaAsync();
+            }
+            return;
+        }
 
         _erroreEmissione = string.Empty;
         // Contenuto minimo: almeno una rata reale nelle righe OPPURE almeno una spesa

@@ -394,9 +394,15 @@
                                            Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                         <MudItem xs="6" sm="3" md="3">
+                            @* L'importo si fissa alla creazione del dettaglio e NON è
+                               modificabile in seguito: in modifica il campo è di sola
+                               lettura (mostra il valore esistente, che resta invariato
+                               al salvataggio). *@
                             <MudNumericField T="decimal" @bind-Value="_fDettImporto"
                                              Label="Importo € *"
                                              Min="0m" Format="N2" Culture="_itCulture"
+                                             ReadOnly="@(_dettaglioInModifica is not null)"
+                                             HelperText="@(_dettaglioInModifica is not null ? "Non modificabile dopo la creazione" : null)"
                                              Variant="Variant.Outlined" Margin="Margin.Dense" />
                         </MudItem>
                         <MudItem xs="12">
@@ -1135,16 +1141,17 @@
         {
             { x => x.Dettaglio, d },
         };
-        // La chiusura della maschera scadenze è NON distruttiva: le scadenze sono già
-        // persistite a ogni azione e restano salvate anche se la ripartizione è parziale
-        // (il residuo è gestito a valle in fase di avviso). Quindi ESC e click sul backdrop
-        // possono chiudere liberamente senza rischio di perdere il pregresso.
+        // La chiusura richiede che lo schedulato coincida con l'importo della riga:
+        // il vincolo è applicato dal pulsante "Chiudi" del dialog (disabilitato finché
+        // sbilanciato). Per non aggirarlo, ESC e click sul backdrop NON chiudono: l'unica
+        // via d'uscita è il pulsante, così il controllo di bilanciamento è effettivo.
+        // (La chiusura resta comunque non distruttiva: le scadenze sono già persistite.)
         var o = new DialogOptions
         {
             MaxWidth         = MaxWidth.Medium,
             FullWidth        = true,
-            CloseOnEscapeKey = true,
-            BackdropClick    = true,
+            CloseOnEscapeKey = false,
+            BackdropClick    = false,
         };
         var dialog = await DialogService.ShowAsync<ScadenzeDettaglioDialog>("Scadenze pagamento", p, o);
         await dialog.Result;

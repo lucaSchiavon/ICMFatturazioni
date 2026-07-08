@@ -65,7 +65,7 @@ internal sealed class FakeFattureRepository : IFattureRepository
             .OrderByDescending(f => f.Anno).ThenByDescending(f => f.NumeroFattura)
             .Select(f => new FatturaEmessa(
                 f.IdFattura, f.IdAvviso, f.NumeroFattura, f.Anno, f.DataFattura,
-                "Cliente", "Tipo", "0", "Attività"))
+                "Cliente", "Tipo", "0", "Attività", f.CreatoXML, f.EsitoXML))
             .ToList();
         return Task.FromResult<IReadOnlyList<FatturaEmessa>>(righe);
     }
@@ -116,6 +116,33 @@ internal sealed class FakeFattureRepository : IFattureRepository
     {
         if (_fatture.TryGetValue(idFattura, out var f))
             _fatture[idFattura] = Clone(f, esitoXml: 0, esitoUtc: null, azzeraEsitoUtc: true);
+        return Task.CompletedTask;
+    }
+
+    public Task ResetXmlAsync(Guid idFattura, CancellationToken ct = default)
+    {
+        // Replica il sentinel `AND EsitoXML = 0` della query reale: non tocca le
+        // fatture con esito OK. Azzera esplicitamente i metadati XML.
+        if (_fatture.TryGetValue(idFattura, out var f) && f.IsAttivo && f.EsitoXML == 0)
+        {
+            _fatture[idFattura] = new Fattura
+            {
+                IdFattura           = f.IdFattura,
+                IdAvviso            = f.IdAvviso,
+                NumeroFattura       = f.NumeroFattura,
+                Anno                = f.Anno,
+                DataFattura         = f.DataFattura,
+                CreatoXML           = false,
+                EsitoXML            = f.EsitoXML,
+                ProgressivoInvio    = null,
+                NomeFileXml         = null,
+                DataCreazioneXmlUtc = null,
+                DataEsitoXmlUtc     = f.DataEsitoXmlUtc,
+                Cig                 = f.Cig,
+                Cup                 = f.Cup,
+                IsAttivo            = f.IsAttivo,
+            };
+        }
         return Task.CompletedTask;
     }
 

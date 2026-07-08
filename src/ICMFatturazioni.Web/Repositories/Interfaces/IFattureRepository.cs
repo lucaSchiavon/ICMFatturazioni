@@ -34,7 +34,10 @@ public interface IFattureRepository
     /// </exception>
     Task CreateAsync(Fattura fattura, CancellationToken ct = default);
 
-    /// <summary>Soft-delete della fattura: <c>IsAttivo = 0</c>. Idempotente.</summary>
+    /// <summary>
+    /// Soft-delete della fattura: <c>IsAttivo = 0</c>, solo se <c>CreatoXML = 0</c>
+    /// (sentinel: una fattura con XML non si annulla). Idempotente.
+    /// </summary>
     Task AnnullaAsync(Guid idFattura, CancellationToken ct = default);
 
     /// <summary>
@@ -86,4 +89,11 @@ public interface IFattureRepository
 
     /// <summary>Riporta l'esito in attesa: <c>EsitoXML = 0</c> e <c>DataEsitoXmlUtc = NULL</c>.</summary>
     Task TogliEsitoAsync(Guid idFattura, CancellationToken ct = default);
+
+    /// <summary>
+    /// Azzera i metadati XML della fattura (<c>CreatoXML = 0</c>, progressivo, nome
+    /// file, data creazione), solo se <c>EsitoXML = 0</c> (sentinel: non tocca le
+    /// fatture con esito OK). Riporta la fattura allo stato "XML da creare".
+    /// </summary>
+    Task ResetXmlAsync(Guid idFattura, CancellationToken ct = default);
 }
