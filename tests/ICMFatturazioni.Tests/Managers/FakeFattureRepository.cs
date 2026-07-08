@@ -27,6 +27,15 @@ internal sealed class FakeFattureRepository : IFattureRepository
         return Task.FromResult(attive.Count == 0 ? 0 : attive.Max(f => f.NumeroFattura));
     }
 
+    public Task<IReadOnlyList<FatturaNumeroData>> GetNumeriDateAnnoAsync(int anno, CancellationToken ct = default)
+    {
+        var coppie = _fatture.Values
+            .Where(f => f.IsAttivo && f.Anno == anno)
+            .Select(f => new FatturaNumeroData(f.NumeroFattura, f.DataFattura))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<FatturaNumeroData>>(coppie);
+    }
+
     public Task CreateAsync(Fattura fattura, CancellationToken ct = default)
     {
         // Guardia UQ_Fatture_IdAvviso_Attiva.

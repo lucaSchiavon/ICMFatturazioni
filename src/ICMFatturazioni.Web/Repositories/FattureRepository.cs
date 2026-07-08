@@ -99,6 +99,27 @@ internal sealed class FattureRepository : IFattureRepository
         return await conn.ExecuteScalarAsync<int>(cmd);
     }
 
+    private const string SqlNumeriDateAnno = """
+        SELECT NumeroFattura AS Numero, DataFattura AS Data
+        FROM fatt.Fatture
+        WHERE Anno = @Anno AND IsAttivo = 1;
+        """;
+
+    // DataFattura è DATE SQL → letta come DateTime, poi convertita in DateOnly.
+    private sealed class NumeroDataRow
+    {
+        public int      Numero { get; init; }
+        public DateTime Data   { get; init; }
+    }
+
+    public async Task<IReadOnlyList<FatturaNumeroData>> GetNumeriDateAnnoAsync(int anno, CancellationToken ct = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(ct);
+        var cmd  = new CommandDefinition(SqlNumeriDateAnno, new { Anno = anno }, cancellationToken: ct);
+        var rows = await conn.QueryAsync<NumeroDataRow>(cmd);
+        return rows.Select(r => new FatturaNumeroData(r.Numero, DateOnly.FromDateTime(r.Data))).ToList();
+    }
+
     private const string SqlInsert = """
         INSERT INTO fatt.Fatture
             (IdFattura, IdAvviso, NumeroFattura, Anno, DataFattura, CreatoXML, EsitoXML, Cig, Cup, IsAttivo)

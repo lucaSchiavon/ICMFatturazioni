@@ -3,6 +3,7 @@ using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
 using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
+using ICMFatturazioni.Web.Services;
 
 namespace ICMFatturazioni.Web.Managers;
 
@@ -16,18 +17,21 @@ namespace ICMFatturazioni.Web.Managers;
 /// </summary>
 public sealed class FattureManager : IFattureManager
 {
-    private readonly IFattureRepository       _repo;
-    private readonly IAvvisoFatturaRepository _avvisi;
-    private readonly IAuditManager            _audit;
+    private readonly IFattureRepository        _repo;
+    private readonly IAvvisoFatturaRepository  _avvisi;
+    private readonly IAuditManager             _audit;
+    private readonly IFatturaCoerenzaValidator _coerenza;
 
     public FattureManager(
         IFattureRepository repo,
         IAvvisoFatturaRepository avvisi,
-        IAuditManager audit)
+        IAuditManager audit,
+        IFatturaCoerenzaValidator coerenza)
     {
-        _repo   = repo;
-        _avvisi = avvisi;
-        _audit  = audit;
+        _repo     = repo;
+        _avvisi   = avvisi;
+        _audit    = audit;
+        _coerenza = coerenza;
     }
 
     public Task<Fattura?> GetByIdAsync(Guid idFattura, CancellationToken ct = default)
@@ -76,6 +80,13 @@ public sealed class FattureManager : IFattureManager
             throw new FatturaInvalidaException(
                 FatturaMotivoInvalido.AvvisoGiaFatturato,
                 "Questo avviso è già stato fatturato.");
+
+        // Coerenza numero/data con le fatture già presenti nell'anno: la numerazione
+        // deve seguire l'ordine cronologico (numero crescente ⟹ data non decrescente).
+        // Un'incoerenza è segnalata con FatturaInvalidaException (mostrata in UI). Il
+        // numero duplicato resta presidiato anche dall'indice univoco a DB.
+        var fattureAnno = await _repo.GetNumeriDateAnnoAsync(request.DataFattura.Year, ct);
+        _coerenza.Verifica(request.NumeroFattura, request.DataFattura, fattureAnno);
 
         var fattura = new Fattura
         {

@@ -236,17 +236,25 @@
                         <MudTd Style="padding:2px 4px;white-space:nowrap;">
                             @if (context.IsFatturato)
                             {
+                                @* Anche per gli avvisi già fatturati il bottone di stampa
+                                   report stampa SEMPRE il report dell'avviso (non la
+                                   fattura): il PDF della fattura resta accessibile dalle
+                                   maschere Stampe fatture / Documenti XML. *@
                                 <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
-                                               Size="Size.Small" Ripple="false" Color="Color.Success"
-                                               aria-label="PDF fattura" title="Anteprima fattura"
-                                               OnClick="@(() => AnteprimaFatturaAsync(context))" />
+                                               Size="Size.Small" Ripple="false" Color="Color.Primary"
+                                               aria-label="Anteprima avviso PDF" title="Anteprima avviso"
+                                               OnClick="@(() => AnteprimaPdfAsync(context))" />
                             }
                             else
                             {
                                 <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                                Size="Size.Small" Ripple="false" Color="Color.Primary"
-                                               aria-label="Modifica avviso" title="Modifica / crea fattura"
+                                               aria-label="Modifica avviso" title="Modifica avviso"
                                                OnClick="@(() => ModificaAvvisoAsync(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.ReceiptLong"
+                                               Size="Size.Small" Ripple="false" Color="Color.Success"
+                                               aria-label="Crea fattura" title="Crea fattura da questo avviso"
+                                               OnClick="@(() => CreaFatturaDaAvvisoAsync(context))" />
                                 <MudIconButton Icon="@Icons.Material.Filled.PictureAsPdf"
                                                Size="Size.Small" Ripple="false" Color="Color.Primary"
                                                aria-label="Anteprima avviso PDF" title="Anteprima avviso"
@@ -267,16 +275,22 @@
     <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
 
         <div class="d-flex align-center gap-2 mb-3">
-            <MudIcon Icon="@(_idAvvisoInModifica is null ? Icons.Material.Filled.RequestQuote : Icons.Material.Filled.Edit)" Color="Color.Primary" />
+            <MudIcon Icon="@(_idAvvisoInModifica is null ? Icons.Material.Filled.RequestQuote : (_modalitaCreaFattura ? Icons.Material.Filled.ReceiptLong : Icons.Material.Filled.Edit))" Color="Color.Primary" />
             <MudText Typo="Typo.subtitle1" Style="font-weight:700;">
-                @(_idAvvisoInModifica is null ? "Nuovo avviso di fattura" : $"Modifica avviso del {_tData?.ToString("dd/MM/yyyy")}")
+                @(_idAvvisoInModifica is null
+                    ? "Nuovo avviso di fattura"
+                    : _modalitaCreaFattura
+                        ? $"Crea fattura dall'avviso del {_tData?.ToString("dd/MM/yyyy")}"
+                        : $"Modifica avviso del {_tData?.ToString("dd/MM/yyyy")}")
             </MudText>
             @if (_idAvvisoInModifica is not null)
             {
-                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text" Class="ma-0">In modifica</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="@(_modalitaCreaFattura ? Color.Success : Color.Warning)" Variant="Variant.Text" Class="ma-0">
+                    @(_modalitaCreaFattura ? "Crea fattura" : "In modifica")
+                </MudChip>
                 <MudSpacer />
                 <MudButton Size="Size.Small" Ripple="false" StartIcon="@Icons.Material.Filled.Close" OnClick="ChiudiEditAsync">
-                    Termina senza salvare
+                    @(_modalitaCreaFattura ? "Chiudi" : "Termina senza salvare")
                 </MudButton>
             }
             else if (_wizardFase == WizardFase.Righe)
@@ -288,6 +302,9 @@
         </div>
 
         @* ─────────────── FASE 1: testata ─────────────── *@
+        @* Nascosta in modalità "crea fattura": lì la testata non è editabile. *@
+        @if (!_modalitaCreaFattura)
+        {
         <MudGrid Spacing="2">
             <MudItem xs="12" sm="4" md="3">
                 <MudDatePicker Label="Data avviso *"
@@ -327,6 +344,7 @@
                               Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
         </MudGrid>
+        }
 
         @if (_wizardFase == WizardFase.Testata)
         {
@@ -344,6 +362,11 @@
         }
         else
         {
+            @* In modalità "crea fattura" i controlli di modifica (righe/spese/testata)
+               sono nascosti: restano visibili solo l'anteprima importi e la sezione di
+               creazione fattura. *@
+            @if (!_modalitaCreaFattura)
+            {
             @* ─────────────── FASE 2: righe ─────────────── *@
             <div class="d-flex justify-end mt-2 mb-3">
                 <MudButton Size="Size.Small" Ripple="false" StartIcon="@Icons.Material.Filled.Edit"
@@ -602,6 +625,7 @@
                     </MudText>
                 </div>
             }
+            }@* fine controlli di modifica (nascosti in "crea fattura") *@
 
             @* ── Anteprima cascata fiscale ── *@
             <MudDivider Class="my-3" />
@@ -635,6 +659,10 @@
                 <MudAlert Severity="MudBlazor.Severity.Error" Dense="true" Class="mt-3">@_erroreEmissione</MudAlert>
             }
 
+            @* Pulsanti di emissione/salvataggio: assenti in "crea fattura" (lì l'unica
+               azione è "Crea fattura" nella sezione sottostante). *@
+            @if (!_modalitaCreaFattura)
+            {
             <div class="d-flex justify-end gap-2 mt-3 flex-wrap">
                 <MudButton Ripple="false" StartIcon="@Icons.Material.Filled.Cancel" OnClick="ChiudiEditAsync">
                     @(_idAvvisoInModifica is null ? "Annulla bozza" : "Termina senza salvare")
@@ -648,9 +676,10 @@
                         : (_idAvvisoInModifica is null ? "Termina inserimento" : "Salva modifiche"))
                 </MudButton>
             </div>
+            }
 
-            @* ══════════ Creazione fattura (solo in modifica di un avviso esistente) ══════════ *@
-            @if (_idAvvisoInModifica is not null)
+            @* ══════════ Creazione fattura: solo nella modalità "crea fattura" ══════════ *@
+            @if (_modalitaCreaFattura)
             {
                 <MudDivider Class="my-3" />
                 <MudPaper Elevation="0" Class="mud-background-gray rounded pa-3">
@@ -769,6 +798,12 @@
     // null = nuovo avviso; valorizzato = si sta modificando quell'avviso.
     private Guid?         _idAvvisoInModifica;
     private AvvisoFattura? _avvisoOrig;   // snapshot originale (per copiare gli immutabili)
+
+    // Modalità di apertura di un avviso esistente nel wizard:
+    //   false = MODIFICA (matita): righe/testata editabili, niente sezione fattura;
+    //   true  = CREA FATTURA (icona dedicata): solo anteprima importi + sezione
+    //           "Crea la fattura da questo avviso", niente controlli di modifica.
+    private bool _modalitaCreaFattura;
 
     // ── Creazione fattura (in modifica) ──────────────────────────────────
     private int       _numeroFattura;
@@ -1002,6 +1037,7 @@
         // Stato modifica / fattura
         _idAvvisoInModifica = null;
         _avvisoOrig         = null;
+        _modalitaCreaFattura = false;
         _numeroFattura      = 0;
         _dataFattura        = DateTime.Today;
         _cigFattura         = null;
@@ -1188,12 +1224,19 @@
         finally { _emissioneInCorso = false; }
     }
 
-    // ── Modifica di un avviso esistente ──────────────────────────────────
-    // Carica l'avviso nel wizard (fase Righe), pre-popolando testata, righe e spese.
-    private async Task ModificaAvvisoAsync(AvvisoFattura a)
+    // ── Apertura di un avviso esistente nel wizard ───────────────────────
+    // Due entry point che condividono lo stesso caricamento (testata, righe, spese,
+    // proposta numero fattura), differenziati solo dalla modalità:
+    //   • matita   → modifica (perFattura:false);
+    //   • fattura  → crea fattura (perFattura:true), mostra solo anteprima + sezione fattura.
+    private Task ModificaAvvisoAsync(AvvisoFattura a)     => ApriAvvisoInWizardAsync(a, perFattura: false);
+    private Task CreaFatturaDaAvvisoAsync(AvvisoFattura a) => ApriAvvisoInWizardAsync(a, perFattura: true);
+
+    private async Task ApriAvvisoInWizardAsync(AvvisoFattura a, bool perFattura)
     {
         if (a.IsFatturato) return;  // gli avvisi fatturati sono congelati
         if (_attivitaSelezionata is null) return;
+        _modalitaCreaFattura = perFattura;
 
         _erroreEmissione = string.Empty;
         try
@@ -1391,21 +1434,6 @@
             _erroreEmissione = "Errore durante la creazione della fattura.";
         }
         finally { _emissioneInCorso = false; }
-    }
-
-    // Apre il PDF della fattura collegata a un avviso già fatturato.
-    private async Task AnteprimaFatturaAsync(AvvisoFattura a)
-    {
-        if (a.IdFattura is not { } idFattura) return;
-        try
-        {
-            await JS.InvokeVoidAsync("open", $"/api/fatture/{idFattura}/pdf", "_blank");
-        }
-        catch (Exception ex)
-        {
-            await LogManager.LogErroreAsync(ex, "Apertura PDF fattura fallita.", "AvvisiFattura.AnteprimaFatturaAsync");
-            Snackbar.Add("Impossibile aprire il PDF della fattura.", MudBlazor.Severity.Error);
-        }
     }
 
     // Apre il PDF di cortesia dell'avviso in una nuova scheda (anteprima inline).

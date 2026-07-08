@@ -49,6 +49,13 @@ public enum FatturaMotivoInvalido
     /// poi si può eliminare l'XML.
     /// </summary>
     XmlConEsitoConfermato,
+
+    /// <summary>
+    /// Numero e data della nuova fattura non sono coerenti con la sequenza delle
+    /// fatture già esistenti nell'anno: la numerazione progressiva deve seguire
+    /// l'ordine cronologico (a numero maggiore non può corrispondere data anteriore).
+    /// </summary>
+    SequenzaDataNumeroIncoerente,
 }
 
 /// <summary>

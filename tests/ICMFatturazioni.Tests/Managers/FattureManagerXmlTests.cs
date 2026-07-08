@@ -1,6 +1,7 @@
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Models;
+using ICMFatturazioni.Web.Services;
 
 namespace ICMFatturazioni.Tests.Managers;
 
@@ -26,7 +27,7 @@ public class FattureManagerXmlTests
         var audit   = new FakeAuditManager();
         return new Sut
         {
-            Manager = new FattureManager(fatture, avvisi, audit),
+            Manager = new FattureManager(fatture, avvisi, audit, new FatturaCoerenzaValidator()),
             Fatture = fatture,
             Avvisi  = avvisi,
             Audit   = audit,

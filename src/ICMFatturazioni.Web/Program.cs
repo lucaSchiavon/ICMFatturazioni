@@ -147,6 +147,9 @@ builder.Services.Configure<VerbaliReportOptions>(
     builder.Configuration.GetSection(VerbaliReportOptions.SectionName));
 builder.Services.AddSingleton<IVerbaleReportStorage, VerbaleReportStorage>();
 
+// Servizio puro di verifica coerenza numero/data fattura (stateless) → singleton.
+builder.Services.AddSingleton<IFatturaCoerenzaValidator, FatturaCoerenzaValidator>();
+
 // Servizio puro di calcolo scadenze (stateless) → singleton.
 builder.Services.AddSingleton<IScadenzaCalculator, ScadenzaCalculator>();
 

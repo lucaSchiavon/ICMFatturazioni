@@ -26,6 +26,12 @@ public interface IFattureRepository
     Task<int> GetMaxNumeroAnnoAsync(int anno, CancellationToken ct = default);
 
     /// <summary>
+    /// Coppie (numero, data) di tutte le fatture ATTIVE dell'anno indicato, per la
+    /// verifica di coerenza della numerazione rispetto all'ordine cronologico.
+    /// </summary>
+    Task<IReadOnlyList<FatturaNumeroData>> GetNumeriDateAnnoAsync(int anno, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserisce la fattura (PK/Anno già assegnati app-side).
     /// </summary>
     /// <exception cref="Managers.FatturaInvalidaException">
