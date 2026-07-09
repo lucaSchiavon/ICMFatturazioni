@@ -158,6 +158,18 @@ internal sealed class AnagraficaManager : IAnagraficaManager
     /// </summary>
     private static void ValidaCampiObbligatori(Anagrafica anagrafica)
     {
+        // Enti pubblici non supportati: la generazione dei tracciati XML verso la
+        // PA (FPA12, split payment) non è implementata. Blocco categorico — vale
+        // per creazione e modifica — allineato allo stand-by del ramo fiscale PA.
+        if (anagrafica.TipoAnagrafica == TipoAnagrafica.EntePubblico)
+        {
+            throw new AnagraficaInvalidaException(
+                AnagraficaInvalidaMotivo.EntePubblicoNonSupportato,
+                "Non è possibile creare un'anagrafica di tipo «Ente pubblico»: la generazione "
+                + "dei tracciati per la Pubblica Amministrazione non è ancora implementata. "
+                + "Sono ammesse solo anagrafiche Privato o Società.");
+        }
+
         if (string.IsNullOrWhiteSpace(anagrafica.RagioneSociale))
         {
             throw new AnagraficaInvalidaException(

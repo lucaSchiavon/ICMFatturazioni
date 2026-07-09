@@ -120,6 +120,41 @@ public class AnagraficaManagerTests
         Assert.Equal(AnagraficaInvalidaMotivo.RagioneSocialeObbligatoria, ex.Motivo);
     }
 
+    // Anagrafica di tipo Ente pubblico (TipoAnagrafica è init-only → si costruisce
+    // direttamente, non si può riassegnare dopo la creazione).
+    private static Anagrafica AnagraficaEnte() => new()
+    {
+        TipoAnagrafica = TipoAnagrafica.EntePubblico,
+        RagioneSociale = "Comune di Verona",
+        SiglaPaese     = "IT",
+    };
+
+    [Fact]
+    public async Task CreaAsync_EntePubblico_LanciaAnagraficaInvalidaConMotivoEnteNonSupportato()
+    {
+        var fake = new FakeAnagraficaRepository();
+        var sut = NewSut(fake);
+
+        var ex = await Assert.ThrowsAsync<AnagraficaInvalidaException>(
+            () => sut.CreaAsync(AnagraficaEnte()));
+
+        Assert.Equal(AnagraficaInvalidaMotivo.EntePubblicoNonSupportato, ex.Motivo);
+        // La guardia precede il persist: nessuna anagrafica salvata.
+        Assert.Empty(await fake.GetAttiviAsync());
+    }
+
+    [Fact]
+    public async Task AggiornaAsync_EntePubblico_LanciaAnagraficaInvalida()
+    {
+        var fake = new FakeAnagraficaRepository();
+        var sut = NewSut(fake);
+
+        var ex = await Assert.ThrowsAsync<AnagraficaInvalidaException>(
+            () => sut.AggiornaAsync(AnagraficaEnte()));
+
+        Assert.Equal(AnagraficaInvalidaMotivo.EntePubblicoNonSupportato, ex.Motivo);
+    }
+
     [Fact]
     public async Task AggiornaAsync_RagioneSocialeVuota_LanciaAnagraficaInvalida()
     {

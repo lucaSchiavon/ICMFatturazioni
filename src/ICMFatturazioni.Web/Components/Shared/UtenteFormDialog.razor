@@ -13,6 +13,7 @@
 @using ICMFatturazioni.Web.Managers
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Validation
 @inject IUtenteManager UtenteManager
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
@@ -55,6 +56,8 @@
                                   Required="@(!IsModifica)"
                                   RequiredError="Email obbligatoria"
                                   MaxLength="256"
+                                  Validation="_validaEmail"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense"
                                   Class="@(IsModifica ? null : "campo-obbligatorio")"
@@ -119,6 +122,10 @@
     private bool _isValid;
     private bool _salvataggio;
     private string? _erroreServer;
+
+    // Formato email: in creazione l'obbligatorietà è già coperta da Required,
+    // qui si valida solo la forma dell'indirizzo (vuoto = valido).
+    private readonly Func<string?, string?> _validaEmail = AnagraficaValidator.ValidaEmail;
 
     private bool IsModifica => Iniziale is not null;
 

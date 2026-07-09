@@ -19,6 +19,7 @@
 @using ICMFatturazioni.Web.Managers
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Validation
 @inject IBancaAppoggioManager BancaAppoggioManager
 @inject IBancaManager BancaManager
 @inject IAgenziaManager AgenziaManager
@@ -118,6 +119,8 @@
                     <MudTextField @bind-Value="_model.ABI"
                                   Label="ABI"
                                   MaxLength="5"
+                                  Validation="_validaAbiCab"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense"
                                   HelperText="5 cifre · codice istituto" />
@@ -144,6 +147,8 @@
                     <MudTextField @bind-Value="_model.CAB"
                                   Label="CAB"
                                   MaxLength="5"
+                                  Validation="_validaAbiCab"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense"
                                   HelperText="5 cifre · codice filiale" />
@@ -221,6 +226,11 @@
     private bool _isValid;
     private bool _salvataggio;
     private string? _erroreServer;
+
+    // ABI e CAB: 5 cifre. Facoltativi (vuoto = valido); il manager riapplica la
+    // stessa regola lato server (doppia difesa) e ne verifica la coerenza con l'IBAN.
+    private readonly Func<string?, string?> _validaAbiCab = static v =>
+        BancariValidazione.CodiceAbiCabFormatoValido(v) ? null : "Deve essere di 5 cifre.";
 
     private bool _isAzienda = true;
 

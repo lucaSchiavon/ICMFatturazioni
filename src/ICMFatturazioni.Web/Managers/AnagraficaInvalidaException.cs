@@ -12,6 +12,13 @@ public enum AnagraficaInvalidaMotivo
     RagioneSocialeObbligatoria,
 
     /// <summary>
+    /// Tipologia "Ente pubblico" non supportata: la generazione dei tracciati
+    /// XML per la Pubblica Amministrazione (FatturaPA/FPA12, split payment) non è
+    /// implementata. Si possono creare solo anagrafiche Privato o Società.
+    /// </summary>
+    EntePubblicoNonSupportato,
+
+    /// <summary>
     /// La sigla paese non corrisponde a nessun record di <c>fatt.Paesi</c>
     /// (intercettata via FK constraint).
     /// </summary>

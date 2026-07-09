@@ -22,6 +22,7 @@
 @using ICMFatturazioni.Web.Managers
 @using ICMFatturazioni.Web.Models
 @using ICMFatturazioni.Web.Repositories.Interfaces
+@using ICMFatturazioni.Web.Validation
 @inject IAnagraficaManager AnagraficaManager
 @inject ICodicePagamentoManager CodicePagamentoManager
 @inject IBancaAppoggioManager BancaAppoggioManager
@@ -33,6 +34,23 @@
 <MudDialog>
     <DialogContent>
         <MudForm @ref="_form" Model="_model" @bind-IsValid="_isValid">
+            @* Enti pubblici non supportati: la generazione dei tracciati verso la
+               PA (FPA12) non è implementata. Warning immediato alla selezione e
+               salvataggio bloccato (il manager rifiuta comunque — doppia difesa). *@
+            @if (EnteNonConsentito)
+            {
+                <MudAlert Severity="MudBlazor.Severity.Warning"
+                          Variant="Variant.Filled"
+                          Icon="@Icons.Material.Filled.Block"
+                          Class="mb-3">
+                    <MudText Typo="Typo.subtitle2" Style="font-weight:600;">
+                        Tipologia «Ente pubblico» non disponibile
+                    </MudText>
+                    Non è possibile creare un'anagrafica di tipo Ente pubblico: la generazione dei
+                    tracciati per la Pubblica Amministrazione non è ancora implementata.
+                    Selezionare «Privato» o «Società».
+                </MudAlert>
+            }
             <MudGrid Spacing="3">
                 <MudItem xs="12" sm="6">
                     <MudSelect T="TipoAnagrafica"
@@ -71,7 +89,9 @@
                 <MudItem xs="6" sm="4">
                     <MudTextField @bind-Value="_model.CAP"
                                   Label="CAP"
-                                  MaxLength="10"
+                                  MaxLength="5"
+                                  Validation="_validaCap"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense" />
                 </MudItem>
@@ -115,6 +135,8 @@
                     <MudTextField @bind-Value="_model.PIVA"
                                   Label="P.IVA / Codice fiscale"
                                   MaxLength="20"
+                                  Validation="_validaPiva"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense" />
                 </MudItem>
@@ -131,6 +153,8 @@
                                   Label="Email"
                                   InputType="InputType.Email"
                                   MaxLength="200"
+                                  Validation="_validaEmail"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense" />
                 </MudItem>
@@ -264,6 +288,8 @@
                     <MudTextField @bind-Value="_model.CodiceDestinatario"
                                   Label="Codice destinatario SDI"
                                   MaxLength="10"
+                                  Validation="_validaSdi"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense"
                                   HelperText="7 caratteri assegnati dal cliente, in alternativa alla PEC" />
@@ -273,6 +299,8 @@
                                   Label="PEC fattura elettronica"
                                   InputType="InputType.Email"
                                   MaxLength="200"
+                                  Validation="_validaPec"
+                                  Immediate="true"
                                   Variant="Variant.Outlined"
                                   Margin="Margin.Dense" />
                 </MudItem>
@@ -316,7 +344,7 @@
         <MudButton Variant="Variant.Filled"
                    Color="Color.Primary"
                    OnClick="Salva"
-                   Disabled="@(!_isValid || _salvataggio)"
+                   Disabled="@(!_isValid || _salvataggio || EnteNonConsentito)"
                    Ripple="false">
             @if (_salvataggio)
             {
@@ -344,6 +372,14 @@
     private bool _salvataggio;
     private string? _erroreServer;
 
+    // Validatori di formato (feedback immediato + Salva disabilitato se invalido).
+    // Campi facoltativi: vuoto = valido; il formato si controlla solo se compilato.
+    private readonly Func<string?, string?> _validaPiva  = AnagraficaValidator.ValidaPivaOCodiceFiscale;
+    private readonly Func<string?, string?> _validaEmail = AnagraficaValidator.ValidaEmail;
+    private readonly Func<string?, string?> _validaPec   = AnagraficaValidator.ValidaPec;
+    private readonly Func<string?, string?> _validaSdi   = AnagraficaValidator.ValidaCodiceDestinatarioSdi;
+    private readonly Func<string?, string?> _validaCap   = AnagraficaValidator.ValidaCap;
+
     private IReadOnlyList<LookupItem> _paesi = Array.Empty<LookupItem>();
     private IReadOnlyList<LookupItem> _province = Array.Empty<LookupItem>();
 
@@ -359,6 +395,13 @@
     private IReadOnlyList<CodiceIVA> _codiciIva = Array.Empty<CodiceIVA>();
 
     private bool IsModifica => Iniziale is not null;
+
+    /// <summary>
+    /// True se la tipologia scelta è "Ente pubblico": tipo non supportato (i
+    /// tracciati XML verso la PA non sono implementati). Pilota il warning e il
+    /// blocco del salvataggio; il manager rifiuta comunque (doppia difesa).
+    /// </summary>
+    private bool EnteNonConsentito => _model.TipoAnagrafica == TipoAnagrafica.EntePubblico;
 
     protected override async Task OnInitializedAsync()
     {
@@ -391,6 +434,14 @@
     {
         _erroreServer = null;
         _infoMessaggio = null;
+
+        // Guardia esplicita (oltre al pulsante disabilitato): niente enti pubblici.
+        if (EnteNonConsentito)
+        {
+            _erroreServer = "Tipologia «Ente pubblico» non supportata: selezionare Privato o Società.";
+            return;
+        }
+
         await _form.ValidateAsync();
         if (!_isValid)
         {
