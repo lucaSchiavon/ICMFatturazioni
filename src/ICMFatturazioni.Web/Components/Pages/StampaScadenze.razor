@@ -24,6 +24,7 @@
 
 @inject IAnagraficaManager AnagraficaManager
 @inject ITipoAttivitaManager TipoAttivitaManager
+@inject IAttivitaManager AttivitaManager
 @inject IScadenzaPagamentoManager ScadenzaManager
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 @inject ISnackbar Snackbar
@@ -88,12 +89,56 @@
         </MudPaper>
     </MudItem>
 
-    @* ── Col 2: Tipo attività ───────────────────────────────────────── *@
+    @* ── Col 2: Attività (colonna centrale piena, come in Spese anticipate).
+       Il Tipo attività è spostato nel box Scadenze così che qui l'Attività occupi
+       tutta l'altezza. Si popola quando è selezionato un cliente (il tipo, se scelto,
+       restringe). La lista prende lo spazio verticale via flex per pareggiare le colonne. *@
     <MudItem xs="12" md="3" Style="display:flex;flex-direction:column;">
         <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
-            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Tipo attività</MudText>
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Attività</MudText>
 
-            <div class="icm-sellist mb-2" style="height:290px;">
+            <div class="icm-sellist mb-2" style="flex:1;min-height:230px;">
+                @if (_anagraficaSelezionata is null)
+                {
+                    <div class="icm-sellist-placeholder">Seleziona un cliente per scegliere un'attività.</div>
+                }
+                else if (_caricamentoAttivita)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!_attivitaLista.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessuna attività per questa selezione.</div>
+                }
+                else
+                {
+                    @foreach (var a in _attivitaLista)
+                    {
+                        <div class="icm-sellist-item icm-sellist-item-2col @(a.IdAttivita == _attivitaSelezionata?.IdAttivita ? "selected" : "")"
+                             @onclick="@(() => ToggleAttivitaAsync(a))">
+                            <span class="icm-nr">@a.Numero</span>
+                            <span class="icm-desc">@a.Descrizione</span>
+                        </div>
+                    }
+                }
+            </div>
+
+            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
+                @(_attivitaSelezionata is null
+                    ? "Nessuna attività selezionata: tutte le attività."
+                    : $"Attività: {_attivitaSelezionata.Numero} — {_attivitaSelezionata.Descrizione}")
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 3: Periodo e stato delle scadenze ──────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            @* Tipo attività (in alto): la lista occupa lo spazio verticale residuo
+               (flex) per pareggiare l'altezza delle colonne. Nessuna selezione = tutti. *@
+            <MudText Typo="Typo.overline" Class="mb-1" Style="font-weight:700;">Tipo attività</MudText>
+
+            <div class="icm-sellist mb-1" style="flex:1;min-height:90px;">
                 @if (_caricamentoIniziale)
                 {
                     <div class="icm-sellist-placeholder">Caricamento…</div>
@@ -114,17 +159,15 @@
                 }
             </div>
 
-            <MudText Typo="Typo.caption" Style="color:var(--mud-palette-text-secondary);">
+            <MudText Typo="Typo.caption" Class="mb-2" Style="color:var(--mud-palette-text-secondary);">
                 @(_tipoAttivitaSelezionato is null
-                    ? "Nessun tipo selezionato: tutte le attività."
-                    : $"Tipo selezionato: {_tipoAttivitaSelezionato.Descrizione}")
+                    ? "Nessun tipo: tutte le attività."
+                    : $"Tipo: {_tipoAttivitaSelezionato.Descrizione}")
             </MudText>
-        </MudPaper>
-    </MudItem>
 
-    @* ── Col 3: Periodo e stato delle scadenze ──────────────────────── *@
-    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
-        <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="display:flex;flex-direction:column;flex:1;">
+            <MudDivider Class="mb-2" />
+
+            @* Scadenze (in basso): intervallo date + stato scadute/evase. *@
             <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Scadenze</MudText>
 
             <MudDatePicker Date="_dallaData" DateChanged="OnDallaDataChangedAsync"
@@ -198,6 +241,84 @@
     </div>
 </MudPaper>
 
+@* ═══ Griglia di anteprima: rispecchia il contenuto del PDF (gruppi anno/mese,
+   totali di mese/anno/generale). Stessa query e ordinamento del report, quindi
+   ciò che si vede è esattamente ciò che il pulsante "Stampa scadenzario" produce. ═══ *@
+@if (!IntervalloDateInvalido && _righeAnteprima.Count > 0)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-3 mt-3">
+        <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Anteprima scadenzario</MudText>
+
+        <div class="icm-preview-wrap">
+            <table class="icm-preview-scad">
+                <thead>
+                    <tr>
+                        <th class="col-scad">Scadenza</th>
+                        <th class="ctr">T</th>
+                        <th>Cliente</th>
+                        <th>Attività</th>
+                        <th>Dettaglio</th>
+                        <th class="num">Importo €</th>
+                        <th class="ctr">Evasa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var perAnno in _righeAnteprima.GroupBy(r => r.DataScadenza.Year).OrderBy(g => g.Key))
+                    {
+                        <tr class="grp-anno"><td colspan="7">ANNO: @perAnno.Key</td></tr>
+
+                        @foreach (var perMese in perAnno.GroupBy(r => r.DataScadenza.Month).OrderBy(g => g.Key))
+                        {
+                            <tr class="grp-mese"><td colspan="7">MESE DI: @NomeMese(perMese.Key)</td></tr>
+
+                            @foreach (var r in perMese)
+                            {
+                                <tr class="@RigaClasse(r)">
+                                    <td class="col-scad">@r.DataScadenza.ToString("dd/MM/yyyy")</td>
+                                    <td class="ctr">@r.TipoCliente.ToDbCode()</td>
+                                    <td>@r.ClienteRagioneSociale</td>
+                                    <td>@Abbrevia(r.TipoAttivitaDescrizione)@r.NumeroAttivita-@r.DescrizioneAttivita</td>
+                                    <td>
+                                        @Abbrevia(r.TipoDettaglioDescrizione)@r.DescrizioneDettaglio
+                                        @if (!string.IsNullOrWhiteSpace(r.NotaScadenza))
+                                        {
+                                            <span class="ann">rata: @r.NotaScadenza</span>
+                                        }
+                                        @if (AnnotazioneEvasa(r) is { } annot)
+                                        {
+                                            <span class="ann">@annot</span>
+                                        }
+                                    </td>
+                                    <td class="num">@r.Importo.ToString("N2", _itCulture)</td>
+                                    <td class="ctr">@(r.IsEvasa ? "Sì" : "No")</td>
+                                </tr>
+                            }
+
+                            <tr class="tot-mese">
+                                <td colspan="5">TOTALE @NomeMese(perMese.Key) @perAnno.Key</td>
+                                <td class="num">@perMese.Sum(x => x.Importo).ToString("N2", _itCulture)</td>
+                                <td></td>
+                            </tr>
+                        }
+
+                        <tr class="tot-anno">
+                            <td colspan="5">TOTALE @perAnno.Key</td>
+                            <td class="num">@perAnno.Sum(x => x.Importo).ToString("N2", _itCulture)</td>
+                            <td></td>
+                        </tr>
+                    }
+
+                    <tr class="tot-gen">
+                        <td colspan="5">TOTALE GENERALE</td>
+                        <td class="num">@_righeAnteprima.Sum(x => x.Importo).ToString("N2", _itCulture)</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </MudPaper>
+}
+
 @code {
     private enum FiltroTipo { Tutti, Enti, Societa, Privati }
 
@@ -206,12 +327,16 @@
     // ── Cataloghi ───────────────────────────────────────────────────────
     private IReadOnlyList<Anagrafica>   _anagrafiche = Array.Empty<Anagrafica>();
     private IReadOnlyList<TipoAttivita> _tipiAttivita = Array.Empty<TipoAttivita>();
+    // Attività del cliente selezionato (eventualmente ristrette al tipo scelto).
+    private IReadOnlyList<Attivita>     _attivitaLista = Array.Empty<Attivita>();
 
     // ── Stato dei filtri ────────────────────────────────────────────────
     private FiltroTipo    _filtroTipo = FiltroTipo.Tutti;
     private string        _filtroRagioneSociale = string.Empty;
     private Anagrafica?   _anagraficaSelezionata;
     private TipoAttivita? _tipoAttivitaSelezionato;
+    private Attivita?     _attivitaSelezionata;
+    private bool          _caricamentoAttivita;
     private DateTime?     _dallaData;
     private DateTime?     _allaData;
     private FiltroScadute _scadute = FiltroScadute.Tutte;
@@ -222,6 +347,8 @@
     private bool    _caricamentoAnteprima;
     private int     _conteggioAnteprima;
     private decimal _totaleAnteprima;
+    // Righe del report (stessa query e ordinamento del PDF) per la griglia di anteprima.
+    private IReadOnlyList<ScadenzaReport> _righeAnteprima = Array.Empty<ScadenzaReport>();
     // Versione dell'ultima richiesta: scarta le risposte superate da un filtro
     // cambiato nel frattempo (le letture non sono annullabili dalla UI).
     private int _versioneAnteprima;
@@ -278,11 +405,14 @@
     {
         _filtroTipo = nuovo;
         // Il cliente selezionato che non appartiene più alla tipologia scelta
-        // viene deselezionato (stesso comportamento di Stampe fatture).
+        // viene deselezionato (stesso comportamento di Stampe fatture). In tal caso
+        // decade anche la selezione dell'attività e la sua lista si svuota.
         if (_anagraficaSelezionata is not null
             && !AnagraficheFiltrate.Any(a => a.IdAnagrafica == _anagraficaSelezionata.IdAnagrafica))
         {
             _anagraficaSelezionata = null;
+            _attivitaSelezionata   = null;
+            await CaricaAttivitaAsync();
         }
         await AggiornaAnteprimaAsync();
     }
@@ -290,13 +420,52 @@
     private async Task ToggleAnagraficaAsync(Anagrafica a)
     {
         _anagraficaSelezionata = _anagraficaSelezionata?.IdAnagrafica == a.IdAnagrafica ? null : a;
+        // Cambiato il cliente, la lista/selezione attività va ricostruita.
+        _attivitaSelezionata = null;
+        await CaricaAttivitaAsync();
         await AggiornaAnteprimaAsync();
     }
 
     private async Task ToggleTipoAttivitaAsync(TipoAttivita t)
     {
         _tipoAttivitaSelezionato = _tipoAttivitaSelezionato?.IdTipoAttivita == t.IdTipoAttivita ? null : t;
+        // Il tipo restringe le attività del cliente: ricarico ed azzero la selezione.
+        _attivitaSelezionata = null;
+        await CaricaAttivitaAsync();
         await AggiornaAnteprimaAsync();
+    }
+
+    private async Task ToggleAttivitaAsync(Attivita a)
+    {
+        _attivitaSelezionata = _attivitaSelezionata?.IdAttivita == a.IdAttivita ? null : a;
+        await AggiornaAnteprimaAsync();
+    }
+
+    // Carica le attività del cliente selezionato: se è scelto anche un tipo si usa
+    // la combo anagrafica+tipo, altrimenti tutte le attività del cliente. Senza
+    // cliente la lista resta vuota (il filtro attività è disabilitato).
+    private async Task CaricaAttivitaAsync()
+    {
+        if (_anagraficaSelezionata is null)
+        {
+            _attivitaLista = Array.Empty<Attivita>();
+            return;
+        }
+        _caricamentoAttivita = true;
+        try
+        {
+            _attivitaLista = _tipoAttivitaSelezionato is null
+                ? await AttivitaManager.ElencoPerAnagraficaAsync(_anagraficaSelezionata.IdAnagrafica)
+                : await AttivitaManager.ElencoPerAnagraficaTipoAsync(
+                    _anagraficaSelezionata.IdAnagrafica, _tipoAttivitaSelezionato.IdTipoAttivita);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento attività (filtro scadenzario) fallito.", "StampaScadenze.CaricaAttivitaAsync");
+            Snackbar.Add("Errore nel caricamento delle attività.", MudBlazor.Severity.Error);
+            _attivitaLista = Array.Empty<Attivita>();
+        }
+        finally { _caricamentoAttivita = false; }
     }
 
     private async Task OnDallaDataChangedAsync(DateTime? d) { _dallaData = d; await AggiornaAnteprimaAsync(); }
@@ -318,6 +487,7 @@
             },
             IdAnagrafica:   _anagraficaSelezionata?.IdAnagrafica,
             IdTipoAttivita: _tipoAttivitaSelezionato?.IdTipoAttivita,
+            IdAttivita:     _attivitaSelezionata?.IdAttivita,
             DallaData:      _dallaData is { } dal ? DateOnly.FromDateTime(dal) : null,
             AllaData:       _allaData  is { } al  ? DateOnly.FromDateTime(al)  : null,
             Scadute:        _scadute,
@@ -334,6 +504,7 @@
         {
             var righe = await ScadenzaManager.ReportScadenzarioAsync(BuildFiltro());
             if (versione != _versioneAnteprima) return;   // risposta superata
+            _righeAnteprima     = righe;
             _conteggioAnteprima = righe.Count;
             _totaleAnteprima    = righe.Sum(r => r.Importo);
         }
@@ -369,6 +540,7 @@
         if (f.TipoCliente is { } tipo)      parametri.Add($"tipoCliente={tipo.ToDbCode()}");
         if (f.IdAnagrafica is { } idA)      parametri.Add($"idAnagrafica={idA:D}");
         if (f.IdTipoAttivita is { } idT)    parametri.Add($"idTipoAttivita={idT:D}");
+        if (f.IdAttivita is { } idAtt)      parametri.Add($"idAttivita={idAtt:D}");
         if (f.DallaData is { } dal)         parametri.Add($"dal={dal:yyyy-MM-dd}");
         if (f.AllaData is { } al)           parametri.Add($"al={al:yyyy-MM-dd}");
         if (f.Scadute != FiltroScadute.Tutte)  parametri.Add($"scadute={f.Scadute}");
@@ -377,4 +549,32 @@
             ? "/api/report/scadenzario"
             : $"/api/report/scadenzario?{string.Join("&", parametri)}";
     }
+
+    // ── Helper per la griglia di anteprima (stessa resa del PDF) ────────────
+
+    // Nome mese in italiano maiuscolo ("LUGLIO"), come le righe-gruppo del report.
+    private static string NomeMese(int mese)
+        => _itCulture.DateTimeFormat.GetMonthName(mese).ToUpper(_itCulture);
+
+    // "(PROGE) " dal tipo "PROGETTAZIONI": prime 5 lettere fra parentesi (come il PDF);
+    // stringa vuota se il tipo manca.
+    private static string Abbrevia(string? tipo)
+    {
+        if (string.IsNullOrWhiteSpace(tipo)) return string.Empty;
+        var t = tipo.Trim().ToUpper(_itCulture);
+        return $"({(t.Length <= 5 ? t : t[..5])}) ";
+    }
+
+    // Annotazione secondaria di una scadenza (nota rata / evasione) per la cella Dettaglio.
+    private static string? AnnotazioneEvasa(ScadenzaReport r)
+        => !r.IsEvasa ? null
+         : r.AvvisoDataEvasione is { } d ? $"evasa nell'avviso del {d.ToString("dd/MM/yyyy", _itCulture)}"
+         : "evasa in avviso";
+
+    // Classe colore della riga nell'anteprima (NON nel PDF): verde se evasa, rosso
+    // se non evasa ma scaduta (data < oggi), nessuna (nero) negli altri casi.
+    private static string? RigaClasse(ScadenzaReport r)
+        => r.IsEvasa ? "riga-evasa"
+         : r.DataScadenza < DateOnly.FromDateTime(DateTime.Today) ? "riga-scaduta"
+         : null;
 }

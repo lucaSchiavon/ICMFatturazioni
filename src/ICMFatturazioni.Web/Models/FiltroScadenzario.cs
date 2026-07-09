@@ -44,6 +44,7 @@ public enum FiltroEvase
 /// <param name="TipoCliente">Tipologia cliente (S/P/E); null = tutti i tipi.</param>
 /// <param name="IdAnagrafica">Cliente specifico; null = tutti i clienti.</param>
 /// <param name="IdTipoAttivita">Tipo attività (CONSULENZE, PROGETTAZIONI, …); null = tutti.</param>
+/// <param name="IdAttivita">Attività specifica (fatt.Attivita); null = tutte le attività.</param>
 /// <param name="DallaData">Limite inferiore (incluso) sulla data scadenza; null = nessuno.</param>
 /// <param name="AllaData">Limite superiore (incluso) sulla data scadenza; null = nessuno.</param>
 /// <param name="Scadute">Filtro scadute/non scadute rispetto a oggi.</param>
@@ -52,6 +53,7 @@ public sealed record FiltroScadenzario(
     TipoAnagrafica? TipoCliente    = null,
     Guid?           IdAnagrafica   = null,
     Guid?           IdTipoAttivita = null,
+    Guid?           IdAttivita     = null,
     DateOnly?       DallaData      = null,
     DateOnly?       AllaData       = null,
     FiltroScadute   Scadute        = FiltroScadute.Tutte,

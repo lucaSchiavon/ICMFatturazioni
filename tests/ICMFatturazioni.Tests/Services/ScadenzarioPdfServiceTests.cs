@@ -71,6 +71,29 @@ public class ScadenzarioPdfServiceTests
             => throw new NotSupportedException();
     }
 
+    private sealed class FakeAttivitaManagerPdf : IAttivitaManager
+    {
+        public Attivita? Attivita { get; set; }
+
+        public Task<Attivita?> GetByIdAsync(Guid idAttivita, CancellationToken cancellationToken = default)
+            => Task.FromResult(Attivita);
+
+        public Task<IReadOnlyList<Attivita>> ElencoAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<Attivita>> ElencoPerAnagraficaAsync(Guid idAnagrafica, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<IReadOnlyList<Attivita>> ElencoPerAnagraficaTipoAsync(Guid idAnagrafica, Guid idTipoAttivita, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<Guid> CreaAsync(Attivita attivita, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task AggiornaAsync(Attivita attivita, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task EliminaAsync(Guid idAttivita, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<bool> EEliminabileAsync(Guid idAttivita, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
     // ── Helper ──────────────────────────────────────────────────────────────
 
     private static ScadenzaReport Riga(
@@ -92,12 +115,13 @@ public class ScadenzarioPdfServiceTests
         TipoDettaglioDescrizione: "DISCIPLINARE",
         DescrizioneDettaglio:     "Direzione lavori opere edili");
 
-    private static (ScadenzarioPdfService sut, FakeScadenzaManager scadenze, FakeAnagraficaManagerPdf anagrafiche, FakeTipoAttivitaManagerPdf tipi) NewSut()
+    private static (ScadenzarioPdfService sut, FakeScadenzaManager scadenze, FakeAnagraficaManagerPdf anagrafiche, FakeTipoAttivitaManagerPdf tipi, FakeAttivitaManagerPdf attivita) NewSut()
     {
         var scadenze    = new FakeScadenzaManager();
         var anagrafiche = new FakeAnagraficaManagerPdf();
         var tipi        = new FakeTipoAttivitaManagerPdf();
-        return (new ScadenzarioPdfService(scadenze, anagrafiche, tipi), scadenze, anagrafiche, tipi);
+        var attivita    = new FakeAttivitaManagerPdf();
+        return (new ScadenzarioPdfService(scadenze, anagrafiche, tipi, attivita), scadenze, anagrafiche, tipi, attivita);
     }
 
     private static void AssertIsPdf(byte[] bytes)
@@ -116,7 +140,7 @@ public class ScadenzarioPdfServiceTests
     [Fact]
     public async Task GeneraAsync_NessunaScadenza_ProduceComunquePdf()
     {
-        var (sut, _, _, _) = NewSut();
+        var (sut, _, _, _, _) = NewSut();
 
         var pdf = await sut.GeneraAsync(new FiltroScadenzario());
 
@@ -126,7 +150,7 @@ public class ScadenzarioPdfServiceTests
     [Fact]
     public async Task GeneraAsync_ScadenzeSuPiuAnniEMesi_ProducePdf()
     {
-        var (sut, scadenze, _, _) = NewSut();
+        var (sut, scadenze, _, _, _) = NewSut();
         // Due anni, tre mesi: esercita gruppi anno/mese e tutti i totali.
         scadenze.Righe.Add(Riga(data: new DateOnly(2025, 7, 28), importo: 12456m));
         scadenze.Righe.Add(Riga(data: new DateOnly(2025, 8, 31), importo: 766m, nota: "saldo 25%"));
@@ -140,7 +164,7 @@ public class ScadenzarioPdfServiceTests
     [Fact]
     public async Task GeneraAsync_ConEvase_ProducePdf()
     {
-        var (sut, scadenze, _, _) = NewSut();
+        var (sut, scadenze, _, _, _) = NewSut();
         scadenze.Righe.Add(Riga(evasa: true, avvisoIl: new DateOnly(2026, 7, 2)));
         scadenze.Righe.Add(Riga(evasa: true));   // evasa senza data avviso (nav mancante)
 
@@ -154,7 +178,7 @@ public class ScadenzarioPdfServiceTests
     [Fact]
     public void ComponiDescrizioneFiltro_FiltroVuoto_TuttiClientiTutteAttivita()
     {
-        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(new FiltroScadenzario(), null, null);
+        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(new FiltroScadenzario(), null, null, null);
 
         Assert.Equal("Tutti i Clienti - Tutte le Attività", testo);
     }
@@ -166,7 +190,7 @@ public class ScadenzarioPdfServiceTests
             TipoCliente:  TipoAnagrafica.Privato,
             IdAnagrafica: Guid.NewGuid());
 
-        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(filtro, "ROSSI MARIO", null);
+        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(filtro, "ROSSI MARIO", null, null);
 
         Assert.StartsWith("Cliente: ROSSI MARIO", testo);
         Assert.DoesNotContain("Privati", testo);
@@ -179,7 +203,7 @@ public class ScadenzarioPdfServiceTests
     public void ComponiDescrizioneFiltro_TipologiaCliente(TipoAnagrafica tipo, string atteso)
     {
         var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(
-            new FiltroScadenzario(TipoCliente: tipo), null, null);
+            new FiltroScadenzario(TipoCliente: tipo), null, null, null);
 
         Assert.StartsWith(atteso, testo);
     }
@@ -195,7 +219,7 @@ public class ScadenzarioPdfServiceTests
             Scadute:        FiltroScadute.SoloNonScadute,
             Evase:          FiltroEvase.SoloNonEvase);
 
-        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(filtro, "GARDACAMP S.R.L.", "PROGETTAZIONI");
+        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(filtro, "GARDACAMP S.R.L.", "PROGETTAZIONI", null);
 
         Assert.Equal(
             "Cliente: GARDACAMP S.R.L. - Attività: PROGETTAZIONI - " +
@@ -204,10 +228,23 @@ public class ScadenzarioPdfServiceTests
     }
 
     [Fact]
+    public void ComponiDescrizioneFiltro_ConAttivitaSpecifica_AggiungeLaVoceAttivita()
+    {
+        var filtro = new FiltroScadenzario(
+            IdAnagrafica: Guid.NewGuid(),
+            IdAttivita:   Guid.NewGuid());
+
+        var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(
+            filtro, "GARDACAMP S.R.L.", null, "n. 799 — Ampliamento del villaggio del Garda.");
+
+        Assert.Contains("Attività n. 799 — Ampliamento del villaggio del Garda.", testo);
+    }
+
+    [Fact]
     public void ComponiDescrizioneFiltro_SoloDataInizio_ScadenzeDal()
     {
         var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(
-            new FiltroScadenzario(DallaData: new DateOnly(2026, 7, 1)), null, null);
+            new FiltroScadenzario(DallaData: new DateOnly(2026, 7, 1)), null, null, null);
 
         Assert.Contains("Scadenze dal 01/07/2026", testo);
         Assert.DoesNotContain(" al ", testo.Replace("Scadenze dal", ""));
@@ -217,7 +254,7 @@ public class ScadenzarioPdfServiceTests
     public void ComponiDescrizioneFiltro_SoloDataFine_ScadenzeFinoAl()
     {
         var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(
-            new FiltroScadenzario(AllaData: new DateOnly(2026, 12, 31)), null, null);
+            new FiltroScadenzario(AllaData: new DateOnly(2026, 12, 31)), null, null, null);
 
         Assert.Contains("Scadenze fino al 31/12/2026", testo);
     }
@@ -227,7 +264,7 @@ public class ScadenzarioPdfServiceTests
     {
         var testo = ScadenzarioPdfService.ComponiDescrizioneFiltro(
             new FiltroScadenzario(Scadute: FiltroScadute.SoloScadute, Evase: FiltroEvase.SoloEvase),
-            null, null);
+            null, null, null);
 
         Assert.EndsWith("Solo scadute - Solo evase", testo);
     }
@@ -237,7 +274,7 @@ public class ScadenzarioPdfServiceTests
     [Fact]
     public async Task GeneraAsync_ConClienteETipoSelezionati_RisolveINomiSenzaErrori()
     {
-        var (sut, _, anagrafiche, tipi) = NewSut();
+        var (sut, _, anagrafiche, tipi, _) = NewSut();
         var idCliente = Guid.NewGuid();
         var idTipo    = Guid.NewGuid();
         anagrafiche.Cliente = new Anagrafica

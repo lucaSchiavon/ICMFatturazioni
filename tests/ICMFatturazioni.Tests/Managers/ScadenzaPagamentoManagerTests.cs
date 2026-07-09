@@ -307,4 +307,18 @@ public class ScadenzaPagamentoManagerTests
         Assert.Same(filtro, fakeRepo.UltimoFiltroReport);
         Assert.Equal(DateOnly.FromDateTime(DateTime.Today), fakeRepo.UltimaOggiReport);
     }
+
+    [Fact]
+    public async Task ReportScadenzarioAsync_InoltraIdAttivitaAlRepository()
+    {
+        var (sut, fakeRepo, _) = NewSut();
+        var idAttivita = Guid.NewGuid();
+        var filtro     = new FiltroScadenzario(IdAttivita: idAttivita);
+
+        await sut.ReportScadenzarioAsync(filtro);
+
+        // Il nuovo filtro "Attività" della maschera Stampa scadenze arriva integro
+        // al repository (dove la clausola SQL a.IdAttivita = @IdAttivita lo applica).
+        Assert.Equal(idAttivita, fakeRepo.UltimoFiltroReport?.IdAttivita);
+    }
 }

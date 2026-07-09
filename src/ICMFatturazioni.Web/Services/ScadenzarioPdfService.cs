@@ -29,15 +29,18 @@ public sealed class ScadenzarioPdfService : IScadenzarioPdfService
     private readonly IScadenzaPagamentoManager _scadenze;
     private readonly IAnagraficaManager        _anagrafiche;
     private readonly ITipoAttivitaManager      _tipiAttivita;
+    private readonly IAttivitaManager          _attivita;
 
     public ScadenzarioPdfService(
         IScadenzaPagamentoManager scadenze,
         IAnagraficaManager        anagrafiche,
-        ITipoAttivitaManager      tipiAttivita)
+        ITipoAttivitaManager      tipiAttivita,
+        IAttivitaManager          attivita)
     {
         _scadenze     = scadenze;
         _anagrafiche  = anagrafiche;
         _tipiAttivita = tipiAttivita;
+        _attivita     = attivita;
     }
 
     /// <inheritdoc/>
@@ -52,10 +55,15 @@ public sealed class ScadenzarioPdfService : IScadenzarioPdfService
         string? nomeTipoAttivita = filtro.IdTipoAttivita is { } idTipoAttivita
             ? (await _tipiAttivita.GetByIdAsync(idTipoAttivita, ct))?.Descrizione
             : null;
+        // Attività specifica: etichetta "n. {Numero} — {Descrizione}" (null = tutte).
+        string? nomeAttivita = filtro.IdAttivita is { } idAttivita
+            && await _attivita.GetByIdAsync(idAttivita, ct) is { } att
+            ? $"n. {att.Numero} — {att.Descrizione}"
+            : null;
 
         var data = new ScadenzarioPdfData(
             Righe:             righe,
-            DescrizioneFiltro: ComponiDescrizioneFiltro(filtro, nomeCliente, nomeTipoAttivita),
+            DescrizioneFiltro: ComponiDescrizioneFiltro(filtro, nomeCliente, nomeTipoAttivita, nomeAttivita),
             GeneratoIl:        DateTime.Now);
 
         return new ScadenzarioPdfDocument(data).Render();
@@ -71,7 +79,8 @@ public sealed class ScadenzarioPdfService : IScadenzarioPdfService
     internal static string ComponiDescrizioneFiltro(
         FiltroScadenzario filtro,
         string? nomeCliente,
-        string? nomeTipoAttivita)
+        string? nomeTipoAttivita,
+        string? nomeAttivita)
     {
         var parti = new List<string>();
 
@@ -92,6 +101,10 @@ public sealed class ScadenzarioPdfService : IScadenzarioPdfService
         parti.Add(filtro.IdTipoAttivita is not null
             ? $"Attività: {nomeTipoAttivita ?? "?"}"
             : "Tutte le Attività");
+
+        // Attività specifica selezionata (voce distinta dal tipo attività qui sopra).
+        if (filtro.IdAttivita is not null)
+            parti.Add($"Attività {nomeAttivita ?? "?"}");
 
         if (filtro.DallaData is { } dal && filtro.AllaData is { } al)
             parti.Add($"Scadenze dal {dal:dd/MM/yyyy} al {al:dd/MM/yyyy}");

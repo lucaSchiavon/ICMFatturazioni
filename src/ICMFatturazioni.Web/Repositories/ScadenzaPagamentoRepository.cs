@@ -270,6 +270,7 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
           AND (@TipoCliente    IS NULL OR an.TipoAnagrafica = @TipoCliente)
           AND (@IdAnagrafica   IS NULL OR an.IdAnagrafica   = @IdAnagrafica)
           AND (@IdTipoAttivita IS NULL OR a.IdTipoAttivita  = @IdTipoAttivita)
+          AND (@IdAttivita     IS NULL OR a.IdAttivita       = @IdAttivita)
           AND (@DallaData      IS NULL OR s.DataScadenza   >= @DallaData)
           AND (@AllaData       IS NULL OR s.DataScadenza   <= @AllaData)
           AND (@SoloScadute    = 0 OR s.DataScadenza <  @Oggi)
@@ -287,6 +288,7 @@ internal sealed class ScadenzaPagamentoRepository : IScadenzaPagamentoRepository
             TipoCliente    = filtro.TipoCliente is { } t ? t.ToDbCode().ToString() : null,
             filtro.IdAnagrafica,
             filtro.IdTipoAttivita,
+            filtro.IdAttivita,
             DallaData      = filtro.DallaData is { } dal ? ToSqlDate(dal) : null,
             AllaData       = filtro.AllaData  is { } al  ? ToSqlDate(al)  : null,
             Oggi           = ToSqlDate(oggi),

@@ -350,3 +350,118 @@ h1:focus {
     border-color: var(--mud-palette-success);
     background-color: color-mix(in srgb, var(--mud-palette-success) 10%, transparent);
 }
+
+/* ------------------------------------------------------------------ */
+/* Griglia di ANTEPRIMA dello scadenzario (maschera Stampa scadenze).
+   Rispecchia il PDF: righe raggruppate per ANNO → MESE con totali di
+   mese/anno/generale. Tabella custom perché servono righe-gruppo e righe-totale
+   a tutta larghezza, non ottenibili con MudTable/MudDataGrid in modo pulito.
+   Header sticky in alto e prima colonna (Scadenza) sticky a sinistra su mobile. */
+/* ------------------------------------------------------------------ */
+.icm-preview-wrap {
+    overflow: auto;
+    max-height: 480px;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius);
+}
+
+.icm-preview-scad {
+    width: 100%;
+    /* separate (non collapse): con "collapse" molti browser non dipingono lo sfondo
+       delle celle sticky, rendendo l'intestazione trasparente sotto cui scorrono i dati. */
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.82rem;
+    min-width: 720px;
+}
+
+.icm-preview-scad thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    text-align: left;
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--mud-palette-text-secondary);
+    /* Sfondo OPACO obbligatorio: se trasparente, le righe scorrono sotto e il
+       testo si sovrappone. Uso --mud-palette-surface (sempre definita e opaca);
+       --mud-palette-background-grey può risultare vuota in tema custom. Il filetto
+       inferiore è un box-shadow (resta visibile anche con celle sticky). */
+    background-color: var(--mud-palette-surface);
+    padding: 6px 8px;
+    box-shadow: inset 0 -1px 0 var(--mud-palette-lines-default);
+    white-space: nowrap;
+}
+
+.icm-preview-scad td {
+    padding: 4px 8px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+}
+
+.icm-preview-scad .num {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.icm-preview-scad .ctr { text-align: center; white-space: nowrap; }
+
+/* Prima colonna (Scadenza) congelata a sinistra durante lo scroll orizzontale. */
+.icm-preview-scad .col-scad {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    white-space: nowrap;
+    font-weight: 600;
+    background: var(--mud-palette-surface);
+}
+.icm-preview-scad thead th.col-scad { z-index: 3; background-color: var(--mud-palette-surface); }
+
+/* Righe-gruppo ANNO / MESE (a tutta larghezza). */
+.icm-preview-scad tr.grp-anno > td {
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding-top: 10px;
+    border-bottom: 1px solid var(--mud-palette-text-primary);
+    background: color-mix(in srgb, var(--mud-palette-primary) 12%, transparent);
+}
+.icm-preview-scad tr.grp-mese > td {
+    font-weight: 700;
+    font-size: 0.8rem;
+    background: color-mix(in srgb, var(--mud-palette-primary) 5%, transparent);
+}
+
+/* Righe-totale: enfasi crescente (mese → anno → generale). */
+.icm-preview-scad tr.tot-mese > td {
+    font-weight: 700;
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+.icm-preview-scad tr.tot-anno > td {
+    font-weight: 700;
+    font-size: 0.88rem;
+    border-top: 2px solid var(--mud-palette-text-primary);
+}
+.icm-preview-scad tr.tot-gen > td {
+    font-weight: 800;
+    font-size: 0.92rem;
+    border-top: 2px solid var(--mud-palette-text-primary);
+    background: color-mix(in srgb, var(--mud-palette-primary) 8%, transparent);
+}
+
+/* Annotazione secondaria (nota rata / evasione) sotto il dettaglio. */
+.icm-preview-scad .ann {
+    display: block;
+    font-size: 0.72rem;
+    font-style: italic;
+    color: var(--mud-palette-text-secondary);
+}
+
+/* Colorazione righe di dettaglio (SOLO anteprima, non nel PDF):
+   verde = evasa · rosso = non evasa ma scaduta (data < oggi) · nero = le altre.
+   Il colore vale su tutte le celle (inclusi prima colonna sticky e annotazioni). */
+.icm-preview-scad tr.riga-evasa   > td,
+.icm-preview-scad tr.riga-evasa   > td .ann { color: var(--mud-palette-success); }
+.icm-preview-scad tr.riga-scaduta > td,
+.icm-preview-scad tr.riga-scaduta > td .ann { color: var(--mud-palette-error); }

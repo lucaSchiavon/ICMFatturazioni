@@ -277,10 +277,16 @@ internal sealed class ScadenzarioPdfDocument
 
         row.Cells[5].AddParagraph(Eur(riga.Importo));
 
+        // Colonna EVASA: "Sì" (grassetto) quando la rata è evasa, "No" altrimenti,
+        // per uniformità (prima la cella restava vuota sulle non evase).
         if (riga.IsEvasa)
         {
             var evasa = row.Cells[6].AddParagraph("Sì");
             evasa.Format.Font.Bold = true;
+        }
+        else
+        {
+            row.Cells[6].AddParagraph("No");
         }
     }
 
