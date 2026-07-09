@@ -16,12 +16,15 @@
 
 @page "/cantieri"
 
+@using System.Globalization
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Export
 @inject ICantiereManager CantiereManager
 @inject IAttivitaManager AttivitaManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Cantieri · ICM Fatturazioni</PageTitle>
@@ -41,6 +44,15 @@
                       Style="min-width: 280px; flex: 1;" />
 
         <MudSpacer />
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   Ripple="false"
+                   Disabled="@(_esportazioneInCorso || !CantieriFiltrati.Any())"
+                   OnClick="EsportaCsvAsync">
+            Esporta CSV
+        </MudButton>
 
         <MudButton Variant="Variant.Filled"
                    Color="Color.Primary"
@@ -124,10 +136,13 @@
 </MudDataGrid>
 
 @code {
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
     private IReadOnlyList<Cantiere> _cantieri = Array.Empty<Cantiere>();
     private Cantiere? _selezionato;
     private string _filtro = string.Empty;
     private bool _caricamento = true;
+    private bool _esportazioneInCorso;
 
     // Mappa Id→etichetta attività per risolvere la FK in griglia ("Numero —
     // Descrizione"). Ricaricata insieme ai cantieri: le attività possono
@@ -197,6 +212,42 @@
 
     // "—" se l'attività non è più nel catalogo attivo (es. disattivata).
     private string RisolviAttivita(Guid id) => _attivitaDesc.TryGetValue(id, out var v) ? v : "—";
+
+    // Export CSV della vista filtrata corrente (colonne visibili in griglia). Riusa
+    // CsvExport + il JS globale icmDownloadFile; tutti i record sono già in memoria.
+    private async Task EsportaCsvAsync()
+    {
+        var dati = CantieriFiltrati.ToList();
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessun cantiere da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _esportazioneInCorso = true;
+        try
+        {
+            var intestazioni = new[] { "Ubicazione", "Attività", "Tipologia", "Importo appalto" };
+            var righe = dati.Select(c => (IReadOnlyList<string?>)new string?[]
+            {
+                c.Ubicazione,
+                RisolviAttivita(c.IdAttivita),
+                c.Tipologia,
+                c.ImportoAppalto is decimal imp ? imp.ToString("N2", _itCulture) : null,
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Cantieri_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportati {dati.Count} cantieri.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV cantieri fallita.", "Cantieri.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+        finally { _esportazioneInCorso = false; }
+    }
 
     private async Task ApriDialogAggiungi()
     {

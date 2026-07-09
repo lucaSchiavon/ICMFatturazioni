@@ -19,6 +19,7 @@
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
 @using ICMFatturazioni.Web.Components.Shared
+@using ICMFatturazioni.Web.Export
 @using System.Globalization
 
 @inject IFattureManager FattureManager
@@ -160,6 +161,12 @@
                     <MudSelectItem T="int?" Value="@anno">@anno</MudSelectItem>
                 }
             </MudSelect>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Download" Ripple="false"
+                       Disabled="@(_esportazioneInCorso || !FattureFiltrate.Any())"
+                       OnClick="EsportaCsvAsync">
+                Esporta CSV
+            </MudButton>
         </div>
 
         @* Griglia fatture *@
@@ -252,6 +259,7 @@
     private bool _caricamentoAnagrafica = true;
     private bool _caricamentoAttivita;
     private bool _caricamentoFatture;
+    private bool _esportazioneInCorso;
 
     // ── Proprietà derivate (filtri UI) ──────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -282,6 +290,43 @@
     // Fatture filtrate per anno (null = tutti).
     private IEnumerable<FatturaEmessa> FattureFiltrate
         => _annoFiltro is null ? _fatture : _fatture.Where(f => f.Anno == _annoFiltro);
+
+    // Export CSV della griglia fatture emesse (vista filtrata per anno, colonne
+    // visibili). Riusa CsvExport + il JS globale icmDownloadFile.
+    private async Task EsportaCsvAsync()
+    {
+        var dati = FattureFiltrate.ToList();
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessuna fattura da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _esportazioneInCorso = true;
+        try
+        {
+            var intestazioni = new[] { "Numero", "Data", "Cliente", "Tipo", "Attività" };
+            var righe = dati.Select(f => (IReadOnlyList<string?>)new string?[]
+            {
+                $"{f.NumeroFattura}/{f.Anno}",
+                f.DataFattura.ToString("dd/MM/yyyy", _itCulture),
+                f.ClienteRagioneSociale,
+                string.IsNullOrWhiteSpace(f.TipoAttivitaDescrizione) ? "—" : f.TipoAttivitaDescrizione,
+                $"{f.NumeroAttivita} – {f.DescrizioneAttivita}",
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Fatture_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportate {dati.Count} fatture.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV fatture fallita.", "StampeFatture.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+        finally { _esportazioneInCorso = false; }
+    }
 
     // ── Init ─────────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()

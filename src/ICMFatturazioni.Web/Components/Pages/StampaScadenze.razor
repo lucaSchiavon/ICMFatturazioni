@@ -21,6 +21,7 @@
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Export
 
 @inject IAnagraficaManager AnagraficaManager
 @inject ITipoAttivitaManager TipoAttivitaManager
@@ -232,6 +233,12 @@
             </MudText>
         }
         <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Ripple="false"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   Disabled="@(_esportazioneInCorso || _caricamentoAnteprima || _conteggioAnteprima == 0 || IntervalloDateInvalido)"
+                   OnClick="EsportaCsvAsync">
+            Esporta CSV
+        </MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Ripple="false"
                    StartIcon="@Icons.Material.Filled.Print"
                    Disabled="@(_caricamentoAnteprima || _conteggioAnteprima == 0 || IntervalloDateInvalido)"
@@ -349,6 +356,7 @@
     private decimal _totaleAnteprima;
     // Righe del report (stessa query e ordinamento del PDF) per la griglia di anteprima.
     private IReadOnlyList<ScadenzaReport> _righeAnteprima = Array.Empty<ScadenzaReport>();
+    private bool _esportazioneInCorso;
     // Versione dell'ultima richiesta: scarta le risposte superate da un filtro
     // cambiato nel frattempo (le letture non sono annullabili dalla UI).
     private int _versioneAnteprima;
@@ -517,6 +525,52 @@
         {
             if (versione == _versioneAnteprima) _caricamentoAnteprima = false;
         }
+    }
+
+    // ── Export CSV dell'anteprima (stesse righe e colonne visibili in griglia) ──
+    // Riusa CsvExport + il JS globale icmDownloadFile. Le righe sono già in memoria
+    // (_righeAnteprima), quindi si esporta l'intero risultato, non solo il visibile.
+    private async Task EsportaCsvAsync()
+    {
+        var dati = _righeAnteprima;
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessuna scadenza da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _esportazioneInCorso = true;
+        try
+        {
+            var intestazioni = new[] { "Scadenza", "T", "Cliente", "Attività", "Dettaglio", "Importo", "Evasa" };
+            var righe = dati.Select(r =>
+            {
+                var dettaglio = $"{Abbrevia(r.TipoDettaglioDescrizione)}{r.DescrizioneDettaglio}";
+                if (!string.IsNullOrWhiteSpace(r.NotaScadenza))
+                    dettaglio += $" — rata: {r.NotaScadenza}";
+                return (IReadOnlyList<string?>)new string?[]
+                {
+                    r.DataScadenza.ToString("dd/MM/yyyy", _itCulture),
+                    r.TipoCliente.ToDbCode().ToString(),
+                    r.ClienteRagioneSociale,
+                    $"{Abbrevia(r.TipoAttivitaDescrizione)}{r.NumeroAttivita}-{r.DescrizioneAttivita}",
+                    dettaglio,
+                    r.Importo.ToString("N2", _itCulture),
+                    r.IsEvasa ? "Sì" : "No",
+                };
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Scadenzario_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportate {dati.Count} scadenze.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV scadenzario fallita.", "StampaScadenze.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+        finally { _esportazioneInCorso = false; }
     }
 
     // ── Stampa: apre il PDF in nuova scheda con i filtri in query string ─

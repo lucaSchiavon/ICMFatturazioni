@@ -24,6 +24,7 @@
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Export
 
 @inject IVerbaleConsultazioneManager VerbaliManager
 @inject IAnagraficaManager AnagraficaManager
@@ -185,6 +186,12 @@
                 @VerbaliFiltrati.Count verbali
             </MudChip>
             <MudSpacer />
+            <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Download" Ripple="false" Size="Size.Small"
+                       Disabled="@(_esportazioneInCorso || VerbaliFiltrati.Count == 0)"
+                       OnClick="EsportaCsvAsync">
+                Esporta CSV
+            </MudButton>
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.FolderZip" Ripple="false" Size="Size.Small"
                        Disabled="@(VerbaliFiltrati.Count == 0)"
@@ -280,6 +287,7 @@
     private bool _caricamento = true;
     private bool _caricamentoAttivita;
     private bool _caricamentoCantieri;
+    private bool _esportazioneInCorso;
 
     // ── Proprietà derivate (filtri UI) ──────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -331,6 +339,51 @@
             if (_attivitaSelezionata is not null) return $"Attività: {_attivitaSelezionata.Numero} – {_attivitaSelezionata.Descrizione}";
             return $"Cliente: {_anagraficaSelezionata?.RagioneSociale}";
         }
+    }
+
+    // Export CSV della vista filtrata corrente (colonne visibili in griglia). Riusa
+    // CsvExport + il JS globale icmDownloadFile; i verbali sono già in memoria.
+    private async Task EsportaCsvAsync()
+    {
+        var dati = VerbaliFiltrati;
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessun verbale da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _esportazioneInCorso = true;
+        try
+        {
+            var intestazioni = new[]
+            {
+                "Cliente", "Attività", "Cantiere", "Data", "Verbale",
+                "Stato", "CSE", "Impresa", "Prescr.",
+            };
+            var righe = dati.Select(v => (IReadOnlyList<string?>)new string?[]
+            {
+                v.RagioneSocialeCliente,
+                $"{v.NumeroAttivita} – {v.DescrizioneAttivita}",
+                v.UbicazioneCantiere,
+                v.Data.ToString("dd/MM/yyyy"),
+                v.NomeVerbale,
+                v.EsitoEtichetta ?? "—",
+                string.IsNullOrWhiteSpace(v.CseNominativo) ? "—" : v.CseNominativo,
+                string.IsNullOrWhiteSpace(v.ImpresaAppaltatrice) ? "—" : v.ImpresaAppaltatrice,
+                v.NumeroPrescrizioni.ToString(),
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Verbali_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportati {dati.Count} verbali.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV verbali fallita.", "ConsultazioneVerbali.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+        finally { _esportazioneInCorso = false; }
     }
 
     // ── Init ─────────────────────────────────────────────────────────────

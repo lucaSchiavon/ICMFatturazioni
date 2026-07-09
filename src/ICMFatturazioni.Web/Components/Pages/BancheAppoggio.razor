@@ -12,10 +12,12 @@
 @using ICMFatturazioni.Web.Managers
 @using ICMFatturazioni.Web.Managers.Interfaces
 @using ICMFatturazioni.Web.Models
+@using ICMFatturazioni.Web.Export
 @inject IBancaAppoggioManager BancaManager
 @inject IAnagraficaManager AnagraficaManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Banche di appoggio · ICM Fatturazioni</PageTitle>
@@ -59,6 +61,15 @@
                       Style="min-width: 260px; flex: 1;" />
 
         <MudSpacer />
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   Ripple="false"
+                   Disabled="@(_esportazioneInCorso || !BancheFiltrate.Any())"
+                   OnClick="EsportaCsvAsync">
+            Esporta CSV
+        </MudButton>
 
         <MudButton Variant="Variant.Filled"
                    Color="Color.Primary"
@@ -154,6 +165,7 @@
     private string _filtro = string.Empty;
     private FiltroTipo _filtroTipo = FiltroTipo.Tutte;
     private bool _caricamento = true;
+    private bool _esportazioneInCorso;
 
     private IReadOnlyDictionary<Guid, string> _clientiDesc = new Dictionary<Guid, string>();
 
@@ -216,6 +228,44 @@
 
             return q;
         }
+    }
+
+    // Export CSV della vista filtrata corrente (colonne visibili in griglia). Riusa
+    // CsvExport + il JS globale icmDownloadFile; tutti i record sono già in memoria.
+    private async Task EsportaCsvAsync()
+    {
+        var dati = BancheFiltrate.ToList();
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessuna banca da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _esportazioneInCorso = true;
+        try
+        {
+            var intestazioni = new[] { "Intestatario", "Banca", "ABI", "Agenzia", "CAB", "IBAN" };
+            var righe = dati.Select(b => (IReadOnlyList<string?>)new string?[]
+            {
+                b.IsBancaAzienda ? "Azienda" : NomeCliente(b.IdCliente),
+                b.BancaNome,
+                b.ABI,
+                b.AgenziaNome,
+                b.CAB,
+                b.IBAN,
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Banche_appoggio_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportate {dati.Count} banche.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV banche fallita.", "BancheAppoggio.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+        finally { _esportazioneInCorso = false; }
     }
 
     private void ImpostaFiltro(FiltroTipo tipo) => _filtroTipo = tipo;

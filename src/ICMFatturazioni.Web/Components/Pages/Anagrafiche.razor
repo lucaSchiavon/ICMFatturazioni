@@ -18,12 +18,14 @@
 
 @using ICMFatturazioni.Web.Entities
 @using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Export
 @inject IAnagraficaManager AnagraficaManager
 @inject ICodicePagamentoManager CodicePagamentoManager
 @inject IBancaAppoggioManager BancaAppoggioManager
 @inject ICodiceIVAManager CodiceIVAManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 @inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
 
 <PageTitle>Anagrafiche · ICM Fatturazioni</PageTitle>
@@ -55,6 +57,15 @@
         </MudSelect>
 
         <MudSpacer />
+
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Download"
+                   Ripple="false"
+                   Disabled="@(_esportazioneInCorso || !AnagraficheFiltrate.Any())"
+                   OnClick="EsportaCsvAsync">
+            Esporta CSV
+        </MudButton>
 
         <MudButton Variant="Variant.Filled"
                    Color="Color.Primary"
@@ -166,6 +177,7 @@
     private string _filtro = string.Empty;
     private TipoAnagrafica? _filtroTipo;
     private bool _caricamento = true;
+    private bool _esportazioneInCorso;
 
     // Mappe Id→descrizione per risolvere i riferimenti amministrativi in griglia.
     // Ricaricate insieme alle anagrafiche (i cataloghi sono piccoli e possono
@@ -275,6 +287,55 @@
     private string RisolviPagamento(Guid? id) => id is Guid g && _pagamentoDesc.TryGetValue(g, out var v) ? v : "—";
     private string RisolviBanca(Guid? id) => id is Guid g && _bancaDesc.TryGetValue(g, out var v) ? v : "—";
     private string RisolviIva(Guid? id) => id is Guid g && _ivaDesc.TryGetValue(g, out var v) ? v : "—";
+
+    // Export CSV della vista filtrata corrente (stesse colonne visibili in griglia,
+    // esclusa quella delle azioni). Riusa CsvExport (BOM + anti-injection) e il JS
+    // globale icmDownloadFile. Tutti i record sono già in memoria: esporta l'intero
+    // risultato del filtro, non solo la parte renderizzata.
+    private async Task EsportaCsvAsync()
+    {
+        var dati = AnagraficheFiltrate.ToList();
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessuna anagrafica da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+
+        _esportazioneInCorso = true;
+        try
+        {
+            var intestazioni = new[]
+            {
+                "Ragione sociale", "Tipo", "P.IVA / CF", "Città", "Prov.", "Paese",
+                "Email", "Telefono", "Pagamento", "Banca", "Cod. IVA",
+            };
+            var righe = dati.Select(a => (IReadOnlyList<string?>)new string?[]
+            {
+                a.RagioneSociale,
+                a.TipoAnagrafica.Descrizione(),
+                a.PIVA,
+                a.City,
+                a.Provincia,
+                a.SiglaPaese,
+                a.Email,
+                a.Telefono,
+                RisolviPagamento(a.IdPag),
+                RisolviBanca(a.IdBancaAppoggio),
+                RisolviIva(a.IdCodiciIVA),
+            });
+
+            var bytes = CsvExport.Genera(intestazioni, righe);
+            var nomeFile = $"Anagrafiche_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportate {dati.Count} anagrafiche.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV anagrafiche fallita.", "Anagrafiche.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+        finally { _esportazioneInCorso = false; }
+    }
 
     private async Task ApriDialogAggiungi()
     {
