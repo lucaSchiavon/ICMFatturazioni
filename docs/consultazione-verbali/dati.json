@@ -1,0 +1,18 @@
+{
+  "TEMPLATE": "template-vislogica.html",
+  "ACCENT": "#102050",
+
+  "DOC_TIPOLOGIA": "Documentazione tecnica di sviluppo",
+  "DOC_TITOLO": "Consultazione verbali in ICMFatturazioni",
+  "DOC_SOTTOTITOLO": "Condivisione e messa a disposizione dei verbali di cantiere dal dominio ICMVerbali",
+  "PROGETTO_NOME": "ICMFatturazioni — suite ICM Solutions",
+  "DOC_VERSIONE": "1.0",
+  "DOC_DATA": "09/07/2026",
+  "DOC_STATO": "Rilasciato",
+  "DOC_CLASSIFICAZIONE": "Riservato — uso interno",
+  "DOC_AUTORE": "Luca Schiavon",
+
+  "AGENZIA_NOME": "Vis Logica",
+  "AGENZIA_INFO": "Automazioni e software per PMI<br>vislogica.com",
+  "LOGO_AGENZIA_SRC": "loghi/logo-vislogica.png"
+}
