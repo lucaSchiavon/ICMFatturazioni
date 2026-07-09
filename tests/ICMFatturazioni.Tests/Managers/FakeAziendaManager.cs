@@ -15,4 +15,12 @@ internal sealed class FakeAziendaManager : IAziendaManager
     public FakeAziendaManager(Azienda? azienda = null) => Azienda = azienda;
 
     public Task<Azienda?> GetAziendaAsync(CancellationToken ct = default) => Task.FromResult(Azienda);
+
+    // Non esercitato dai test che usano questo fake (emissione avviso): stub minimo
+    // che simula il get-or-create tenendo l'ultima azienda salvata.
+    public Task<Guid> SalvaCedenteAsync(Azienda input, CancellationToken ct = default)
+    {
+        Azienda = input;
+        return Task.FromResult(input.IdAzienda == Guid.Empty ? Guid.CreateVersion7() : input.IdAzienda);
+    }
 }

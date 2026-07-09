@@ -393,5 +393,9 @@ public class AvvisoPdfServiceTests
         public FakeAziendaManager(Azienda? azienda) => _azienda = azienda;
 
         public Task<Azienda?> GetAziendaAsync(CancellationToken ct = default) => Task.FromResult(_azienda);
+
+        // Non usato da questi test (rendering PDF): stub.
+        public Task<Guid> SalvaCedenteAsync(Azienda input, CancellationToken ct = default)
+            => Task.FromResult(Guid.CreateVersion7());
     }
 }

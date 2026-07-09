@@ -13,4 +13,10 @@ public interface IAziendaRepository
     /// non configurata.
     /// </summary>
     Task<Azienda?> GetAziendaAsync(CancellationToken ct = default);
+
+    /// <summary>Inserisce una nuova riga cedente (Id già valorizzato app-side).</summary>
+    Task InsertAsync(Azienda azienda, CancellationToken ct = default);
+
+    /// <summary>Aggiorna la riga cedente identificata da <c>IdAzienda</c>.</summary>
+    Task UpdateAsync(Azienda azienda, CancellationToken ct = default);
 }

@@ -95,4 +95,43 @@ internal sealed class LookupRepository : ILookupRepository
         var rows = await connection.QueryAsync<LookupItem>(cmd);
         return rows.ToList();
     }
+
+    // Codelist fiscali AdE (migration 076): il valore di persistenza è il Codice.
+    private const string SqlTipiCassa = """
+        SELECT Codice, Descrizione FROM fatt.TipiCassa ORDER BY Codice;
+        """;
+
+    public async Task<IReadOnlyList<LookupItem>> GetTipiCassaAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlTipiCassa, cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<LookupItem>(cmd);
+        return rows.ToList();
+    }
+
+    private const string SqlTipiRitenuta = """
+        SELECT Codice, Descrizione FROM fatt.TipiRitenuta ORDER BY Codice;
+        """;
+
+    public async Task<IReadOnlyList<LookupItem>> GetTipiRitenutaAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlTipiRitenuta, cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<LookupItem>(cmd);
+        return rows.ToList();
+    }
+
+    // Ordinamento per lunghezza+codice così le causali monocarattere (A, B, …)
+    // precedono le bicarattere (L1, M1, ZO) invece di intercalarsi.
+    private const string SqlCausaliPagamento = """
+        SELECT Codice, Descrizione FROM fatt.CausaliPagamento ORDER BY LEN(Codice), Codice;
+        """;
+
+    public async Task<IReadOnlyList<LookupItem>> GetCausaliPagamentoAsync(CancellationToken cancellationToken = default)
+    {
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlCausaliPagamento, cancellationToken: cancellationToken);
+        var rows = await connection.QueryAsync<LookupItem>(cmd);
+        return rows.ToList();
+    }
 }

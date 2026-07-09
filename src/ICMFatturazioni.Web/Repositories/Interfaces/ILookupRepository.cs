@@ -39,4 +39,22 @@ public interface ILookupRepository
     /// descrizione). Dropdown della maschera Codici di pagamento.
     /// </summary>
     Task<IReadOnlyList<LookupItem>> GetModalitaPagamentoAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// I tipi cassa previdenziale Agenzia Entrate (codice <c>TC01..TC22</c> +
+    /// descrizione). Dropdown del profilo fiscale nella maschera Dati azienda.
+    /// </summary>
+    Task<IReadOnlyList<LookupItem>> GetTipiCassaAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// I tipi ritenuta Agenzia Entrate (codice <c>RT01..RT06</c> + descrizione).
+    /// Dropdown del profilo fiscale nella maschera Dati azienda.
+    /// </summary>
+    Task<IReadOnlyList<LookupItem>> GetTipiRitenutaAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Le causali di pagamento delle ritenute (modello CU/770: codice
+    /// <c>A..ZO</c> + descrizione). Dropdown del profilo fiscale in Dati azienda.
+    /// </summary>
+    Task<IReadOnlyList<LookupItem>> GetCausaliPagamentoAsync(CancellationToken cancellationToken = default);
 }
