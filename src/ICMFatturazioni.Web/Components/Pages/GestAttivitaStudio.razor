@@ -259,15 +259,17 @@
         @* ── Visualizzazione testata ──────────────────────────────── *@
         @if (_modalita == Modalita.Visualizzazione && _attivitaSelezionata is not null)
         {
-            @* Intestazione: Nr + Descrizione *@
+            @* Intestazione: Nr + Descrizione. Nr allargato (≈ doppio) perché il numero
+               attività è alfanumerico e può essere lungo (es. "OSMANNORO"): con una
+               colonna troppo stretta il valore sconfinava sulla Descrizione. *@
             <MudGrid Spacing="2" Class="mb-3">
-                <MudItem xs="3" sm="2" md="1">
+                <MudItem xs="4" sm="4" md="2">
                     <div class="icm-field-label">Nr.</div>
-                    <div class="icm-field-value" style="font-size:1.4rem;font-weight:700;color:var(--mud-palette-primary);">
+                    <div class="icm-field-value" style="font-size:1.4rem;font-weight:700;color:var(--mud-palette-primary);word-break:break-word;">
                         @_attivitaSelezionata.Numero
                     </div>
                 </MudItem>
-                <MudItem xs="9" sm="10" md="11">
+                <MudItem xs="8" sm="8" md="10">
                     <div class="icm-field-label">Descrizione</div>
                     <div class="icm-field-value" style="font-size:1.05rem;">@_attivitaSelezionata.Descrizione</div>
                 </MudItem>
