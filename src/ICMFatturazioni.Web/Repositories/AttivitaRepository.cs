@@ -1,6 +1,7 @@
 using Dapper;
 using ICMFatturazioni.Web.Data;
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Managers;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 using Microsoft.Data.SqlClient;
 
@@ -134,7 +135,20 @@ internal sealed class AttivitaRepository : IAttivitaRepository
     {
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(SqlInsert, ToParams(attivita), cancellationToken: cancellationToken);
-        await conn.ExecuteAsync(cmd);
+        try
+        {
+            await conn.ExecuteAsync(cmd);
+        }
+        catch (SqlException ex) when (ex.Number is 2601 or 2627)
+        {
+            // Violazione dell'indice univoco UX_Progetto_Committente_Codice
+            // (CommittenteId, Codice) WHERE IsAttivo = 1: codice già in uso da
+            // un'altra attività attiva dello stesso cliente. La traduco in
+            // eccezione di validazione tipizzata con messaggio comprensibile.
+            throw new AttivitaInvalidaException(
+                AttivitaInvalidoMotivo.CodiceDuplicato,
+                MessaggioCodiceDuplicato(attivita.Numero), ex);
+        }
     }
 
     private const string SqlUpdate = """
@@ -155,8 +169,25 @@ internal sealed class AttivitaRepository : IAttivitaRepository
     {
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(SqlUpdate, ToParams(attivita), cancellationToken: cancellationToken);
-        await conn.ExecuteAsync(cmd);
+        try
+        {
+            await conn.ExecuteAsync(cmd);
+        }
+        catch (SqlException ex) when (ex.Number is 2601 or 2627)
+        {
+            // Come in InsertAsync: cambiare il codice in uno già presente per lo
+            // stesso cliente viola l'indice univoco. Messaggio chiaro all'utente.
+            throw new AttivitaInvalidaException(
+                AttivitaInvalidoMotivo.CodiceDuplicato,
+                MessaggioCodiceDuplicato(attivita.Numero), ex);
+        }
     }
+
+    // Messaggio unico condiviso da insert/update per la violazione di unicità
+    // del codice attività per cliente (indice UX_Progetto_Committente_Codice).
+    private static string MessaggioCodiceDuplicato(string numero)
+        => $"Esiste già un'attività con il codice «{numero}» per questo cliente. " +
+           "Indicare un codice diverso.";
 
     private const string SqlDisattiva =
         "UPDATE fatt.Attivita SET IsAttivo = 0 WHERE IdAttivita = @IdAttivita;";
