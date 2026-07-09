@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>{{DOC_TITOLO}} — {{AGENZIA_NOME}}</title>
+<style>
+  /* ============================================================
+     TEMPLATE DOCUMENTAZIONE — dual branding (cliente + agenzia)
+     Reso in PDF tramite Chromium/Playwright (render.py)
+     L'unica cosa che cambi per cliente: --accent + i loghi nel JSON
+     ============================================================ */
+
+  :root{
+    --ink:#16202C;        /* titoli / testo forte           */
+    --body:#2B3744;       /* corpo del testo                */
+    --muted:#6B7785;      /* didascalie, metadati           */
+    --line:#DCE2E8;       /* filetti / bordi sottili        */
+    --surface:#F5F7F9;    /* sfondo card                    */
+    --surface-2:#EDF1F4;  /* sfondo codice / tabelle zebra  */
+    --accent:{{ACCENT}};  /* colore di accento del documento */
+    --accent-soft:color-mix(in srgb, var(--accent) 12%, #ffffff);
+
+    --font-sans:'Inter','Segoe UI','Liberation Sans',Arial,sans-serif;
+    --font-mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+  }
+
+  @page{
+    size:A4;
+    margin:24mm 18mm 20mm 18mm;   /* spazio per header (alto) e footer (basso) */
+  }
+  @page:first{ margin:0; }        /* copertina a tutta pagina, header/footer nascosti */
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:var(--font-sans);
+    color:var(--body);
+    font-size:10.5pt;
+    line-height:1.55;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* ---------- utilità ---------- */
+  .page-break{ break-before:page; }
+  .eyebrow{
+    font-size:7.5pt; letter-spacing:.22em; text-transform:uppercase;
+    font-weight:600; color:var(--accent);
+  }
+
+  /* =================== COPERTINA =================== */
+  .cover{
+    position:relative;
+    height:297mm; width:210mm;
+    padding:26mm 22mm 22mm;
+    display:flex; flex-direction:column;
+    color:var(--ink);
+  }
+  .cover::before{   /* barra di brand a sinistra, tutta altezza */
+    content:""; position:absolute; top:0; left:0;
+    width:8mm; height:100%; background:var(--accent);
+  }
+  .cover-top{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .cover-top .eyebrow{ padding-top:4mm; }
+  .cover-logo-client img{ max-height:20mm; max-width:62mm; object-fit:contain; }
+
+  .cover-title{ margin-top:auto; }
+  .cover-title .kicker{
+    font-size:11pt; color:var(--muted); font-weight:500; margin-bottom:6mm;
+  }
+  .cover-title h1{
+    font-size:34pt; line-height:1.08; font-weight:700; letter-spacing:-.015em;
+    margin:0 0 6mm 0; color:var(--ink); max-width:150mm;
+  }
+  .cover-title .subtitle{
+    font-size:14pt; color:var(--accent); font-weight:600; margin:0;
+  }
+  .cover-meta{
+    margin-top:8mm; padding-top:5mm; border-top:1px solid var(--line);
+    display:flex; gap:14mm; font-size:9.5pt; color:var(--muted);
+  }
+  .cover-meta b{ color:var(--ink); font-weight:600; }
+
+  .cover-cards{
+    margin-top:14mm; display:grid; grid-template-columns:1fr 1fr; gap:8mm;
+  }
+  .brand-card{
+    border:1px solid var(--line); border-radius:8px; padding:6mm 6mm 6mm;
+    background:#fff;
+  }
+  .brand-card .role{
+    font-size:7.5pt; letter-spacing:.18em; text-transform:uppercase;
+    font-weight:600; color:var(--muted); margin-bottom:4mm;
+  }
+  .brand-card .logo{ height:14mm; margin-bottom:4mm; display:flex; align-items:center; }
+  .brand-card .logo img{ max-height:14mm; max-width:55mm; object-fit:contain; }
+  .brand-card .org{ font-size:11pt; font-weight:700; color:var(--ink); }
+  .brand-card .lines{ font-size:8.5pt; color:var(--muted); line-height:1.5; margin-top:1mm; }
+
+  /* =================== TESTATA PAGINE INTERNE =================== */
+  h2.section{
+    font-size:17pt; font-weight:700; color:var(--ink); letter-spacing:-.01em;
+    margin:9mm 0 3mm; padding-bottom:2mm; border-bottom:2px solid var(--accent);
+    break-after:avoid;
+  }
+  h2.section .num{ color:var(--accent); margin-right:3mm; font-variant-numeric:tabular-nums; }
+  h3{ font-size:12.5pt; font-weight:600; color:var(--ink); margin:6mm 0 2mm; break-after:avoid; }
+  h4{ font-size:10.5pt; font-weight:600; color:var(--ink); margin:5mm 0 1.5mm; break-after:avoid; }
+  p{ margin:0 0 3mm; }
+  ul,ol{ margin:0 0 3mm; padding-left:5mm; }
+  li{ margin-bottom:1mm; }
+  a{ color:var(--accent); text-decoration:none; }
+  strong{ color:var(--ink); }
+
+  /* tabella metadati documento */
+  table.meta{ width:100%; border-collapse:collapse; margin:4mm 0 2mm; font-size:9.5pt; }
+  table.meta th, table.meta td{ text-align:left; padding:2.4mm 3mm; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.meta th{ width:42mm; color:var(--muted); font-weight:600; background:var(--surface); }
+
+  /* tabella revisioni / generica */
+  table.data{ width:100%; border-collapse:collapse; margin:3mm 0 4mm; font-size:9pt; }
+  table.data thead th{
+    background:var(--ink); color:#fff; font-weight:600; text-align:left;
+    padding:2.4mm 3mm; font-size:8.5pt; letter-spacing:.02em;
+  }
+  table.data td{ padding:2.2mm 3mm; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.data tbody tr:nth-child(even){ background:var(--surface); }
+  table.data, table.meta{ break-inside:auto; }
+  table.data tr, table.meta tr{ break-inside:avoid; }
+
+  /* callout / nota */
+  .callout{
+    border-left:3px solid var(--accent); background:var(--accent-soft);
+    padding:3.5mm 5mm; border-radius:0 6px 6px 0; margin:4mm 0; break-inside:avoid;
+    font-size:9.5pt;
+  }
+  .callout .label{ font-weight:700; color:var(--ink); display:block; margin-bottom:1mm; }
+
+  /* codice */
+  pre{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:6px;
+    padding:3.5mm 4mm; font-family:var(--font-mono); font-size:8.5pt; line-height:1.5;
+    overflow:hidden; white-space:pre-wrap; word-break:break-word; margin:3mm 0; break-inside:avoid;
+  }
+  code{ font-family:var(--font-mono); font-size:9pt; background:var(--surface-2);
+        padding:.4mm 1.4mm; border-radius:3px; }
+
+  .toc{ font-size:10pt; }
+  .toc .row{ display:flex; justify-content:space-between; padding:1.6mm 0; border-bottom:1px dotted var(--line); }
+  .toc .row span:first-child{ color:var(--ink); }
+  .toc .row span:last-child{ color:var(--muted); font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+
+<!-- ===================== COPERTINA ===================== -->
+<section class="cover">
+  <div class="cover-top">
+    <div class="eyebrow">{{DOC_TIPOLOGIA}}</div>
+    <div class="cover-logo-client"><img src="{{LOGO_AGENZIA_SRC}}" alt="Logo Vis Logica"></div>
+  </div>
+
+  <div class="cover-title">
+    <div class="kicker">{{PROGETTO_NOME}}</div>
+    <h1>{{DOC_TITOLO}}</h1>
+    <p class="subtitle">{{DOC_SOTTOTITOLO}}</p>
+    <div class="cover-meta">
+      <div>Versione<br><b>{{DOC_VERSIONE}}</b></div>
+      <div>Data<br><b>{{DOC_DATA}}</b></div>
+      <div>Stato<br><b>{{DOC_STATO}}</b></div>
+      <div>Classificazione<br><b>{{DOC_CLASSIFICAZIONE}}</b></div>
+    </div>
+  </div>
+
+  <div class="cover-cards" style="grid-template-columns:1fr;">
+    <div class="brand-card">
+      <div class="role">A cura di</div>
+      <div class="org">{{AGENZIA_NOME}}</div>
+      <div class="lines">{{AGENZIA_INFO}}</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== INFO DOCUMENTO ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Anagrafica documento</div>
+  <h2 class="section"><span class="num">1</span>Informazioni sul documento</h2>
+
+  <table class="meta">
+    <tr><th>Titolo</th><td>{{DOC_TITOLO}}</td></tr>
+    <tr><th>Progetto / prodotto</th><td>{{PROGETTO_NOME}}</td></tr>
+    <tr><th>A cura di</th><td>{{AGENZIA_NOME}}</td></tr>
+    <tr><th>Autore</th><td>{{DOC_AUTORE}}</td></tr>
+    <tr><th>Versione</th><td>{{DOC_VERSIONE}}</td></tr>
+    <tr><th>Data</th><td>{{DOC_DATA}}</td></tr>
+    <tr><th>Stato</th><td>{{DOC_STATO}}</td></tr>
+    <tr><th>Classificazione</th><td>{{DOC_CLASSIFICAZIONE}}</td></tr>
+  </table>
+
+  <h3>Storico delle revisioni</h3>
+  <table class="data">
+    <thead><tr><th style="width:22mm">Versione</th><th style="width:28mm">Data</th><th>Autore</th><th>Descrizione delle modifiche</th></tr></thead>
+    <tbody>
+      <tr><td>1.0</td><td>{{DOC_DATA}}</td><td>{{DOC_AUTORE}}</td><td>Prima stesura: descrizione della funzione “Esporta CSV” delle griglie.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <span class="label">Proprietà</span>
+    Il presente documento è di proprietà di {{AGENZIA_NOME}}.
+    Ne è vietata la riproduzione o distribuzione non autorizzata.
+  </div>
+</section>
+
+<!-- ===================== INDICE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Sommario</div>
+  <h2 class="section"><span class="num">2</span>Indice</h2>
+  <div class="toc">
+    <div class="row"><span>1 — Informazioni sul documento</span><span>2</span></div>
+    <div class="row"><span>2 — Indice</span><span>3</span></div>
+    <div class="row"><span>3 — Introduzione e obiettivi</span><span>4</span></div>
+    <div class="row"><span>4 — Architettura della soluzione</span><span>4</span></div>
+    <div class="row"><span>5 — Il generatore CSV (CsvExport)</span><span>5</span></div>
+    <div class="row"><span>6 — Il download lato client (icmDownloadFile)</span><span>6</span></div>
+    <div class="row"><span>7 — Integrazione nelle pagine</span><span>7</span></div>
+    <div class="row"><span>8 — Comportamento e garanzie</span><span>9</span></div>
+    <div class="row"><span>9 — Sicurezza e conformità</span><span>10</span></div>
+    <div class="row"><span>10 — Estendere l'export a una nuova griglia</span><span>10</span></div>
+  </div>
+</section>
+
+<!-- ===================== 3. INTRODUZIONE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Premessa</div>
+  <h2 class="section"><span class="num">3</span>Introduzione e obiettivi</h2>
+  <p>Questo documento descrive come è stata realizzata, nell'applicativo
+  <strong>{{PROGETTO_NOME}}</strong> (Blazor Server, .NET 10, MudBlazor), la funzione di
+  <strong>esportazione in formato CSV</strong> dei dati mostrati nelle griglie. Ogni pagina
+  interessata espone un pulsante <strong>“Esporta CSV”</strong> che produce un file scaricabile
+  e apribile direttamente in Microsoft Excel.</p>
+
+  <p>Gli obiettivi che hanno guidato l'implementazione sono:</p>
+  <ul>
+    <li><strong>Fedeltà a ciò che l'utente vede.</strong> L'export riproduce la
+    <em>vista filtrata corrente</em> e le <em>sole colonne visibili</em> nella griglia.</li>
+    <li><strong>Completezza.</strong> Vengono esportati <em>tutti</em> i record del risultato del
+    filtro, non solo la porzione visibile a schermo.</li>
+    <li><strong>Compatibilità con Excel in locale italiano</strong> (separatore, accenti, numeri).</li>
+    <li><strong>Sicurezza.</strong> Nessun dato sensibile e mitigazione delle formule maligne
+    (CSV injection).</li>
+    <li><strong>Riuso e coerenza.</strong> Una sola infrastruttura condivisa, replicata con lo
+    stesso schema su tutte le griglie.</li>
+  </ul>
+
+  <p>La funzione è disponibile su sei maschere: <strong>Anagrafiche</strong>,
+  <strong>Banche di appoggio</strong>, <strong>Cantieri</strong>, <strong>Stampe fatture</strong>,
+  <strong>Stampa scadenze</strong> (griglia di anteprima) e <strong>Consultazione verbali</strong>.</p>
+</section>
+
+<!-- ===================== 4. ARCHITETTURA ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Come è organizzata</div>
+  <h2 class="section"><span class="num">4</span>Architettura della soluzione</h2>
+
+  <p>La funzione poggia su due componenti riutilizzabili già presenti nell'applicazione (nati per
+  l'export delle pagine di <em>Audit</em> e <em>Log</em>) più l'integrazione, pagina per pagina,
+  nel componente Blazor della griglia. La responsabilità è nettamente separata:</p>
+
+  <table class="data">
+    <thead><tr><th>Componente</th><th>Tipo</th><th>Responsabilità</th></tr></thead>
+    <tbody>
+      <tr><td><code>Export/CsvExport.cs</code></td><td>Classe statica C#</td>
+          <td>Trasforma intestazioni + righe in byte CSV (quoting, BOM, anti-injection).</td></tr>
+      <tr><td><code>wwwroot/js/download.js</code></td><td>Funzione JavaScript globale</td>
+          <td>Riceve i byte (in base64) e forza il download del file sul client.</td></tr>
+      <tr><td>Componente <code>.razor</code> della pagina</td><td>UI + orchestrazione</td>
+          <td>Pulsante “Esporta CSV” e metodo <code>EsportaCsvAsync</code> che mappa i dati e invoca i due componenti.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Flusso di esecuzione</h3>
+  <p>Alla pressione del pulsante, la sequenza è la seguente:</p>
+  <ol>
+    <li>Il metodo <code>EsportaCsvAsync</code> della pagina legge la <strong>collezione già filtrata</strong>
+    (la stessa che alimenta la griglia, es. <code>AnagraficheFiltrate</code>).</li>
+    <li>Costruisce le <strong>intestazioni</strong> e converte ogni elemento in una <strong>riga di stringhe</strong>,
+    replicando le colonne visibili.</li>
+    <li>Chiama <code>CsvExport.Genera(...)</code> che restituisce i <code>byte[]</code> del file.</li>
+    <li>I byte vengono codificati in <strong>base64</strong> e passati alla funzione JavaScript
+    <code>icmDownloadFile</code> via interoperabilità (<code>IJSRuntime</code>).</li>
+    <li>Il browser materializza il file e avvia il download; un messaggio (snackbar) conferma l'esito.</li>
+  </ol>
+
+  <div class="callout">
+    <span class="label">Perché il passaggio via JavaScript</span>
+    In Blazor Server il codice C# gira sul server e non ha accesso al disco del client. Il file
+    va quindi trasferito al browser (come base64) e ricostruito lì in un <code>Blob</code>, che
+    viene scaricato con un link temporaneo. È l'unico modo per “salvare un file” lato utente.
+  </div>
+
+  <div class="callout">
+    <span class="label">Nota di progetto</span>
+    Tutte le griglie coinvolte sono <em>client-side</em>: l'intero elenco è già in memoria e la
+    virtualizzazione di MudBlazor agisce solo sul rendering, non sui dati. Per questo l'export
+    dell'“intero risultato” non ha richiesto alcuna nuova query o metodo di repository/manager.
+  </div>
+</section>
+
+<!-- ===================== 5. CSVEXPORT ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Il motore di formattazione</div>
+  <h2 class="section"><span class="num">5</span>Il generatore CSV (<code>CsvExport</code>)</h2>
+
+  <p>La classe statica <code>CsvExport</code> è l'unico punto in cui si costruisce il testo CSV.
+  Espone un solo metodo pubblico, <code>Genera</code>, che riceve le intestazioni e una sequenza
+  di righe (ciascuna già convertita in celle-stringa) e restituisce i byte del file.</p>
+
+  <pre>public static byte[] Genera(IReadOnlyList&lt;string&gt; intestazioni,
+                            IEnumerable&lt;IReadOnlyList&lt;string?&gt;&gt; righe)
+{
+    var sb = new StringBuilder();
+    sb.Append(string.Join(Separatore, intestazioni.Select(Escape)));
+    sb.Append(FineRiga);
+
+    foreach (var riga in righe)
+    {
+        sb.Append(string.Join(Separatore, riga.Select(Escape)));
+        sb.Append(FineRiga);
+    }
+
+    var preambolo = Encoding.UTF8.GetPreamble();   // BOM
+    var corpo     = Encoding.UTF8.GetBytes(sb.ToString());
+    // ... concatena BOM + corpo e restituisce il buffer
+}</pre>
+
+  <h3>Scelte di formato (compatibilità Excel IT)</h3>
+  <ul>
+    <li><strong>Separatore “<code>;</code>” (punto e virgola).</strong> È quello atteso da Excel con
+    impostazioni italiane, dove la virgola è il separatore decimale.</li>
+    <li><strong>Codifica UTF-8 con BOM.</strong> Il preambolo (<em>Byte Order Mark</em>) fa sì che Excel
+    riconosca il file come UTF-8: senza di esso interpreterebbe il testo come ANSI e romperebbe gli
+    accenti (à, è, ò…).</li>
+    <li><strong>Fine riga CRLF</strong> (<code>\r\n</code>), come da standard RFC 4180.</li>
+    <li><strong>Importi in formato italiano</strong> <code>N2</code> (es. <code>1.234,56</code>), così Excel
+    li interpreta come numeri.</li>
+  </ul>
+
+  <h3>Quoting e protezione anti-formula</h3>
+  <p>Ogni cella passa dalla funzione interna <code>Escape</code>, che applica il quoting RFC 4180 e
+  neutralizza le formule (protezione da <em>CSV injection</em>):</p>
+
+  <pre>private static string Escape(string? valore)
+{
+    var v = valore ?? string.Empty;
+
+    // Anti CSV-injection: neutralizza i caratteri che Excel tratta da formula.
+    if (v.Length &gt; 0 &amp;&amp; v[0] is '=' or '+' or '-' or '@')
+        v = "'" + v;
+
+    // Quoting se la cella contiene separatore, virgolette o a-capo.
+    if (v.Contains(Separatore) || v.Contains('"') || v.Contains('\n') || v.Contains('\r'))
+        v = "\"" + v.Replace("\"", "\"\"") + "\"";
+
+    return v;
+}</pre>
+
+  <p>In pratica: una cella che inizia con <code>=</code>, <code>+</code>, <code>-</code> o <code>@</code>
+  viene fatta precedere da un apostrofo, così Excel non la esegue come formula; le celle che contengono
+  il separatore, virgolette o ritorni a capo vengono racchiuse tra virgolette (con raddoppio delle
+  virgolette interne).</p>
+</section>
+
+<!-- ===================== 6. DOWNLOAD ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Il salvataggio lato client</div>
+  <h2 class="section"><span class="num">6</span>Il download lato client (<code>icmDownloadFile</code>)</h2>
+
+  <p>La funzione JavaScript globale <code>icmDownloadFile</code> (in <code>wwwroot/js/download.js</code>)
+  riceve il nome del file, il contenuto in base64 e il <em>content type</em>, ricostruisce i byte in un
+  <code>Blob</code> e ne forza il download tramite un elemento <code>a</code> temporaneo:</p>
+
+  <pre>window.icmDownloadFile = (fileName, base64, contentType) =&gt; {
+    const bytes = Uint8Array.from(atob(base64), c =&gt; c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: contentType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};</pre>
+
+  <p>La funzione è <strong>globale e condivisa</strong>: è la stessa utilizzata dalle pagine
+  amministrative di Audit e Log, quindi disponibile in tutta l'applicazione senza duplicazioni.</p>
+</section>
+
+<!-- ===================== 7. INTEGRAZIONE ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Il pattern per pagina</div>
+  <h2 class="section"><span class="num">7</span>Integrazione nelle pagine</h2>
+
+  <p>Su ciascuna griglia l'integrazione segue sempre lo stesso schema, molto contenuto (nell'ordine
+  di poche decine di righe per pagina), <strong>senza</strong> alcuna modifica a database, manager o
+  repository:</p>
+  <ul>
+    <li>direttive <code>@using ICMFatturazioni.Web.Export</code> e <code>@inject IJSRuntime JS</code>
+    (quest'ultima solo dove non già presente);</li>
+    <li>un pulsante <strong>“Esporta CSV”</strong> nella barra strumenti, disabilitato quando non ci
+    sono righe o mentre l'export è in corso;</li>
+    <li>un metodo <code>EsportaCsvAsync</code> che mappa la collezione filtrata e invoca i due componenti.</li>
+  </ul>
+
+  <h3>Il pulsante</h3>
+  <pre>&lt;MudButton Variant="Variant.Outlined" Color="Color.Default"
+           StartIcon="@Icons.Material.Filled.Download" Ripple="false"
+           Disabled="@(_esportazioneInCorso || !AnagraficheFiltrate.Any())"
+           OnClick="EsportaCsvAsync"&gt;
+    Esporta CSV
+&lt;/MudButton&gt;</pre>
+
+  <h3>Il metodo (esempio: Anagrafiche)</h3>
+  <pre>private async Task EsportaCsvAsync()
+{
+    var dati = AnagraficheFiltrate.ToList();
+    if (dati.Count == 0)
+    {
+        Snackbar.Add("Nessuna anagrafica da esportare.", Severity.Info);
+        return;
+    }
+
+    _esportazioneInCorso = true;
+    try
+    {
+        var intestazioni = new[]
+        {
+            "Ragione sociale", "Tipo", "P.IVA / CF", "Città", "Prov.", "Paese",
+            "Email", "Telefono", "Pagamento", "Banca", "Cod. IVA",
+        };
+        var righe = dati.Select(a =&gt; (IReadOnlyList&lt;string?&gt;)new string?[]
+        {
+            a.RagioneSociale, a.TipoAnagrafica.Descrizione(), a.PIVA, a.City,
+            a.Provincia, a.SiglaPaese, a.Email, a.Telefono,
+            RisolviPagamento(a.IdPag), RisolviBanca(a.IdBancaAppoggio), RisolviIva(a.IdCodiciIVA),
+        });
+
+        var bytes = CsvExport.Genera(intestazioni, righe);
+        var nomeFile = $"Anagrafiche_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+        await JS.InvokeVoidAsync("icmDownloadFile", nomeFile,
+                                 Convert.ToBase64String(bytes), "text/csv");
+        Snackbar.Add($"Esportate {dati.Count} anagrafiche.", Severity.Success);
+    }
+    catch (Exception ex)
+    {
+        await LogManager.LogErroreAsync(ex, "Esportazione CSV anagrafiche fallita.",
+                                        "Anagrafiche.EsportaCsvAsync");
+        Snackbar.Add("Errore durante l'esportazione CSV.", Severity.Error);
+    }
+    finally { _esportazioneInCorso = false; }
+}</pre>
+
+  <div class="callout">
+    <span class="label">Colonne risolte</span>
+    Dove la griglia mostra un valore “risolto” da una chiave (es. la descrizione del pagamento o della
+    banca al posto dell'identificativo), l'export riusa le stesse funzioni della UI
+    (<code>RisolviPagamento</code>, <code>RisolviBanca</code>, …): il CSV riporta quindi esattamente il
+    testo visibile a video.
+  </div>
+</section>
+
+<!-- ===================== 7b. TABELLA PAGINE ===================== -->
+<section>
+  <h3>Griglie coperte e colonne esportate</h3>
+  <table class="data">
+    <thead><tr><th style="width:38mm">Pagina</th><th>Colonne esportate</th></tr></thead>
+    <tbody>
+      <tr><td>Anagrafiche</td><td>Ragione sociale, Tipo, P.IVA/CF, Città, Prov., Paese, Email, Telefono, Pagamento, Banca, Cod. IVA</td></tr>
+      <tr><td>Banche di appoggio</td><td>Intestatario, Banca, ABI, Agenzia, CAB, IBAN</td></tr>
+      <tr><td>Cantieri</td><td>Ubicazione, Attività, Tipologia, Importo appalto</td></tr>
+      <tr><td>Stampe fatture</td><td>Numero, Data, Cliente, Tipo, Attività</td></tr>
+      <tr><td>Stampa scadenze (anteprima)</td><td>Scadenza, T, Cliente, Attività, Dettaglio, Importo, Evasa</td></tr>
+      <tr><td>Consultazione verbali</td><td>Cliente, Attività, Cantiere, Data, Verbale, Stato, CSE, Impresa, Prescr.</td></tr>
+    </tbody>
+  </table>
+  <p>Il nome del file segue lo schema <code>&lt;Entità&gt;_aaaaMMgg_hhmm.csv</code>
+  (es. <code>Anagrafiche_20260709_1742.csv</code>).</p>
+</section>
+
+<!-- ===================== 8. COMPORTAMENTO ===================== -->
+<section class="page-break">
+  <div class="eyebrow">Cosa garantisce</div>
+  <h2 class="section"><span class="num">8</span>Comportamento e garanzie</h2>
+  <ul>
+    <li><strong>Vista filtrata.</strong> L'export parte sempre dalla stessa collezione che alimenta la
+    griglia: filtri di testo, tipologia, anno e selezioni sono già applicati.</li>
+    <li><strong>Sole colonne visibili.</strong> Le intestazioni e le celle corrispondono alle colonne a
+    video; la colonna delle azioni (icone) è esclusa.</li>
+    <li><strong>Tutti i record.</strong> Viene esportato l'intero risultato del filtro, non solo la
+    parte renderizzata dalla virtualizzazione.</li>
+    <li><strong>Stato del pulsante.</strong> È disabilitato quando non ci sono righe e durante
+    l'elaborazione, per evitare doppie esecuzioni.</li>
+    <li><strong>Esito comunicato.</strong> Un messaggio conferma il numero di righe esportate o segnala
+    un eventuale errore.</li>
+    <li><strong>Robustezza.</strong> Eventuali eccezioni vengono registrate nel log applicativo
+    (<code>ILogManager.LogErroreAsync</code>) senza interrompere l'esperienza d'uso.</li>
+  </ul>
+</section>
+
+<!-- ===================== 9. SICUREZZA ===================== -->
+<section>
+  <h2 class="section"><span class="num">9</span>Sicurezza e conformità</h2>
+  <ul>
+    <li><strong>Nessun segreto nei file.</strong> Vengono esportate solo le colonne mostrate; non sono
+    inclusi identificativi tecnici, hash o dati riservati non pertinenti.</li>
+    <li><strong>Anti CSV-injection.</strong> Le celle che potrebbero essere interpretate come formula da
+    Excel/Calc vengono neutralizzate a monte (vedi capitolo 5), in linea con le regole di sicurezza del
+    progetto.</li>
+    <li><strong>Accesso protetto.</strong> Le pagine che espongono l'export sono raggiungibili solo da
+    utenti autenticati, secondo le policy di autorizzazione dell'applicazione.</li>
+  </ul>
+</section>
+
+<!-- ===================== 10. ESTENSIONE ===================== -->
+<section>
+  <h2 class="section"><span class="num">10</span>Estendere l'export a una nuova griglia</h2>
+  <p>Aggiungere “Esporta CSV” a una nuova pagina richiede pochi passi, senza toccare i livelli dati:</p>
+  <ol>
+    <li>Aggiungere <code>@using ICMFatturazioni.Web.Export</code> e, se assente, <code>@inject IJSRuntime JS</code>.</li>
+    <li>Inserire il pulsante nella barra strumenti, con <code>Disabled</code> legato alla presenza di righe.</li>
+    <li>Scrivere <code>EsportaCsvAsync</code>: definire le intestazioni, mappare la collezione filtrata in
+    righe di stringhe (riusando le stesse funzioni della griglia per i valori “risolti”), quindi chiamare
+    <code>CsvExport.Genera</code> e <code>icmDownloadFile</code>.</li>
+  </ol>
+  <div class="callout">
+    <span class="label">In sintesi</span>
+    Tutta la complessità (formattazione compatibile con Excel, quoting, BOM, protezione anti-formula e
+    download nel browser) è incapsulata in <code>CsvExport</code> e <code>icmDownloadFile</code>. La
+    singola pagina deve solo dichiarare <em>quali colonne</em> e <em>quali dati</em> esportare.
+  </div>
+</section>
+
+</body>
+</html>
