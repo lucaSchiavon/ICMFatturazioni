@@ -1,0 +1,20 @@
+{
+  "_nota": "Variante SOLO Vis Logica (nessun committente). Compila i campi del DOCUMENTO. I campi AGENZIA_* sono fissi.",
+
+  "TEMPLATE": "template-vislogica.html",
+  "ACCENT": "#102050",
+
+  "DOC_TIPOLOGIA": "Piano di sviluppo",
+  "DOC_TITOLO": "Modulo Attività Consulenti",
+  "DOC_SOTTOTITOLO": "Piano di sviluppo dettagliato — anagrafiche, gestione, pagamenti, schede e report",
+  "PROGETTO_NOME": "ICMFatturazioni",
+  "DOC_VERSIONE": "1.0",
+  "DOC_DATA": "10/07/2026",
+  "DOC_STATO": "Approvato — sviluppo da avviare",
+  "DOC_CLASSIFICAZIONE": "Interno",
+  "DOC_AUTORE": "Luca Schiavon",
+
+  "AGENZIA_NOME": "Vis Logica",
+  "AGENZIA_INFO": "Automazioni e software per PMI<br>vislogica.com",
+  "LOGO_AGENZIA_SRC": "loghi/logo-vislogica.png"
+}
