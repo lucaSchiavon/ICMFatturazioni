@@ -1,0 +1,463 @@
+@*
+    Pagina /schede-attivita-consulenti — Schede Attività Consulenti (dispensa cap. 6).
+
+    Punto di vista RIBALTATO rispetto alle maschere sorelle: si parte dal
+    CONSULENTE e si vedono i suoi lavori presso tutti i clienti.
+    Filtri: consulente (primario) + stato consulenze Aperte/Chiuse/Tutte
+    (D-C4: aperta = residuo > 0, filtro applicato SOLO alla griglia Studio;
+    le righe a carico Cliente restano sempre visibili) + raffinamenti a cascata
+    Anagrafica → Attività (solo quelle del consulente).
+    Doppia griglia Studio (con Pagato/Residuo) e Cliente (solo Importo) + CSV.
+*@
+
+@page "/schede-attivita-consulenti"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Export
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using System.Globalization
+
+@inject IAttivitaConsulenteManager AttivitaConsulenteManager
+@inject IConsulenteManager ConsulenteManager
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Schede attività consulenti · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Schede attività consulenti</MudText>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Filtri: consulente (primario) + stato + raffinamenti cliente/attività
+   ═══════════════════════════════════════════════════════════════════ *@
+<MudGrid Spacing="2" Class="icm-grid-3col mb-0">
+
+    @* ── Col 1: Consulente ─────────────────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3"
+                  Style="display:flex;flex-direction:column;flex:1;">
+
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Consulente</MudText>
+
+            <MudTextField @bind-Value="_filtroConsulente"
+                          Placeholder="Filtra per nome…"
+                          Immediate="true" DebounceInterval="150"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Clear"
+                          OnAdornmentClick="@(() => _filtroConsulente = string.Empty)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="mb-2" />
+
+            <div class="icm-sellist" style="height:262px;">
+                @if (_caricamentoConsulenti)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!ConsulentiFiltrati.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun consulente trovato.</div>
+                }
+                else
+                {
+                    @foreach (var c in ConsulentiFiltrati)
+                    {
+                        <div class="icm-sellist-item @(c.IdConsulente == _consulenteSelezionato?.IdConsulente ? "selected" : "")"
+                             @onclick="@(() => SelezionaConsulenteAsync(c))">
+                            @c.Descrizione
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 2: Stato + raffinamento Anagrafica ────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3"
+                  Style="display:flex;flex-direction:column;flex:1;">
+
+            <MudText Typo="Typo.overline" Class="mb-1" Style="font-weight:700;">Stato consulenze</MudText>
+            @* D-C4: il filtro agisce SOLO sulla griglia a carico Studio. *@
+            <MudRadioGroup T="FiltroStato" @bind-Value="_filtroStato" Class="mb-2">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroStato" Value="FiltroStato.Aperte" Dense="true" Size="Size.Small">Aperte</MudRadio>
+                    <MudRadio T="FiltroStato" Value="FiltroStato.Chiuse" Dense="true" Size="Size.Small">Chiuse</MudRadio>
+                    <MudRadio T="FiltroStato" Value="FiltroStato.Tutte"  Dense="true" Size="Size.Small">Tutte</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Cliente (facoltativo)</MudText>
+            <div class="icm-sellist" style="height:218px;">
+                @if (_consulenteSelezionato is null)
+                {
+                    <div class="icm-sellist-placeholder">Selezionare un consulente.</div>
+                }
+                else if (!AnagraficheDelConsulente.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun cliente per questo consulente.</div>
+                }
+                else
+                {
+                    @foreach (var a in AnagraficheDelConsulente)
+                    {
+                        <div class="icm-sellist-item @(a.Id == _idAnagraficaSel ? "selected" : "")"
+                             @onclick="@(() => ToggleAnagrafica(a.Id))">
+                            @a.Nome
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 3: raffinamento Attività ──────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3"
+                  Style="display:flex;flex-direction:column;flex:1;">
+
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Attività (facoltativo)</MudText>
+
+            <div class="icm-sellist" style="height:300px;">
+                @if (_consulenteSelezionato is null)
+                {
+                    <div class="icm-sellist-placeholder">Selezionare un consulente.</div>
+                }
+                else if (!AttivitaDelConsulente.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessuna attività per questa selezione.</div>
+                }
+                else
+                {
+                    @foreach (var a in AttivitaDelConsulente)
+                    {
+                        <div class="icm-sellist-item icm-sellist-item-2col @(a.Id == _idAttivitaSel ? "selected" : "")"
+                             @onclick="@(() => ToggleAttivita(a.Id))">
+                            <span class="icm-nr">@a.Numero</span>
+                            <span class="icm-desc">@a.Descrizione</span>
+                        </div>
+                    }
+                }
+            </div>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                Clic per filtrare, nuovo clic per deselezionare.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Scheda: doppia griglia Studio / Cliente
+   ═══════════════════════════════════════════════════════════════════ *@
+@if (_consulenteSelezionato is not null)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
+
+        <MudText Typo="Typo.h2" Class="mb-3" Style="font-size:1.15rem;">
+            Scheda di @_consulenteSelezionato.Descrizione
+        </MudText>
+
+        @if (_caricamentoScheda)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+        }
+        else
+        {
+            @* ── Griglia a carico dello Studio (filtro stato D-C4) ── *@
+            <div class="d-flex align-center justify-space-between mb-1">
+                <MudText Typo="Typo.overline" Style="font-weight:700;">
+                    A carico dello Studio
+                    @if (RigheStudioFiltrate.Count > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-1">@RigheStudioFiltrate.Count</MudChip>
+                    }
+                </MudText>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Download" Ripple="false"
+                           Disabled="@(RigheStudioFiltrate.Count == 0)"
+                           OnClick="EsportaCsvStudioAsync">
+                    Esporta CSV
+                </MudButton>
+            </div>
+
+            @if (RigheStudioFiltrate.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="py-3 text-center">
+                    Nessuna consulenza a carico dello Studio per i filtri scelti.
+                </MudText>
+            }
+            else
+            {
+                <div style="overflow-x:auto;" class="mb-4">
+                    <MudTable Items="RigheStudioFiltrate" Dense="true" Striped="true" Hover="true"
+                              Style="min-width:860px;">
+                        <HeaderContent>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh>Attività</MudTh>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Scadenza</MudTh>
+                            <MudTh Style="text-align:right;">Importo €</MudTh>
+                            <MudTh Style="text-align:right;">Pagato €</MudTh>
+                            <MudTh Style="text-align:right;">Residuo €</MudTh>
+                            <MudTh Style="text-align:center;width:90px;">Stato</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Cliente">@context.RagioneSociale</MudTd>
+                            <MudTd DataLabel="Attività">@context.AttivitaNumero – @context.AttivitaDescrizione</MudTd>
+                            <MudTd DataLabel="Tipo">@context.TipoDescrizione</MudTd>
+                            <MudTd DataLabel="Scadenza">@FormatoData(context.Scadenza)</MudTd>
+                            <MudTd DataLabel="Importo" Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
+                            <MudTd DataLabel="Pagato" Style="text-align:right;">@context.Pagato.ToString("N2", _itCulture)</MudTd>
+                            <MudTd DataLabel="Residuo" Style="text-align:right;font-weight:700;">@context.Residuo.ToString("N2", _itCulture)</MudTd>
+                            <MudTd Style="text-align:center;">
+                                @if (context.Aperta)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Aperta</MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Saldata</MudChip>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                        <FooterContent>
+                            <MudTd colspan="4" Style="font-weight:700;">Totale</MudTd>
+                            <MudTd Style="text-align:right;font-weight:700;">@RigheStudioFiltrate.Sum(r => r.Importo).ToString("N2", _itCulture)</MudTd>
+                            <MudTd Style="text-align:right;font-weight:700;">@RigheStudioFiltrate.Sum(r => r.Pagato).ToString("N2", _itCulture)</MudTd>
+                            <MudTd Style="text-align:right;font-weight:700;">@RigheStudioFiltrate.Sum(r => r.Residuo).ToString("N2", _itCulture)</MudTd>
+                            <MudTd></MudTd>
+                        </FooterContent>
+                    </MudTable>
+                </div>
+            }
+
+            @* ── Griglia a carico del Cliente (sempre tutte, D-C4) ── *@
+            <div class="d-flex align-center justify-space-between mb-1">
+                <MudText Typo="Typo.overline" Style="font-weight:700;">
+                    A carico del Cliente
+                    @if (RigheClienteFiltrate.Count > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-1">@RigheClienteFiltrate.Count</MudChip>
+                    }
+                </MudText>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.Download" Ripple="false"
+                           Disabled="@(RigheClienteFiltrate.Count == 0)"
+                           OnClick="EsportaCsvClienteAsync">
+                    Esporta CSV
+                </MudButton>
+            </div>
+
+            @if (RigheClienteFiltrate.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="py-3 text-center">
+                    Nessuna consulenza a carico del Cliente per i filtri scelti.
+                </MudText>
+            }
+            else
+            {
+                <div style="overflow-x:auto;">
+                    <MudTable Items="RigheClienteFiltrate" Dense="true" Striped="true" Hover="true"
+                              Style="min-width:640px;">
+                        <HeaderContent>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh>Attività</MudTh>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh Style="text-align:right;">Importo €</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Cliente">@context.RagioneSociale</MudTd>
+                            <MudTd DataLabel="Attività">@context.AttivitaNumero – @context.AttivitaDescrizione</MudTd>
+                            <MudTd DataLabel="Tipo">@context.TipoDescrizione</MudTd>
+                            <MudTd DataLabel="Importo" Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
+                        </RowTemplate>
+                        <FooterContent>
+                            <MudTd colspan="3" Style="font-weight:700;">Totale</MudTd>
+                            <MudTd Style="text-align:right;font-weight:700;">@RigheClienteFiltrate.Sum(r => r.Importo).ToString("N2", _itCulture)</MudTd>
+                        </FooterContent>
+                    </MudTable>
+                </div>
+            }
+        }
+    </MudPaper>
+}
+
+@code {
+    private enum FiltroStato { Aperte, Chiuse, Tutte }
+
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    // ─── Dati caricati ───────────────────────────────────────────────────
+    private IReadOnlyList<Consulente>          _consulenti = Array.Empty<Consulente>();
+    private IReadOnlyList<SchedaConsulenzaRiga> _scheda    = Array.Empty<SchedaConsulenzaRiga>();
+
+    // ─── Selezioni / filtri ──────────────────────────────────────────────
+    private Consulente? _consulenteSelezionato;
+    private FiltroStato _filtroStato = FiltroStato.Aperte;   // default come il report legacy
+    private Guid?       _idAnagraficaSel;
+    private Guid?       _idAttivitaSel;
+    private string      _filtroConsulente = string.Empty;
+
+    // ─── Stato caricamento ───────────────────────────────────────────────
+    private bool _caricamentoConsulenti = true;
+    private bool _caricamentoScheda;
+
+    // ─── Computed ────────────────────────────────────────────────────────
+    private IEnumerable<Consulente> ConsulentiFiltrati => string.IsNullOrWhiteSpace(_filtroConsulente)
+        ? _consulenti
+        : _consulenti.Where(c => c.Descrizione.Contains(_filtroConsulente.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    // Clienti del consulente, derivati dalla scheda (niente query aggiuntive).
+    private IReadOnlyList<(Guid Id, string Nome)> AnagraficheDelConsulente
+        => _scheda
+            .GroupBy(s => s.IdAnagrafica)
+            .Select(g => (g.Key, g.First().RagioneSociale))
+            .OrderBy(x => x.RagioneSociale, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    // Attività del consulente (ristrette al cliente selezionato, se presente).
+    private IReadOnlyList<(Guid Id, string Numero, string Descrizione)> AttivitaDelConsulente
+        => _scheda
+            .Where(s => _idAnagraficaSel is null || s.IdAnagrafica == _idAnagraficaSel)
+            .GroupBy(s => s.IdAttivita)
+            .Select(g => (g.Key, g.First().AttivitaNumero, g.First().AttivitaDescrizione))
+            .OrderBy(x => x.AttivitaNumero, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private IEnumerable<SchedaConsulenzaRiga> RigheRaffinate
+        => _scheda
+            .Where(s => _idAnagraficaSel is null || s.IdAnagrafica == _idAnagraficaSel)
+            .Where(s => _idAttivitaSel is null || s.IdAttivita == _idAttivitaSel);
+
+    // D-C4: il filtro stato agisce SOLO qui (griglia Studio).
+    private IReadOnlyList<SchedaConsulenzaRiga> RigheStudioFiltrate
+        => RigheRaffinate
+            .Where(s => s.Carico == CaricoConsulenza.Studio)
+            .Where(s => _filtroStato switch
+            {
+                FiltroStato.Aperte => s.Aperta,
+                FiltroStato.Chiuse => !s.Aperta,
+                _                  => true,
+            })
+            .ToList();
+
+    // D-C4: le righe a carico Cliente restano sempre visibili (nessun filtro stato).
+    private IReadOnlyList<SchedaConsulenzaRiga> RigheClienteFiltrate
+        => RigheRaffinate
+            .Where(s => s.Carico == CaricoConsulenza.Cliente)
+            .ToList();
+
+    // ─── Inizializzazione ────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _consulenti = await ConsulenteManager.ElencoAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento consulenti fallito.", "SchedeAttivitaConsulenti.OnInitializedAsync");
+            Snackbar.Add("Errore nel caricamento dei consulenti.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoConsulenti = false; }
+    }
+
+    // ─── Selezioni ───────────────────────────────────────────────────────
+    private async Task SelezionaConsulenteAsync(Consulente c)
+    {
+        if (_consulenteSelezionato?.IdConsulente == c.IdConsulente) return;
+        _consulenteSelezionato = c;
+        _idAnagraficaSel = null;
+        _idAttivitaSel   = null;
+        await CaricaSchedaAsync();
+    }
+
+    private void ToggleAnagrafica(Guid id)
+    {
+        _idAnagraficaSel = _idAnagraficaSel == id ? null : id;
+        // Se l'attività selezionata non appartiene più al cliente scelto, deselezionala.
+        if (_idAttivitaSel is not null
+            && !AttivitaDelConsulente.Any(a => a.Id == _idAttivitaSel))
+            _idAttivitaSel = null;
+    }
+
+    private void ToggleAttivita(Guid id)
+        => _idAttivitaSel = _idAttivitaSel == id ? null : id;
+
+    private async Task CaricaSchedaAsync()
+    {
+        if (_consulenteSelezionato is null) return;
+        _caricamentoScheda = true;
+        try
+        {
+            _scheda = await AttivitaConsulenteManager.SchedaConsulenteAsync(_consulenteSelezionato.IdConsulente);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Caricamento scheda consulente fallito.", "SchedeAttivitaConsulenti.CaricaSchedaAsync");
+            Snackbar.Add("Errore nel caricamento della scheda.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoScheda = false; }
+    }
+
+    // ─── Export CSV (vista filtrata corrente, colonne visibili) ──────────
+    private Task EsportaCsvStudioAsync()
+        => EsportaCsvAsync(
+            RigheStudioFiltrate,
+            new[] { "Cliente", "Attività", "Tipo", "Scadenza", "Importo", "Pagato", "Residuo", "Stato" },
+            r => new[]
+            {
+                r.RagioneSociale,
+                $"{r.AttivitaNumero} – {r.AttivitaDescrizione}",
+                r.TipoDescrizione,
+                r.Scadenza?.ToString("dd/MM/yyyy") ?? string.Empty,
+                r.Importo.ToString("N2", _itCulture),
+                r.Pagato.ToString("N2", _itCulture),
+                r.Residuo.ToString("N2", _itCulture),
+                r.Aperta ? "Aperta" : "Saldata",
+            },
+            "SchedaConsulente_Studio");
+
+    private Task EsportaCsvClienteAsync()
+        => EsportaCsvAsync(
+            RigheClienteFiltrate,
+            new[] { "Cliente", "Attività", "Tipo", "Importo" },
+            r => new[]
+            {
+                r.RagioneSociale,
+                $"{r.AttivitaNumero} – {r.AttivitaDescrizione}",
+                r.TipoDescrizione,
+                r.Importo.ToString("N2", _itCulture),
+            },
+            "SchedaConsulente_Cliente");
+
+    private async Task EsportaCsvAsync(
+        IReadOnlyList<SchedaConsulenzaRiga> dati,
+        string[] intestazioni,
+        Func<SchedaConsulenzaRiga, string[]> riga,
+        string prefisso)
+    {
+        if (dati.Count == 0)
+        {
+            Snackbar.Add("Nessuna riga da esportare.", MudBlazor.Severity.Info);
+            return;
+        }
+        try
+        {
+            var bytes = CsvExport.Genera(intestazioni, dati.Select(riga));
+            var nomeFile = $"{prefisso}_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            await JS.InvokeVoidAsync("icmDownloadFile", nomeFile, Convert.ToBase64String(bytes), "text/csv");
+            Snackbar.Add($"Esportate {dati.Count} righe.", MudBlazor.Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex, "Esportazione CSV scheda fallita.", "SchedeAttivitaConsulenti.EsportaCsvAsync");
+            Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private static string FormatoData(DateOnly? d)
+        => d.HasValue ? d.Value.ToString("dd/MM/yyyy") : "—";
+}

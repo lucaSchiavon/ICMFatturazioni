@@ -1,4 +1,5 @@
 using ICMFatturazioni.Web.Entities;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Tests.Managers;
@@ -13,6 +14,37 @@ internal sealed class FakeAttivitaConsulenteRepository : IAttivitaConsulenteRepo
 
     /// <summary>Pagato per riga (simula le tranche attive di fatt.AttivitaConsulentiPagamenti).</summary>
     public Dictionary<Guid, decimal> PagatoPerRiga { get; } = new();
+
+    /// <summary>Anagrafica/attività simulate per la scheda consulente (idAttivita → dati di join).</summary>
+    public Dictionary<Guid, (Guid IdAnagrafica, string RagioneSociale, string Numero, string Descrizione)> AttivitaInfo { get; } = new();
+
+    public Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaConsulenteAsync(Guid idConsulente, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<SchedaConsulenzaRiga>>(
+            _store.Values
+                .Where(r => r.IdConsulente == idConsulente && r.IsAttivo)
+                .Select(r =>
+                {
+                    var info = AttivitaInfo.TryGetValue(r.IdAttivita, out var i)
+                        ? i : (IdAnagrafica: Guid.Empty, RagioneSociale: "Cliente?", Numero: "?", Descrizione: "?");
+                    return new SchedaConsulenzaRiga
+                    {
+                        IdAttivitaConsulente = r.IdAttivitaConsulente,
+                        IdAnagrafica         = info.IdAnagrafica,
+                        IdAttivita           = r.IdAttivita,
+                        RagioneSociale       = info.RagioneSociale,
+                        AttivitaNumero       = info.Numero,
+                        AttivitaDescrizione  = info.Descrizione,
+                        TipoDescrizione      = r.TipoAttivitaConsulenteDescrizione ?? string.Empty,
+                        Carico               = r.Carico,
+                        Scadenza             = r.Scadenza,
+                        Importo              = r.Importo,
+                        Pagato               = PagatoPerRiga.TryGetValue(r.IdAttivitaConsulente, out var p) ? p : 0m,
+                        Nota                 = r.Nota,
+                    };
+                })
+                .OrderBy(s => s.RagioneSociale, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(s => s.AttivitaNumero, StringComparer.OrdinalIgnoreCase)
+                .ToList());
 
     public Task<IReadOnlyList<AttivitaConsulente>> GetByAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<AttivitaConsulente>>(

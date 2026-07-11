@@ -257,6 +257,45 @@ public class AttivitaConsulenteManagerTests
         Assert.Equal(AuditOperazione.Eliminazione, voce.Operazione);
     }
 
+    // ─── Scheda consulente (dispensa cap. 6) ─────────────────────────────
+
+    [Fact]
+    public async Task SchedaConsulenteAsync_SoloRigheDelConsulente_ConSaldo()
+    {
+        var fake = new FakeAttivitaConsulenteRepository();
+        var sut = NewSut(fake);
+        var altroConsulente = Guid.NewGuid();
+
+        var id1 = await sut.CreaAsync(Riga(importo: 4000m));                        // del consulente
+        await sut.CreaAsync(Riga(importo: 999m, idConsulente: altroConsulente));    // di un altro
+        var id3 = await sut.CreaAsync(Riga(importo: 1000m, carico: CaricoConsulenza.Cliente));
+        fake.PagatoPerRiga[id1] = 1500m;
+
+        var scheda = await sut.SchedaConsulenteAsync(IdConsulente);
+
+        Assert.Equal(2, scheda.Count);
+        var rigaStudio = Assert.Single(scheda, s => s.IdAttivitaConsulente == id1);
+        Assert.Equal(1500m, rigaStudio.Pagato);
+        Assert.Equal(2500m, rigaStudio.Residuo);
+        Assert.True(rigaStudio.Aperta);
+        Assert.Contains(scheda, s => s.IdAttivitaConsulente == id3 && s.Carico == CaricoConsulenza.Cliente);
+    }
+
+    [Fact]
+    public async Task SchedaConsulenteAsync_RigaSaldata_NonAperta()
+    {
+        var fake = new FakeAttivitaConsulenteRepository();
+        var sut = NewSut(fake);
+        var id = await sut.CreaAsync(Riga(importo: 4000m));
+        fake.PagatoPerRiga[id] = 4000m;
+
+        var scheda = await sut.SchedaConsulenteAsync(IdConsulente);
+
+        var riga = Assert.Single(scheda);
+        Assert.Equal(0m, riga.Residuo);
+        Assert.False(riga.Aperta);   // D-C4: aperta = residuo > 0
+    }
+
     // ─── Elenco ──────────────────────────────────────────────────────────
 
     [Fact]

@@ -1,6 +1,7 @@
 using ICMFatturazioni.Web.Auditing;
 using ICMFatturazioni.Web.Entities;
 using ICMFatturazioni.Web.Managers.Interfaces;
+using ICMFatturazioni.Web.Models;
 using ICMFatturazioni.Web.Repositories.Interfaces;
 
 namespace ICMFatturazioni.Web.Managers;
@@ -29,6 +30,9 @@ internal sealed class AttivitaConsulenteManager : IAttivitaConsulenteManager
 
     public Task<IReadOnlyList<AttivitaConsulente>> ElencoPerAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default)
         => _repository.GetByAttivitaAsync(idAttivita, cancellationToken);
+
+    public Task<IReadOnlyList<SchedaConsulenzaRiga>> SchedaConsulenteAsync(Guid idConsulente, CancellationToken cancellationToken = default)
+        => _repository.GetSchedaConsulenteAsync(idConsulente, cancellationToken);
 
     public async Task<Guid> CreaAsync(AttivitaConsulente riga, CancellationToken cancellationToken = default)
     {
