@@ -112,6 +112,7 @@ builder.Services.AddScoped<IAziendaRepository, AziendaRepository>();
 builder.Services.AddScoped<IConsulenteRepository, ConsulenteRepository>();
 builder.Services.AddScoped<ITipoAttivitaConsulenteRepository, TipoAttivitaConsulenteRepository>();
 builder.Services.AddScoped<IAttivitaConsulenteRepository, AttivitaConsulenteRepository>();
+builder.Services.AddScoped<IAttivitaConsulentePagamentoRepository, AttivitaConsulentePagamentoRepository>();
 // Sola lettura sui verbali firmati (dominio ICMVerbali, vista fatt.VerbaliConsultazione).
 builder.Services.AddScoped<IVerbaleConsultazioneRepository, VerbaleConsultazioneRepository>();
 
@@ -145,6 +146,7 @@ builder.Services.AddScoped<IAziendaManager, AziendaManager>();
 builder.Services.AddScoped<IConsulenteManager, ConsulenteManager>();
 builder.Services.AddScoped<ITipoAttivitaConsulenteManager, TipoAttivitaConsulenteManager>();
 builder.Services.AddScoped<IAttivitaConsulenteManager, AttivitaConsulenteManager>();
+builder.Services.AddScoped<IAttivitaConsulentePagamentoManager, AttivitaConsulentePagamentoManager>();
 // Consultazione verbali firmati (sola lettura, dominio ICMVerbali).
 builder.Services.AddScoped<IVerbaleConsultazioneManager, VerbaleConsultazioneManager>();
 

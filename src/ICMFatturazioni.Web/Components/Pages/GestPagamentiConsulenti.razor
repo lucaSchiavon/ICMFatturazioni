@@ -1,0 +1,651 @@
+@*
+    Pagina /gest-pagamenti-consulenti — Gestione Pagamenti Consulenti (dispensa cap. 5).
+
+    Stessa cascata a tre selettori delle maschere sorelle. Selezionata l'attività,
+    compaiono SOLO le consulenze a carico dello Studio (quelle a carico del
+    Cliente restano nell'altra maschera), ciascuna con Importo / Pagato / Residuo
+    derivati dalle tranche attive. Cliccando una riga si apre in basso il pannello
+    "Pagamenti effettuati": elenco tranche (Data, Importo, Nota) con aggiunta,
+    modifica ed eliminazione. Guardia D-C3: tranche mai oltre il residuo.
+*@
+
+@page "/gest-pagamenti-consulenti"
+
+@using ICMFatturazioni.Web.Entities
+@using ICMFatturazioni.Web.Managers
+@using ICMFatturazioni.Web.Managers.Interfaces
+@using ICMFatturazioni.Web.Models
+@using System.Globalization
+
+@inject IAttivitaManager AttivitaManager
+@inject IAttivitaConsulentePagamentoManager PagamentoManager
+@inject IAnagraficaManager AnagraficaManager
+@inject ITipoAttivitaManager TipoAttivitaManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ICMFatturazioni.Web.Managers.Interfaces.ILogManager LogManager
+
+<PageTitle>Gestione pagamenti consulenti · ICM Fatturazioni</PageTitle>
+
+<MudText Typo="Typo.h1" Class="mb-4">Gestione pagamenti consulenti</MudText>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Riga dei tre selettori (cascata: cliente → tipo → attività)
+   ═══════════════════════════════════════════════════════════════════ *@
+<MudGrid Spacing="2" Class="icm-grid-3col mb-0">
+
+    @* ── Col 1: Anagrafica ──────────────────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3"
+                  Style="display:flex;flex-direction:column;flex:1;">
+
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Anagrafica</MudText>
+
+            <MudRadioGroup T="FiltroTipo" Value="_filtroTipo" ValueChanged="OnFiltroTipoChanged" Class="mb-1">
+                <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Tutti"   Dense="true" Size="Size.Small">Tutti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Enti"    Dense="true" Size="Size.Small">Enti</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Societa" Dense="true" Size="Size.Small">Soc.</MudRadio>
+                    <MudRadio T="FiltroTipo" Value="FiltroTipo.Privati" Dense="true" Size="Size.Small">Privati</MudRadio>
+                </MudStack>
+            </MudRadioGroup>
+
+            <MudTextField @bind-Value="_filtroRagioneSociale"
+                          Placeholder="Filtra per ragione sociale…"
+                          Immediate="true" DebounceInterval="150"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Clear"
+                          OnAdornmentClick="@(() => _filtroRagioneSociale = string.Empty)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Class="mb-2" />
+
+            <div class="icm-sellist" style="height:240px;">
+                @if (_caricamentoAnagrafica)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!AnagraficheFiltrate.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun cliente trovato.</div>
+                }
+                else
+                {
+                    @foreach (var a in AnagraficheFiltrate)
+                    {
+                        <div class="icm-sellist-item @(a.IdAnagrafica == _anagraficaSelezionata?.IdAnagrafica ? "selected" : "")"
+                             @onclick="@(() => SelezionaAnagrafica(a))">
+                            <span class="icm-tipo-badge">@a.TipoAnagrafica.ToDbCode()</span>@a.RagioneSociale
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 2: Tipo Attività ─────────────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3"
+                  Style="display:flex;flex-direction:column;flex:1;">
+
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Tipo Attività</MudText>
+
+            <div class="icm-sellist" style="height:240px;">
+                @if (_caricamentoTipi)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!_tipiAttivita.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessun tipo attività configurato.</div>
+                }
+                else
+                {
+                    @foreach (var t in _tipiAttivita)
+                    {
+                        <div class="icm-sellist-item @(t.IdTipoAttivita == _tipoSelezionato?.IdTipoAttivita ? "selected" : "")"
+                             @onclick="@(() => SelezionaTipoAsync(t))">
+                            @t.Descrizione
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ── Col 3: Attività esistenti ────────────────────────────── *@
+    <MudItem xs="12" md="4" Style="display:flex;flex-direction:column;">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-3"
+                  Style="display:flex;flex-direction:column;flex:1;">
+
+            <MudText Typo="Typo.overline" Class="mb-2" Style="font-weight:700;">Attività esistenti</MudText>
+
+            <div class="icm-sellist" style="height:240px;">
+                @if (_anagraficaSelezionata is null || _tipoSelezionato is null)
+                {
+                    <div class="icm-sellist-placeholder">Selezionare un cliente e un tipo.</div>
+                }
+                else if (_caricamentoAttivita)
+                {
+                    <div class="icm-sellist-placeholder">Caricamento…</div>
+                }
+                else if (!_attivitaLista.Any())
+                {
+                    <div class="icm-sellist-placeholder">Nessuna attività per questa selezione.</div>
+                }
+                else
+                {
+                    @foreach (var a in _attivitaLista)
+                    {
+                        <div class="icm-sellist-item icm-sellist-item-2col @(a.IdAttivita == _attivitaSelezionata?.IdAttivita ? "selected" : "")"
+                             @onclick="@(() => SelezionaAttivitaAsync(a))">
+                            <span class="icm-nr">@a.Numero</span>
+                            <span class="icm-desc">@a.Descrizione</span>
+                        </div>
+                    }
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+</MudGrid>
+
+@* ═══════════════════════════════════════════════════════════════════
+   Pannello: testata + griglia saldi (solo carico Studio) + tranche
+   ═══════════════════════════════════════════════════════════════════ *@
+@if (_attivitaSelezionata is not null)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
+
+        @* ── Testata (sola lettura) ─────────────────────────────── *@
+        <MudGrid Spacing="2" Class="mb-3">
+            <MudItem xs="4" sm="4" md="2">
+                <div class="icm-field-label">Nr.</div>
+                <div class="icm-field-value" style="font-size:1.4rem;font-weight:700;color:var(--mud-palette-primary);word-break:break-word;">
+                    @_attivitaSelezionata.Numero
+                </div>
+            </MudItem>
+            <MudItem xs="8" sm="8" md="10">
+                <div class="icm-field-label">Descrizione</div>
+                <div class="icm-field-value" style="font-size:1.05rem;">@_attivitaSelezionata.Descrizione</div>
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="mb-3" />
+
+        @* ── Griglia consulenze a carico Studio con saldo ───────── *@
+        <MudText Typo="Typo.overline" Style="font-weight:700;">
+            Consulenze a carico dello Studio
+            @if (_saldi.Count > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-1">@_saldi.Count</MudChip>
+            }
+        </MudText>
+
+        @if (_caricamentoSaldi)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+        }
+        else if (_saldi.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="py-3 text-center">
+                Nessuna consulenza a carico dello Studio per questa attività.
+            </MudText>
+        }
+        else
+        {
+            <div style="overflow-x:auto;">
+                <MudTable Items="_saldi" Dense="true" Striped="true" Hover="true"
+                          Style="min-width:720px;"
+                          T="ConsulenzaConSaldo"
+                          OnRowClick="@(args => SelezionaRigaAsync(args.Item))"
+                          RowClassFunc="@RigaSaldoClass">
+                    <HeaderContent>
+                        <MudTh>Consulente</MudTh>
+                        <MudTh>Tipo</MudTh>
+                        <MudTh>Scadenza</MudTh>
+                        <MudTh Style="text-align:right;">Importo €</MudTh>
+                        <MudTh Style="text-align:right;">Pagato €</MudTh>
+                        <MudTh Style="text-align:right;">Residuo €</MudTh>
+                        <MudTh Style="text-align:center;width:90px;">Stato</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Consulente">@context.ConsulenteDescrizione</MudTd>
+                        <MudTd DataLabel="Tipo">@context.TipoDescrizione</MudTd>
+                        <MudTd DataLabel="Scadenza">@FormatoData(context.Scadenza)</MudTd>
+                        <MudTd DataLabel="Importo" Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
+                        <MudTd DataLabel="Pagato" Style="text-align:right;">@context.Pagato.ToString("N2", _itCulture)</MudTd>
+                        <MudTd DataLabel="Residuo" Style="text-align:right;font-weight:700;">@context.Residuo.ToString("N2", _itCulture)</MudTd>
+                        <MudTd Style="text-align:center;">
+                            @if (context.Residuo == 0)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Saldata</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Aperta</MudChip>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <FooterContent>
+                        <MudTd colspan="3" Style="font-weight:700;">Totale</MudTd>
+                        <MudTd Style="text-align:right;font-weight:700;">@_saldi.Sum(s => s.Importo).ToString("N2", _itCulture)</MudTd>
+                        <MudTd Style="text-align:right;font-weight:700;">@_saldi.Sum(s => s.Pagato).ToString("N2", _itCulture)</MudTd>
+                        <MudTd Style="text-align:right;font-weight:700;">@_saldi.Sum(s => s.Residuo).ToString("N2", _itCulture)</MudTd>
+                        <MudTd></MudTd>
+                    </FooterContent>
+                </MudTable>
+            </div>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                Clicca una consulenza per gestirne i pagamenti.
+            </MudText>
+        }
+
+        @* ── Pannello "Pagamenti effettuati" della riga selezionata ─ *@
+        @if (_rigaSelezionata is not null)
+        {
+            <MudDivider Class="mt-4 mb-3" />
+
+            <MudText Typo="Typo.overline" Style="font-weight:700;">
+                Pagamenti effettuati — @_rigaSelezionata.ConsulenteDescrizione (@_rigaSelezionata.TipoDescrizione)
+            </MudText>
+
+            @* Editor tranche *@
+            <MudPaper Elevation="0" Class="mud-background-gray rounded pa-3 mb-3 mt-2">
+                <MudText Typo="Typo.caption" Class="mb-2">
+                    @(_pagInModifica is null
+                        ? $"Nuova tranche — residuo disponibile: {_rigaSelezionata.Residuo.ToString("N2", _itCulture)} €"
+                        : $"Modifica tranche del {_pagInModifica.DataPagamento:dd/MM/yyyy}")
+                </MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6" sm="4" md="3">
+                        <MudDatePicker Label="Data pagamento *"
+                                       Date="_fPagData"
+                                       DateChanged="@(d => _fPagData = d)"
+                                       DateFormat="dd/MM/yyyy"
+                                       Culture="_itCulture"
+                                       Editable="true"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                                       Class="campo-obbligatorio" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="3">
+                        @* Come l'Importo della maschera consulenze: niente Immediate
+                           (con Format N2 riformatterebbe a ogni tasto), commit al blur. *@
+                        <MudNumericField T="decimal?" @bind-Value="_fPagImporto"
+                                         Label="Importo € *"
+                                         Min="0m" Format="N2" Culture="_itCulture"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense"
+                                         Class="campo-obbligatorio" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4" md="6">
+                        <MudTextField @bind-Value="_fPagNota"
+                                      Label="Nota (opzionale)"
+                                      MaxLength="200"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="d-flex justify-end gap-2 mt-2">
+                    @if (_pagInModifica is not null)
+                    {
+                        <MudButton Size="Size.Small" Ripple="false"
+                                   StartIcon="@Icons.Material.Filled.Cancel"
+                                   OnClick="ResetEditorPagamento">
+                            Annulla modifica
+                        </MudButton>
+                    }
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                               Ripple="false"
+                               StartIcon="@(_pagInModifica is null ? Icons.Material.Filled.Add : Icons.Material.Filled.Save)"
+                               Disabled="_salvataggioPagamento"
+                               OnClick="SalvaPagamentoAsync">
+                        @(_salvataggioPagamento ? "Salvataggio…" : _pagInModifica is null ? "Registra pagamento" : "Salva")
+                    </MudButton>
+                </div>
+            </MudPaper>
+
+            @* Elenco tranche *@
+            @if (_caricamentoPagamenti)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+            }
+            else if (_pagamenti.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="py-3 text-center">
+                    Nessun pagamento registrato.
+                </MudText>
+            }
+            else
+            {
+                <div style="overflow-x:auto;">
+                    <MudTable Items="_pagamenti" Dense="true" Striped="true" Hover="true"
+                              Style="min-width:480px;">
+                        <HeaderContent>
+                            <MudTh>Data</MudTh>
+                            <MudTh Style="text-align:right;">Importo €</MudTh>
+                            <MudTh>Nota</MudTh>
+                            <MudTh Style="width:88px;"></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Data">@context.DataPagamento.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd DataLabel="Importo" Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
+                            <MudTd DataLabel="Nota">@context.Nota</MudTd>
+                            <MudTd Style="white-space:nowrap;">
+                                <MudTooltip Text="Modifica">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   Ripple="false"
+                                                   OnClick="@(() => AvviaModificaPagamento(context))" />
+                                </MudTooltip>
+                                <MudTooltip Text="Elimina">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                   Size="Size.Small" Ripple="false"
+                                                   OnClick="@(() => ConfermaEdEliminaPagamentoAsync(context))" />
+                                </MudTooltip>
+                            </MudTd>
+                        </RowTemplate>
+                        <FooterContent>
+                            <MudTd Style="font-weight:700;">Totale pagato</MudTd>
+                            <MudTd Style="text-align:right;font-weight:700;">
+                                @_pagamenti.Sum(p => p.Importo).ToString("N2", _itCulture)
+                            </MudTd>
+                            <MudTd colspan="2"></MudTd>
+                        </FooterContent>
+                    </MudTable>
+                </div>
+            }
+        }
+    </MudPaper>
+}
+
+@code {
+    // ─── Enum interni ────────────────────────────────────────────────────
+    private enum FiltroTipo { Tutti, Enti, Societa, Privati }
+
+    private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
+
+    // ─── Dati caricati ───────────────────────────────────────────────────
+    private IReadOnlyList<Anagrafica>   _anagrafiche   = Array.Empty<Anagrafica>();
+    private IReadOnlyList<TipoAttivita> _tipiAttivita  = Array.Empty<TipoAttivita>();
+    private IReadOnlyList<Attivita>     _attivitaLista = Array.Empty<Attivita>();
+    private IReadOnlyList<ConsulenzaConSaldo>          _saldi     = Array.Empty<ConsulenzaConSaldo>();
+    private IReadOnlyList<AttivitaConsulentePagamento> _pagamenti = Array.Empty<AttivitaConsulentePagamento>();
+
+    // ─── Selezioni correnti ──────────────────────────────────────────────
+    private Anagrafica?        _anagraficaSelezionata;
+    private TipoAttivita?      _tipoSelezionato;
+    private Attivita?          _attivitaSelezionata;
+    private ConsulenzaConSaldo? _rigaSelezionata;
+
+    // ─── Stato caricamento ───────────────────────────────────────────────
+    private bool _caricamentoAnagrafica = true;
+    private bool _caricamentoTipi       = true;
+    private bool _caricamentoAttivita;
+    private bool _caricamentoSaldi;
+    private bool _caricamentoPagamenti;
+
+    // ─── Filtro anagrafiche ──────────────────────────────────────────────
+    private FiltroTipo _filtroTipo           = FiltroTipo.Tutti;
+    private string     _filtroRagioneSociale = string.Empty;
+
+    // ─── Editor tranche ──────────────────────────────────────────────────
+    private AttivitaConsulentePagamento? _pagInModifica;
+    private DateTime? _fPagData = DateTime.Today;
+    private decimal?  _fPagImporto;
+    private string    _fPagNota = string.Empty;
+    private bool      _salvataggioPagamento;
+
+    // ─── Computed ────────────────────────────────────────────────────────
+    private IEnumerable<Anagrafica> AnagraficheFiltrate
+    {
+        get
+        {
+            var q = _anagrafiche.AsEnumerable();
+            q = _filtroTipo switch
+            {
+                FiltroTipo.Enti    => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.EntePubblico),
+                FiltroTipo.Societa => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Societa),
+                FiltroTipo.Privati => q.Where(a => a.TipoAnagrafica == TipoAnagrafica.Privato),
+                _                  => q,
+            };
+            if (!string.IsNullOrWhiteSpace(_filtroRagioneSociale))
+                q = q.Where(a => a.RagioneSociale.Contains(
+                    _filtroRagioneSociale.Trim(), StringComparison.OrdinalIgnoreCase));
+            return q;
+        }
+    }
+
+    // ─── Inizializzazione ────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        var t1 = AnagraficaManager.ElencoAsync();
+        var t2 = TipoAttivitaManager.ElencoAsync();
+        await Task.WhenAll(t1, t2);
+        _anagrafiche  = t1.Result;
+        _tipiAttivita = t2.Result;
+        _caricamentoAnagrafica = false;
+        _caricamentoTipi       = false;
+    }
+
+    // ─── Cascata di selezione ────────────────────────────────────────────
+    private void SelezionaAnagrafica(Anagrafica a)
+    {
+        if (_anagraficaSelezionata?.IdAnagrafica == a.IdAnagrafica) return;
+        _anagraficaSelezionata = a;
+        _tipoSelezionato       = null;
+        _attivitaSelezionata   = null;
+        _attivitaLista         = Array.Empty<Attivita>();
+        DeselezionaRiga();
+    }
+
+    private async Task SelezionaTipoAsync(TipoAttivita t)
+    {
+        if (_tipoSelezionato?.IdTipoAttivita == t.IdTipoAttivita) return;
+        _tipoSelezionato     = t;
+        _attivitaSelezionata = null;
+        DeselezionaRiga();
+        if (_anagraficaSelezionata is not null)
+            await CaricaAttivitaAsync();
+        else
+            _attivitaLista = Array.Empty<Attivita>();
+    }
+
+    private async Task CaricaAttivitaAsync()
+    {
+        if (_anagraficaSelezionata is null || _tipoSelezionato is null) return;
+        _caricamentoAttivita = true;
+        try
+        {
+            _attivitaLista = await AttivitaManager.ElencoPerAnagraficaTipoAsync(
+                _anagraficaSelezionata.IdAnagrafica,
+                _tipoSelezionato.IdTipoAttivita);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento attività fallito.", "GestPagamentiConsulenti.CaricaAttivitaAsync");
+            Snackbar.Add("Errore nel caricamento delle attività.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoAttivita = false; }
+    }
+
+    private async Task SelezionaAttivitaAsync(Attivita a)
+    {
+        _attivitaSelezionata = a;
+        DeselezionaRiga();
+        await CaricaSaldiAsync();
+    }
+
+    private void OnFiltroTipoChanged(FiltroTipo nuovo)
+    {
+        _filtroTipo = nuovo;
+        if (_anagraficaSelezionata is not null
+            && !AnagraficheFiltrate.Any(a => a.IdAnagrafica == _anagraficaSelezionata.IdAnagrafica))
+        {
+            _anagraficaSelezionata = null;
+            _tipoSelezionato       = null;
+            _attivitaSelezionata   = null;
+            _attivitaLista         = Array.Empty<Attivita>();
+            DeselezionaRiga();
+        }
+    }
+
+    // ─── Saldi e selezione riga ──────────────────────────────────────────
+    private async Task CaricaSaldiAsync()
+    {
+        if (_attivitaSelezionata is null) return;
+        _caricamentoSaldi = true;
+        try
+        {
+            _saldi = await PagamentoManager.ConsulenzeConSaldoAsync(_attivitaSelezionata.IdAttivita);
+            // Dopo un ricarico, riaggancia la riga selezionata alla sua versione
+            // aggiornata (importo/pagato/residuo possono essere cambiati).
+            if (_rigaSelezionata is not null)
+                _rigaSelezionata = _saldi.FirstOrDefault(
+                    s => s.IdAttivitaConsulente == _rigaSelezionata.IdAttivitaConsulente);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento saldi consulenze fallito.", "GestPagamentiConsulenti.CaricaSaldiAsync");
+            Snackbar.Add("Errore nel caricamento delle consulenze.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoSaldi = false; }
+    }
+
+    private async Task SelezionaRigaAsync(ConsulenzaConSaldo riga)
+    {
+        _rigaSelezionata = riga;
+        ResetEditorPagamento();
+        await CaricaPagamentiAsync();
+    }
+
+    private void DeselezionaRiga()
+    {
+        _rigaSelezionata = null;
+        _pagamenti       = Array.Empty<AttivitaConsulentePagamento>();
+        _saldi           = Array.Empty<ConsulenzaConSaldo>();
+        ResetEditorPagamento();
+    }
+
+    private string RigaSaldoClass(ConsulenzaConSaldo s, int _) =>
+        _rigaSelezionata?.IdAttivitaConsulente == s.IdAttivitaConsulente
+            ? "anagrafica-riga-selezionata" : string.Empty;
+
+    // ─── Tranche ─────────────────────────────────────────────────────────
+    private async Task CaricaPagamentiAsync()
+    {
+        if (_rigaSelezionata is null) return;
+        _caricamentoPagamenti = true;
+        try
+        {
+            _pagamenti = await PagamentoManager.ElencoPerRigaAsync(_rigaSelezionata.IdAttivitaConsulente);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Caricamento pagamenti fallito.", "GestPagamentiConsulenti.CaricaPagamentiAsync");
+            Snackbar.Add("Errore nel caricamento dei pagamenti.", MudBlazor.Severity.Error);
+        }
+        finally { _caricamentoPagamenti = false; }
+    }
+
+    private void ResetEditorPagamento()
+    {
+        _pagInModifica = null;
+        _fPagData      = DateTime.Today;
+        _fPagImporto   = null;
+        _fPagNota      = string.Empty;
+    }
+
+    private void AvviaModificaPagamento(AttivitaConsulentePagamento p)
+    {
+        _pagInModifica = p;
+        _fPagData      = p.DataPagamento.ToDateTime(TimeOnly.MinValue);
+        _fPagImporto   = p.Importo;
+        _fPagNota      = p.Nota ?? string.Empty;
+    }
+
+    private async Task SalvaPagamentoAsync()
+    {
+        if (_rigaSelezionata is null) return;
+        if (_fPagData is null)
+        {
+            Snackbar.Add("La data del pagamento è obbligatoria.", MudBlazor.Severity.Warning);
+            return;
+        }
+        if (_fPagImporto is not > 0)
+        {
+            Snackbar.Add("L'importo della tranche deve essere maggiore di zero.", MudBlazor.Severity.Warning);
+            return;
+        }
+
+        _salvataggioPagamento = true;
+        try
+        {
+            var entity = new AttivitaConsulentePagamento
+            {
+                IdConsulentePagamento = _pagInModifica?.IdConsulentePagamento ?? Guid.Empty,
+                IdAttivitaConsulente  = _rigaSelezionata.IdAttivitaConsulente,
+                DataPagamento         = DateOnly.FromDateTime(_fPagData.Value),
+                Importo               = _fPagImporto.Value,
+                Nota                  = _fPagNota,
+            };
+
+            if (_pagInModifica is null)
+            {
+                await PagamentoManager.CreaAsync(entity);
+                Snackbar.Add("Pagamento registrato.", MudBlazor.Severity.Success);
+            }
+            else
+            {
+                await PagamentoManager.AggiornaAsync(entity);
+                Snackbar.Add("Pagamento aggiornato.", MudBlazor.Severity.Success);
+            }
+
+            ResetEditorPagamento();
+            await CaricaSaldiAsync();      // residuo ricalcolato live
+            await CaricaPagamentiAsync();
+        }
+        catch (AttivitaConsulentePagamentoInvalidoException ex)
+        {
+            Snackbar.Add(ex.Message, MudBlazor.Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Salvataggio pagamento fallito.", "GestPagamentiConsulenti.SalvaPagamentoAsync");
+            Snackbar.Add("Errore durante il salvataggio.", MudBlazor.Severity.Error);
+        }
+        finally { _salvataggioPagamento = false; }
+    }
+
+    private async Task ConfermaEdEliminaPagamentoAsync(AttivitaConsulentePagamento p)
+    {
+        var par = new DialogParameters<ConfermaEliminazioneDialog>
+        {
+            { x => x.Titolo, "Eliminare pagamento?" },
+            { x => x.NomeElemento, $"{p.Importo.ToString("N2", _itCulture)} € del {p.DataPagamento:dd/MM/yyyy}" },
+            { x => x.Messaggio, "Il residuo della consulenza verrà ricalcolato." },
+        };
+        var o = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true };
+        var d = await DialogService.ShowAsync<ConfermaEliminazioneDialog>(string.Empty, par, o);
+        if (await d.Result is not { Canceled: false }) return;
+
+        try
+        {
+            await PagamentoManager.EliminaAsync(p.IdConsulentePagamento);
+            Snackbar.Add("Pagamento eliminato.", MudBlazor.Severity.Success);
+            if (_pagInModifica?.IdConsulentePagamento == p.IdConsulentePagamento) ResetEditorPagamento();
+            await CaricaSaldiAsync();
+            await CaricaPagamentiAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogManager.LogErroreAsync(ex,
+                "Eliminazione pagamento fallita.", "GestPagamentiConsulenti.ConfermaEdEliminaPagamentoAsync");
+            Snackbar.Add("Errore durante l'eliminazione.", MudBlazor.Severity.Error);
+        }
+    }
+
+    private static string FormatoData(DateOnly? d)
+        => d.HasValue ? d.Value.ToString("dd/MM/yyyy") : "—";
+}
