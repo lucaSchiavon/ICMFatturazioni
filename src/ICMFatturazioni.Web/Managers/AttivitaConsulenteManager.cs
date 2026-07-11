@@ -32,7 +32,10 @@ internal sealed class AttivitaConsulenteManager : IAttivitaConsulenteManager
         => _repository.GetByAttivitaAsync(idAttivita, cancellationToken);
 
     public Task<IReadOnlyList<SchedaConsulenzaRiga>> SchedaConsulenteAsync(Guid idConsulente, CancellationToken cancellationToken = default)
-        => _repository.GetSchedaConsulenteAsync(idConsulente, cancellationToken);
+        => _repository.GetSchedaAsync(idConsulente, cancellationToken);
+
+    public Task<IReadOnlyList<SchedaConsulenzaRiga>> SchedaGeneraleAsync(CancellationToken cancellationToken = default)
+        => _repository.GetSchedaAsync(null, cancellationToken);
 
     public async Task<Guid> CreaAsync(AttivitaConsulente riga, CancellationToken cancellationToken = default)
     {

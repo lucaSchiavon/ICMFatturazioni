@@ -80,11 +80,11 @@
 
             <MudText Typo="Typo.overline" Class="mb-1" Style="font-weight:700;">Stato consulenze</MudText>
             @* D-C4: il filtro agisce SOLO sulla griglia a carico Studio. *@
-            <MudRadioGroup T="FiltroStato" @bind-Value="_filtroStato" Class="mb-2">
+            <MudRadioGroup T="FiltroStatoConsulenze" @bind-Value="_filtroStato" Class="mb-2">
                 <MudStack Row="true" Spacing="0" Wrap="Wrap.Wrap">
-                    <MudRadio T="FiltroStato" Value="FiltroStato.Aperte" Dense="true" Size="Size.Small">Aperte</MudRadio>
-                    <MudRadio T="FiltroStato" Value="FiltroStato.Chiuse" Dense="true" Size="Size.Small">Chiuse</MudRadio>
-                    <MudRadio T="FiltroStato" Value="FiltroStato.Tutte"  Dense="true" Size="Size.Small">Tutte</MudRadio>
+                    <MudRadio T="FiltroStatoConsulenze" Value="FiltroStatoConsulenze.Aperte" Dense="true" Size="Size.Small">Aperte</MudRadio>
+                    <MudRadio T="FiltroStatoConsulenze" Value="FiltroStatoConsulenze.Chiuse" Dense="true" Size="Size.Small">Chiuse</MudRadio>
+                    <MudRadio T="FiltroStatoConsulenze" Value="FiltroStatoConsulenze.Tutte"  Dense="true" Size="Size.Small">Tutte</MudRadio>
                 </MudStack>
             </MudRadioGroup>
 
@@ -155,9 +155,25 @@
 {
     <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-3">
 
-        <MudText Typo="Typo.h2" Class="mb-3" Style="font-size:1.15rem;">
-            Scheda di @_consulenteSelezionato.Descrizione
-        </MudText>
+        <div class="d-flex align-center justify-space-between mb-3" style="flex-wrap:wrap;gap:8px;">
+            <MudText Typo="Typo.h2" Style="font-size:1.15rem;">
+                Scheda di @_consulenteSelezionato.Descrizione
+            </MudText>
+            @* Report PDF (dispensa cap. 7): rispetta i filtri correnti (stato,
+               cliente, attività) e contiene SOLO le consulenze a carico Studio (D-C1). *@
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Print" Ripple="false"
+                           Href="@UrlReport(generale: false)" Target="_blank">
+                    Stampa scheda consulente
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Print" Ripple="false"
+                           Href="@UrlReport(generale: true)" Target="_blank">
+                    Stampa generale (tutti)
+                </MudButton>
+            </MudStack>
+        </div>
 
         @if (_caricamentoScheda)
         {
@@ -285,8 +301,6 @@
 }
 
 @code {
-    private enum FiltroStato { Aperte, Chiuse, Tutte }
-
     private static readonly CultureInfo _itCulture = CultureInfo.GetCultureInfo("it-IT");
 
     // ─── Dati caricati ───────────────────────────────────────────────────
@@ -295,7 +309,7 @@
 
     // ─── Selezioni / filtri ──────────────────────────────────────────────
     private Consulente? _consulenteSelezionato;
-    private FiltroStato _filtroStato = FiltroStato.Aperte;   // default come il report legacy
+    private FiltroStatoConsulenze _filtroStato = FiltroStatoConsulenze.Aperte;   // default come il report legacy
     private Guid?       _idAnagraficaSel;
     private Guid?       _idAttivitaSel;
     private string      _filtroConsulente = string.Empty;
@@ -337,9 +351,9 @@
             .Where(s => s.Carico == CaricoConsulenza.Studio)
             .Where(s => _filtroStato switch
             {
-                FiltroStato.Aperte => s.Aperta,
-                FiltroStato.Chiuse => !s.Aperta,
-                _                  => true,
+                FiltroStatoConsulenze.Aperte => s.Aperta,
+                FiltroStatoConsulenze.Chiuse => !s.Aperta,
+                _                            => true,
             })
             .ToList();
 
@@ -456,6 +470,20 @@
             await LogManager.LogErroreAsync(ex, "Esportazione CSV scheda fallita.", "SchedeAttivitaConsulenti.EsportaCsvAsync");
             Snackbar.Add("Errore durante l'esportazione CSV.", MudBlazor.Severity.Error);
         }
+    }
+
+    // URL del report PDF con i filtri correnti in query string (si apre in
+    // nuova scheda). Variante generale: tutti i consulenti, senza raffinamenti.
+    private string UrlReport(bool generale)
+    {
+        var parametri = new List<string> { $"stato={_filtroStato}" };
+        if (!generale && _consulenteSelezionato is not null)
+        {
+            parametri.Add($"idConsulente={_consulenteSelezionato.IdConsulente}");
+            if (_idAnagraficaSel is not null) parametri.Add($"idAnagrafica={_idAnagraficaSel}");
+            if (_idAttivitaSel is not null)   parametri.Add($"idAttivita={_idAttivitaSel}");
+        }
+        return $"/api/report/scheda-consulente?{string.Join("&", parametri)}";
     }
 
     private static string FormatoData(DateOnly? d)

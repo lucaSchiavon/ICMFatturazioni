@@ -13,6 +13,9 @@ public sealed class SchedaConsulenzaRiga
     public Guid IdAnagrafica { get; init; }
     public Guid IdAttivita { get; init; }
 
+    /// <summary>Denominazione del consulente (join) — serve alla variante GENERALE del report.</summary>
+    public string ConsulenteDescrizione { get; init; } = string.Empty;
+
     /// <summary>Ragione sociale del cliente dell'attività (join).</summary>
     public required string RagioneSociale { get; init; }
 

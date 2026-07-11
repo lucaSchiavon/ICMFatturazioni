@@ -110,6 +110,26 @@ internal sealed class AttivitaConsulentePagamentoRepository : IAttivitaConsulent
         return rows.Select(ToEntity).ToList();
     }
 
+    // Tranche per il report: tutte quelle attive delle righe attive del consulente
+    // (@IdConsulente NULL = tutti i consulenti, variante generale).
+    private const string SqlSelectByConsulente = """
+        SELECT p.IdConsulentePagamento, p.IdAttivitaConsulente, p.DataPagamento, p.Importo, p.Nota, p.IsAttivo
+        FROM fatt.AttivitaConsulentiPagamenti p
+        JOIN fatt.AttivitaConsulenti ac
+            ON ac.IdAttivitaConsulente = p.IdAttivitaConsulente
+        WHERE (@IdConsulente IS NULL OR ac.IdConsulente = @IdConsulente)
+          AND ac.IsAttivo = 1 AND p.IsAttivo = 1
+        ORDER BY p.DataPagamento, p.IdConsulentePagamento;
+        """;
+
+    public async Task<IReadOnlyList<AttivitaConsulentePagamento>> GetByConsulenteAsync(Guid? idConsulente, CancellationToken cancellationToken = default)
+    {
+        using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
+        var cmd = new CommandDefinition(SqlSelectByConsulente, new { IdConsulente = idConsulente }, cancellationToken: cancellationToken);
+        var rows = await conn.QueryAsync<PagamentoRow>(cmd);
+        return rows.Select(ToEntity).ToList();
+    }
+
     private const string SqlSelectById = SqlSelect + " WHERE IdConsulentePagamento = @IdConsulentePagamento;";
 
     public async Task<AttivitaConsulentePagamento?> GetByIdAsync(Guid idConsulentePagamento, CancellationToken cancellationToken = default)

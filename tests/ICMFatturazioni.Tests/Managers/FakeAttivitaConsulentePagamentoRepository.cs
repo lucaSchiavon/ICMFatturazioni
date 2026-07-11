@@ -11,19 +11,29 @@ namespace ICMFatturazioni.Tests.Managers;
 /// </summary>
 internal sealed class FakeAttivitaConsulentePagamentoRepository : IAttivitaConsulentePagamentoRepository
 {
-    private sealed record RigaFake(Guid IdAttivita, string Consulente, string Tipo, DateOnly? Scadenza, decimal Importo, bool CaricoStudio);
+    private sealed record RigaFake(Guid IdAttivita, string Consulente, string Tipo, DateOnly? Scadenza, decimal Importo, bool CaricoStudio, Guid? IdConsulente = null);
 
     private readonly Dictionary<Guid, RigaFake> _righe = new();
     private readonly Dictionary<Guid, AttivitaConsulentePagamento> _store = new();
 
     /// <summary>Registra una riga consulenza simulata e ne restituisce l'id.</summary>
     public Guid AddRiga(Guid idAttivita, decimal importo, bool caricoStudio = true,
-        string consulente = "Luca Schiavon", string tipo = "CALCOLI STRUTTURALI", DateOnly? scadenza = null)
+        string consulente = "Luca Schiavon", string tipo = "CALCOLI STRUTTURALI", DateOnly? scadenza = null,
+        Guid? idConsulente = null)
     {
         var id = Guid.CreateVersion7();
-        _righe[id] = new RigaFake(idAttivita, consulente, tipo, scadenza, importo, caricoStudio);
+        _righe[id] = new RigaFake(idAttivita, consulente, tipo, scadenza, importo, caricoStudio, idConsulente);
         return id;
     }
+
+    public Task<IReadOnlyList<AttivitaConsulentePagamento>> GetByConsulenteAsync(Guid? idConsulente, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<AttivitaConsulentePagamento>>(
+            _store.Values
+                .Where(p => p.IsAttivo
+                            && _righe.TryGetValue(p.IdAttivitaConsulente, out var r)
+                            && (idConsulente is null || r.IdConsulente == idConsulente))
+                .OrderBy(p => p.DataPagamento)
+                .ToList());
 
     public Task<IReadOnlyList<ConsulenzaConSaldo>> GetConsulenzeConSaldoAsync(Guid idAttivita, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<ConsulenzaConSaldo>>(

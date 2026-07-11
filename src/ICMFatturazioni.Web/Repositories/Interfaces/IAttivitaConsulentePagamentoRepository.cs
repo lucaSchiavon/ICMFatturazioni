@@ -14,6 +14,12 @@ public interface IAttivitaConsulentePagamentoRepository
     /// <summary>Tranche attive di una riga consulenza, ordinate per data.</summary>
     Task<IReadOnlyList<AttivitaConsulentePagamento>> GetByRigaAsync(Guid idAttivitaConsulente, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Tranche attive delle righe consulenza attive di un consulente (null = tutti),
+    /// ordinate per data: alimentano il dettaglio pagamenti del report (dispensa cap. 7).
+    /// </summary>
+    Task<IReadOnlyList<AttivitaConsulentePagamento>> GetByConsulenteAsync(Guid? idConsulente, CancellationToken cancellationToken = default);
+
     Task<AttivitaConsulentePagamento?> GetByIdAsync(Guid idConsulentePagamento, CancellationToken cancellationToken = default);
 
     /// <summary>

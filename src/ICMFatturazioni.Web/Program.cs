@@ -178,6 +178,8 @@ builder.Services.AddScoped<IFatturaPdfService>(sp =>
                           sp.GetRequiredService<IFattureManager>()));
 // Report scadenzario: dipende solo da Manager pubblici → registrazione standard.
 builder.Services.AddScoped<IScadenzarioPdfService, ScadenzarioPdfService>();
+// Report "Riepilogo attività consulente" (Modulo Consulenti, dispensa cap. 7).
+builder.Services.AddScoped<IRiepilogoConsulentePdfService, RiepilogoConsulentePdfService>();
 
 // === Fatturazione elettronica (Fase D1) ===
 // Opzioni (cartella output XML) + servizio di generazione tracciato FatturaPA.
@@ -743,6 +745,46 @@ app.MapGet("/api/report/scadenzario", async Task<IResult> (
             "non risolto sull'host, dati incoerenti sulle scadenze.",
             "ScadenzarioPdf.GeneraAsync", cancellationToken: ct);
         return Results.Problem("Errore durante la generazione del PDF dello scadenzario.", statusCode: 500);
+    }
+})
+.RequireAuthorization();
+
+// ----------------------------------------------------------------------------
+// Report PDF "Riepilogo attività consulente" (maschera Schede attività
+// consulenti, dispensa cap. 7). idConsulente assente = variante GENERALE su
+// tutti i consulenti. Contiene SOLO le consulenze a carico dello Studio (D-C1).
+// Lettura pura: nessun audit, solo log degli errori.
+// ----------------------------------------------------------------------------
+app.MapGet("/api/report/scheda-consulente", async Task<IResult> (
+    HttpContext httpContext,
+    IRiepilogoConsulentePdfService pdfService,
+    ILogManager logManager,
+    CancellationToken ct,
+    Guid? idConsulente = null,
+    Guid? idAnagrafica = null,
+    Guid? idAttivita = null,
+    FiltroStatoConsulenze stato = FiltroStatoConsulenze.Aperte) =>
+{
+    var filtro = new FiltroRiepilogoConsulente(
+        IdConsulente: idConsulente,
+        IdAnagrafica: idAnagrafica,
+        IdAttivita:   idAttivita,
+        Stato:        stato);
+
+    try
+    {
+        var pdf = await pdfService.GeneraAsync(filtro, ct);
+        var nomeFile = $"RiepilogoConsulente_{DateTime.Today:yyyy-MM-dd}.pdf";
+        httpContext.Response.Headers.ContentDisposition = $"inline; filename=\"{nomeFile}\"";
+        return Results.File(pdf, "application/pdf");
+    }
+    catch (Exception ex)
+    {
+        await logManager.LogErroreAsync(ex,
+            "Generazione del PDF riepilogo consulente fallita. Cause tipiche: font di sistema " +
+            "non risolto sull'host, dati incoerenti sulle consulenze.",
+            "RiepilogoConsulentePdf.GeneraAsync", cancellationToken: ct);
+        return Results.Problem("Errore durante la generazione del PDF del riepilogo consulente.", statusCode: 500);
     }
 })
 .RequireAuthorization();

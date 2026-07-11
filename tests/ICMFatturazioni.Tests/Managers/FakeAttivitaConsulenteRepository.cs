@@ -18,19 +18,20 @@ internal sealed class FakeAttivitaConsulenteRepository : IAttivitaConsulenteRepo
     /// <summary>Anagrafica/attività simulate per la scheda consulente (idAttivita → dati di join).</summary>
     public Dictionary<Guid, (Guid IdAnagrafica, string RagioneSociale, string Numero, string Descrizione)> AttivitaInfo { get; } = new();
 
-    public Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaConsulenteAsync(Guid idConsulente, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaAsync(Guid? idConsulente, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<SchedaConsulenzaRiga>>(
             _store.Values
-                .Where(r => r.IdConsulente == idConsulente && r.IsAttivo)
+                .Where(r => (idConsulente is null || r.IdConsulente == idConsulente) && r.IsAttivo)
                 .Select(r =>
                 {
                     var info = AttivitaInfo.TryGetValue(r.IdAttivita, out var i)
                         ? i : (IdAnagrafica: Guid.Empty, RagioneSociale: "Cliente?", Numero: "?", Descrizione: "?");
                     return new SchedaConsulenzaRiga
                     {
-                        IdAttivitaConsulente = r.IdAttivitaConsulente,
-                        IdAnagrafica         = info.IdAnagrafica,
-                        IdAttivita           = r.IdAttivita,
+                        IdAttivitaConsulente  = r.IdAttivitaConsulente,
+                        IdAnagrafica          = info.IdAnagrafica,
+                        IdAttivita            = r.IdAttivita,
+                        ConsulenteDescrizione = r.ConsulenteDescrizione ?? string.Empty,
                         RagioneSociale       = info.RagioneSociale,
                         AttivitaNumero       = info.Numero,
                         AttivitaDescrizione  = info.Descrizione,

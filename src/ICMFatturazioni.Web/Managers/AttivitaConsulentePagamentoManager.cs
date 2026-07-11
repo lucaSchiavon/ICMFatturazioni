@@ -34,6 +34,9 @@ internal sealed class AttivitaConsulentePagamentoManager : IAttivitaConsulentePa
     public Task<IReadOnlyList<AttivitaConsulentePagamento>> ElencoPerRigaAsync(Guid idAttivitaConsulente, CancellationToken cancellationToken = default)
         => _repository.GetByRigaAsync(idAttivitaConsulente, cancellationToken);
 
+    public Task<IReadOnlyList<AttivitaConsulentePagamento>> ElencoPerConsulenteAsync(Guid? idConsulente, CancellationToken cancellationToken = default)
+        => _repository.GetByConsulenteAsync(idConsulente, cancellationToken);
+
     public async Task<Guid> CreaAsync(AttivitaConsulentePagamento pagamento, CancellationToken cancellationToken = default)
     {
         var norm = Normalizza(pagamento);

@@ -11,6 +11,9 @@ public interface IAttivitaConsulentePagamentoManager
     /// <summary>Tranche attive di una riga consulenza, ordinate per data.</summary>
     Task<IReadOnlyList<AttivitaConsulentePagamento>> ElencoPerRigaAsync(Guid idAttivitaConsulente, CancellationToken cancellationToken = default);
 
+    /// <summary>Tranche attive delle righe di un consulente (null = tutti), per il report (dispensa cap. 7).</summary>
+    Task<IReadOnlyList<AttivitaConsulentePagamento>> ElencoPerConsulenteAsync(Guid? idConsulente, CancellationToken cancellationToken = default);
+
     /// <summary>Registra una tranche. Bloccata oltre il residuo (D-C3) e su righe non a carico Studio.</summary>
     Task<Guid> CreaAsync(AttivitaConsulentePagamento pagamento, CancellationToken cancellationToken = default);
 

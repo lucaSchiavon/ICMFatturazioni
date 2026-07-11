@@ -9,11 +9,13 @@ public interface IAttivitaConsulenteRepository
     Task<IReadOnlyList<AttivitaConsulente>> GetByAttivitaAsync(Guid idAttivita, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Scheda del consulente (dispensa cap. 6): TUTTE le sue righe consulenza attive
-    /// su tutti i clienti, con cliente/attività/tipo e Pagato derivato dalle tranche.
-    /// I raffinamenti (anagrafica, attività, stato D-C4) si applicano in memoria.
+    /// Scheda consulenze (dispensa cap. 6-7): righe consulenza attive con
+    /// cliente/attività/tipo/consulente e Pagato derivato dalle tranche.
+    /// <paramref name="idConsulente"/> null = TUTTI i consulenti (variante
+    /// generale del report). I raffinamenti (anagrafica, attività, stato D-C4)
+    /// si applicano in memoria.
     /// </summary>
-    Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaConsulenteAsync(Guid idConsulente, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaAsync(Guid? idConsulente, CancellationToken cancellationToken = default);
 
     Task<AttivitaConsulente?> GetByIdAsync(Guid idAttivitaConsulente, CancellationToken cancellationToken = default);
     Task InsertAsync(AttivitaConsulente riga, CancellationToken cancellationToken = default);

@@ -83,27 +83,30 @@ internal sealed class AttivitaConsulenteRepository : IAttivitaConsulenteReposito
 
     private sealed class SchedaRow
     {
-        public Guid      IdAttivitaConsulente { get; init; }
-        public Guid      IdAnagrafica         { get; init; }
-        public Guid      IdAttivita           { get; init; }
-        public string    RagioneSociale       { get; init; } = string.Empty;
-        public string    AttivitaNumero       { get; init; } = string.Empty;
-        public string    AttivitaDescrizione  { get; init; } = string.Empty;
-        public string    TipoDescrizione      { get; init; } = string.Empty;
-        public string    Carico               { get; init; } = "S";
-        public DateTime? Scadenza             { get; init; }
-        public decimal   Importo              { get; init; }
-        public decimal   Pagato               { get; init; }
-        public string?   Nota                 { get; init; }
+        public Guid      IdAttivitaConsulente  { get; init; }
+        public Guid      IdAnagrafica          { get; init; }
+        public Guid      IdAttivita            { get; init; }
+        public string    ConsulenteDescrizione { get; init; } = string.Empty;
+        public string    RagioneSociale        { get; init; } = string.Empty;
+        public string    AttivitaNumero        { get; init; } = string.Empty;
+        public string    AttivitaDescrizione   { get; init; } = string.Empty;
+        public string    TipoDescrizione       { get; init; } = string.Empty;
+        public string    Carico                { get; init; } = "S";
+        public DateTime? Scadenza              { get; init; }
+        public decimal   Importo               { get; init; }
+        public decimal   Pagato                { get; init; }
+        public string?   Nota                  { get; init; }
     }
 
-    // Tutte le righe attive del consulente su tutti i clienti; l'attività arriva
-    // dalla vista fatt.Attivita (Numero/Descrizione/IdAnagrafica), il cliente da
-    // fatt.Anagrafica. Pagato = somma tranche attive (mai memorizzato).
+    // Righe attive (di un consulente o di tutti: @IdConsulente NULL = variante
+    // generale del report); l'attività arriva dalla vista fatt.Attivita
+    // (Numero/Descrizione/IdAnagrafica), il cliente da fatt.Anagrafica.
+    // Pagato = somma tranche attive (mai memorizzato).
     private const string SqlScheda = """
         SELECT ac.IdAttivitaConsulente,
                att.IdAnagrafica,
                ac.IdAttivita,
+               c.Consulente             AS ConsulenteDescrizione,
                an.RagioneSociale,
                att.Numero               AS AttivitaNumero,
                att.Descrizione          AS AttivitaDescrizione,
@@ -111,6 +114,8 @@ internal sealed class AttivitaConsulenteRepository : IAttivitaConsulenteReposito
                ac.Carico, ac.Scadenza, ac.Importo, ac.Nota,
                ISNULL(SUM(CASE WHEN p.IsAttivo = 1 THEN p.Importo END), 0) AS Pagato
         FROM fatt.AttivitaConsulenti ac
+        JOIN fatt.Consulenti c
+            ON c.IdConsulente = ac.IdConsulente
         JOIN fatt.Attivita att
             ON att.IdAttivita = ac.IdAttivita
         JOIN fatt.Anagrafica an
@@ -119,32 +124,34 @@ internal sealed class AttivitaConsulenteRepository : IAttivitaConsulenteReposito
             ON t.IdTipoAttivitaConsulente = ac.IdTipoAttivitaConsulente
         LEFT JOIN fatt.AttivitaConsulentiPagamenti p
             ON p.IdAttivitaConsulente = ac.IdAttivitaConsulente
-        WHERE ac.IdConsulente = @IdConsulente AND ac.IsAttivo = 1
+        WHERE (@IdConsulente IS NULL OR ac.IdConsulente = @IdConsulente)
+          AND ac.IsAttivo = 1
         GROUP BY ac.IdAttivitaConsulente, att.IdAnagrafica, ac.IdAttivita,
-                 an.RagioneSociale, att.Numero, att.Descrizione,
+                 c.Consulente, an.RagioneSociale, att.Numero, att.Descrizione,
                  t.TipoAttivitaConsulente, ac.Carico, ac.Scadenza, ac.Importo, ac.Nota
-        ORDER BY an.RagioneSociale, att.Numero, t.TipoAttivitaConsulente;
+        ORDER BY c.Consulente, an.RagioneSociale, att.Numero, t.TipoAttivitaConsulente;
         """;
 
-    public async Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaConsulenteAsync(Guid idConsulente, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SchedaConsulenzaRiga>> GetSchedaAsync(Guid? idConsulente, CancellationToken cancellationToken = default)
     {
         using var conn = await _connectionFactory.CreateOpenConnectionAsync(cancellationToken);
         var cmd = new CommandDefinition(SqlScheda, new { IdConsulente = idConsulente }, cancellationToken: cancellationToken);
         var rows = await conn.QueryAsync<SchedaRow>(cmd);
         return rows.Select(r => new SchedaConsulenzaRiga
         {
-            IdAttivitaConsulente = r.IdAttivitaConsulente,
-            IdAnagrafica         = r.IdAnagrafica,
-            IdAttivita           = r.IdAttivita,
-            RagioneSociale       = r.RagioneSociale,
-            AttivitaNumero       = r.AttivitaNumero,
-            AttivitaDescrizione  = r.AttivitaDescrizione,
-            TipoDescrizione      = r.TipoDescrizione,
-            Carico               = CaricoConsulenzaExtensions.CaricoConsulenzaFromDbCode(r.Carico[0]),
-            Scadenza             = r.Scadenza.HasValue ? DateOnly.FromDateTime(r.Scadenza.Value) : null,
-            Importo              = r.Importo,
-            Pagato               = r.Pagato,
-            Nota                 = r.Nota,
+            IdAttivitaConsulente  = r.IdAttivitaConsulente,
+            IdAnagrafica          = r.IdAnagrafica,
+            IdAttivita            = r.IdAttivita,
+            ConsulenteDescrizione = r.ConsulenteDescrizione,
+            RagioneSociale        = r.RagioneSociale,
+            AttivitaNumero        = r.AttivitaNumero,
+            AttivitaDescrizione   = r.AttivitaDescrizione,
+            TipoDescrizione       = r.TipoDescrizione,
+            Carico                = CaricoConsulenzaExtensions.CaricoConsulenzaFromDbCode(r.Carico[0]),
+            Scadenza              = r.Scadenza.HasValue ? DateOnly.FromDateTime(r.Scadenza.Value) : null,
+            Importo               = r.Importo,
+            Pagato                = r.Pagato,
+            Nota                  = r.Nota,
         }).ToList();
     }
 
