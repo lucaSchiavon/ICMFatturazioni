@@ -108,6 +108,9 @@ builder.Services.AddScoped<IAliquotaRepository, AliquotaRepository>();
 builder.Services.AddScoped<IAvvisoFatturaRepository, AvvisoFatturaRepository>();
 builder.Services.AddScoped<IFattureRepository, FattureRepository>();
 builder.Services.AddScoped<IAziendaRepository, AziendaRepository>();
+// Modulo Attività Consulenti (migration 077).
+builder.Services.AddScoped<IConsulenteRepository, ConsulenteRepository>();
+builder.Services.AddScoped<ITipoAttivitaConsulenteRepository, TipoAttivitaConsulenteRepository>();
 // Sola lettura sui verbali firmati (dominio ICMVerbali, vista fatt.VerbaliConsultazione).
 builder.Services.AddScoped<IVerbaleConsultazioneRepository, VerbaleConsultazioneRepository>();
 
@@ -137,6 +140,9 @@ builder.Services.AddScoped<IAliquotaManager, AliquotaManager>();
 builder.Services.AddScoped<IAvvisoFatturaManager, AvvisoFatturaManager>();
 builder.Services.AddScoped<IFattureManager, FattureManager>();
 builder.Services.AddScoped<IAziendaManager, AziendaManager>();
+// Modulo Attività Consulenti.
+builder.Services.AddScoped<IConsulenteManager, ConsulenteManager>();
+builder.Services.AddScoped<ITipoAttivitaConsulenteManager, TipoAttivitaConsulenteManager>();
 // Consultazione verbali firmati (sola lettura, dominio ICMVerbali).
 builder.Services.AddScoped<IVerbaleConsultazioneManager, VerbaleConsultazioneManager>();
 
