@@ -114,6 +114,45 @@ public class AttivitaConsulenteManagerTests
     }
 
     [Fact]
+    public async Task CreaAsync_CaricoCliente_ScadenzaAzzerata()
+    {
+        // La scadenza è il promemoria di pagamento dello studio: su una riga a
+        // carico del Cliente viene azzerata anche se la UI la passasse.
+        var fake = new FakeAttivitaConsulenteRepository();
+        var sut = NewSut(fake);
+        var riga = Riga(carico: CaricoConsulenza.Cliente);
+        riga = new AttivitaConsulente
+        {
+            IdAttivita               = riga.IdAttivita,
+            IdConsulente             = riga.IdConsulente,
+            IdTipoAttivitaConsulente = riga.IdTipoAttivitaConsulente,
+            Carico                   = CaricoConsulenza.Cliente,
+            Importo                  = riga.Importo,
+            Scadenza                 = new DateOnly(2026, 12, 31),
+        };
+        var id = await sut.CreaAsync(riga);
+        Assert.Null((await fake.GetByIdAsync(id))!.Scadenza);
+    }
+
+    [Fact]
+    public async Task CreaAsync_CaricoStudio_ScadenzaConservata()
+    {
+        var fake = new FakeAttivitaConsulenteRepository();
+        var sut = NewSut(fake);
+        var riga = new AttivitaConsulente
+        {
+            IdAttivita               = IdAttivita,
+            IdConsulente             = IdConsulente,
+            IdTipoAttivitaConsulente = IdTipo,
+            Carico                   = CaricoConsulenza.Studio,
+            Importo                  = 4000m,
+            Scadenza                 = new DateOnly(2026, 12, 31),
+        };
+        var id = await sut.CreaAsync(riga);
+        Assert.Equal(new DateOnly(2026, 12, 31), (await fake.GetByIdAsync(id))!.Scadenza);
+    }
+
+    [Fact]
     public async Task CreaAsync_NotaConSpazi_Trimmata()
     {
         var fake = new FakeAttivitaConsulenteRepository();

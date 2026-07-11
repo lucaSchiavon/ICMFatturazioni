@@ -222,7 +222,7 @@
                 </MudItem>
                 <MudItem xs="12" sm="6" md="2">
                     <div class="icm-field-label mb-1">A carico *</div>
-                    <MudRadioGroup T="CaricoConsulenza" @bind-Value="_fCarico">
+                    <MudRadioGroup T="CaricoConsulenza" Value="_fCarico" ValueChanged="OnCaricoChanged">
                         <MudStack Row="true" Spacing="0">
                             <MudRadio T="CaricoConsulenza" Value="CaricoConsulenza.Studio"  Dense="true" Size="Size.Small">Studio</MudRadio>
                             <MudRadio T="CaricoConsulenza" Value="CaricoConsulenza.Cliente" Dense="true" Size="Size.Small">Cliente</MudRadio>
@@ -239,16 +239,21 @@
                                      Variant="Variant.Outlined" Margin="Margin.Dense"
                                      Class="campo-obbligatorio" />
                 </MudItem>
-                <MudItem xs="6" sm="3" md="2">
-                    <MudDatePicker Label="Scadenza"
-                                   Date="_fScadenza"
-                                   DateChanged="@(d => _fScadenza = d)"
-                                   DateFormat="dd/MM/yyyy"
-                                   Culture="_itCulture"
-                                   Editable="true"
-                                   HelperText="Promemoria pagamento"
-                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
-                </MudItem>
+                @* Scadenza = promemoria di quando LO STUDIO paga il consulente:
+                   compare solo con carico Studio (per il Cliente non ha senso). *@
+                @if (_fCarico == CaricoConsulenza.Studio)
+                {
+                    <MudItem xs="6" sm="3" md="2">
+                        <MudDatePicker Label="Scadenza"
+                                       Date="_fScadenza"
+                                       DateChanged="@(d => _fScadenza = d)"
+                                       DateFormat="dd/MM/yyyy"
+                                       Culture="_itCulture"
+                                       Editable="true"
+                                       HelperText="Promemoria pagamento"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                }
                 <MudItem xs="12">
                     <MudTextField @bind-Value="_fNota"
                                   Label="Nota (opzionale)"
@@ -285,10 +290,10 @@
         {
             <MudGrid Spacing="3">
                 <MudItem xs="12" lg="6">
-                    @GrigliaCarico("A carico dello Studio", RigheStudio)
+                    @GrigliaCarico("A carico dello Studio", RigheStudio, true)
                 </MudItem>
                 <MudItem xs="12" lg="6">
-                    @GrigliaCarico("A carico del Cliente", RigheCliente)
+                    @GrigliaCarico("A carico del Cliente", RigheCliente, false)
                 </MudItem>
             </MudGrid>
         }
@@ -462,6 +467,15 @@
         finally { _caricamentoRighe = false; }
     }
 
+    // Passando a "Cliente" la scadenza si azzera: è un promemoria di pagamento
+    // dello studio e non esiste per le righe a carico del cliente.
+    private void OnCaricoChanged(CaricoConsulenza nuovo)
+    {
+        _fCarico = nuovo;
+        if (nuovo == CaricoConsulenza.Cliente)
+            _fScadenza = null;
+    }
+
     private void ResetEditor()
     {
         _rigaInModifica = null;
@@ -568,7 +582,9 @@
     }
 
     // ─── Render helper: griglia per Carico con totale ────────────────────
-    private RenderFragment GrigliaCarico(string titolo, IReadOnlyList<AttivitaConsulente> righe) => @<div>
+    // mostraScadenza: la colonna Scadenza (promemoria pagamento studio) compare
+    // solo nella griglia "a carico dello Studio".
+    private RenderFragment GrigliaCarico(string titolo, IReadOnlyList<AttivitaConsulente> righe, bool mostraScadenza) => @<div>
         <MudText Typo="Typo.overline" Style="font-weight:700;">
             @titolo
             @if (righe.Count > 0)
@@ -586,12 +602,15 @@
         {
             <div style="overflow-x:auto;">
                 <MudTable Items="righe" Dense="true" Striped="true" Hover="true"
-                          Style="min-width:560px;">
+                          Style="@(mostraScadenza ? "min-width:560px;" : "min-width:480px;")">
                     <HeaderContent>
                         <MudTh>Consulente</MudTh>
                         <MudTh>Tipo</MudTh>
                         <MudTh Style="text-align:right;">Importo €</MudTh>
-                        <MudTh>Scadenza</MudTh>
+                        @if (mostraScadenza)
+                        {
+                            <MudTh>Scadenza</MudTh>
+                        }
                         <MudTh>Nota</MudTh>
                         <MudTh Style="width:88px;"></MudTh>
                     </HeaderContent>
@@ -599,7 +618,10 @@
                         <MudTd DataLabel="Consulente">@context.ConsulenteDescrizione</MudTd>
                         <MudTd DataLabel="Tipo">@context.TipoAttivitaConsulenteDescrizione</MudTd>
                         <MudTd DataLabel="Importo" Style="text-align:right;">@context.Importo.ToString("N2", _itCulture)</MudTd>
-                        <MudTd DataLabel="Scadenza">@FormatoData(context.Scadenza)</MudTd>
+                        @if (mostraScadenza)
+                        {
+                            <MudTd DataLabel="Scadenza">@FormatoData(context.Scadenza)</MudTd>
+                        }
                         <MudTd DataLabel="Nota">@context.Nota</MudTd>
                         <MudTd Style="white-space:nowrap;">
                             <MudTooltip Text="Modifica">
@@ -619,7 +641,7 @@
                         <MudTd Style="text-align:right;font-weight:700;">
                             @righe.Sum(r => r.Importo).ToString("N2", _itCulture)
                         </MudTd>
-                        <MudTd colspan="3"></MudTd>
+                        <MudTd colspan="@(mostraScadenza ? 3 : 2)"></MudTd>
                     </FooterContent>
                 </MudTable>
             </div>

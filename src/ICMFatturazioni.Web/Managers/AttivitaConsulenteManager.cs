@@ -96,7 +96,10 @@ internal sealed class AttivitaConsulenteManager : IAttivitaConsulenteManager
         IdTipoAttivitaConsulente = r.IdTipoAttivitaConsulente,
         Carico                   = r.Carico,
         Importo                  = r.Importo,
-        Scadenza                 = r.Scadenza,
+        // La scadenza è il promemoria di quando LO STUDIO paga il consulente
+        // (dispensa cap. 3-5): sulle righe a carico del Cliente non ha senso
+        // e viene azzerata qualunque cosa arrivi dalla UI.
+        Scadenza                 = r.Carico == CaricoConsulenza.Studio ? r.Scadenza : null,
         Nota                     = string.IsNullOrWhiteSpace(r.Nota) ? null : r.Nota.Trim(),
         IsAttivo                 = r.IsAttivo,
         ConsulenteDescrizione             = r.ConsulenteDescrizione,
