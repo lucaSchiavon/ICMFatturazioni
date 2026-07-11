@@ -230,10 +230,12 @@
                     </MudRadioGroup>
                 </MudItem>
                 <MudItem xs="6" sm="3" md="2">
+                    @* Niente Immediate: con Format="N2" riformatterebbe a ogni tasto
+                       impedendo di digitare l'importo. Commit al blur, come le altre
+                       maschere; l'obbligatorietà è verificata al salvataggio. *@
                     <MudNumericField T="decimal?" @bind-Value="_fImporto"
                                      Label="Importo € *"
                                      Min="0m" Format="N2" Culture="_itCulture"
-                                     Immediate="true"
                                      Variant="Variant.Outlined" Margin="Margin.Dense"
                                      Class="campo-obbligatorio" />
                 </MudItem>
@@ -332,7 +334,10 @@
     private string    _fNota = string.Empty;
     private bool      _salvataggio;
 
-    private bool EditorValido => _fIdConsulente.HasValue && _fIdTipo.HasValue && _fImporto is > 0;
+    // L'importo non entra nel gate del pulsante: il suo valore si committa al blur
+    // (vedi commento sul campo) e l'obbligatorietà è già garantita dal manager
+    // (ImportoNonPositivo → snackbar) e dal check in SalvaRigaAsync.
+    private bool EditorValido => _fIdConsulente.HasValue && _fIdTipo.HasValue;
 
     // ─── Computed ────────────────────────────────────────────────────────
     private IEnumerable<Anagrafica> AnagraficheFiltrate
@@ -482,6 +487,11 @@
     private async Task SalvaRigaAsync()
     {
         if (_attivitaSelezionata is null || !EditorValido) return;
+        if (_fImporto is not > 0)
+        {
+            Snackbar.Add("L'importo deve essere maggiore di zero.", MudBlazor.Severity.Warning);
+            return;
+        }
         _salvataggio = true;
         try
         {
